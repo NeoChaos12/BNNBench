@@ -89,8 +89,8 @@ class DNGO(BaseModel):
         # MCMC hyperparameters
         self.do_mcmc = do_mcmc
         self.n_hypers = n_hypers
-        self.sampler = emcee.EnsembleSampler(self.n_hypers, 2,
-                                             self.marginal_log_likelihood)
+        self.sampler = emcee.EnsembleSampler(nwalkers=self.n_hypers, dim=2,
+                                             lnpostfn=self.marginal_log_likelihood)
         self.chain_length = chain_length
         self.burned = False
         self.burnin_steps = burnin_steps
@@ -203,7 +203,7 @@ class DNGO(BaseModel):
                 self.p0 = pos
 
                 # Take the last samples from each walker set them back on a linear scale
-                linear_theta = np.exp(self.sampler.chain[:, -1])
+                linear_theta = np.exp(self.p0)
                 self.hypers = linear_theta
                 self.hypers[:, 1] = 1 / self.hypers[:, 1]
             else:
