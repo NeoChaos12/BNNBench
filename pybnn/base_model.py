@@ -1,5 +1,6 @@
 import abc
 import numpy as np
+from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 
 class BaseModel(object):
@@ -11,6 +12,9 @@ class BaseModel(object):
         """
         self.X = None
         self.y = None
+        self.rng = None
+        self.normalize_input = False
+        self.normalize_output = False
 
     @abc.abstractmethod
     def train(self, X, y):
@@ -91,6 +95,31 @@ class BaseModel(object):
                      'hyperparameters': ""}
         return json_data
 
+
+    def normalize_data(self):
+        """
+        Check the flags normalize_inputs and normalize_outputs, and normalize the respective data accordingly.
+        """
+
+        # Normalize inputs
+        if self.normalize_input:
+            self.X, self.X_mean, self.X_std = zero_mean_unit_var_normalization(self.X)
+
+        # Normalize ouputs
+        if self.normalize_output:
+            self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(self.y)
+
+
+    def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
+        assert inputs.shape[0] == targets.shape[0], \
+            "The number of training points is not the same"
+        indices = np.arange(inputs.shape[0])
+        if shuffle:
+            self.rng.shuffle(indices)
+        for start_idx in range(0, inputs.shape[0] - batchsize + 1, batchsize):
+            excerpt = indices[start_idx:start_idx + batchsize]
+            yield inputs[excerpt], targets[excerpt]
+
     def get_incumbent(self):
         """
         Returns the best observed point and its function value
@@ -102,5 +131,15 @@ class BaseModel(object):
         incumbent_value: ndarray (N,)
             the observed value of the incumbent
         """
+
         best_idx = np.argmin(self.y)
-        return self.X[best_idx], self.y[best_idx]
+        inc = self.X[best_idx]
+        inc_value = self.y[best_idx]
+
+        if self.normalize_input:
+            inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
+
+        if self.normalize_output:
+            inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
+
+        return inc, inc_value

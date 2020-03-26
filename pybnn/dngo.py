@@ -12,8 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 from scipy import optimize
 
 from pybnn.base_model import BaseModel
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.bayesian_linear_regression import BayesianLinearRegression, Prior
+from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 from pybnn.mlp import MLP
 
@@ -90,6 +90,8 @@ class DNGO(BaseModel):
         # MCMC hyperparameters
         self.do_mcmc = do_mcmc
         self.n_hypers = n_hypers
+        self.sampler = emcee.EnsembleSampler(self.n_hypers, 2,
+                                             self.marginal_log_likelihood)
         self.chain_length = chain_length
         self.burned = False
         self.burnin_steps = burnin_steps
@@ -127,18 +129,11 @@ class DNGO(BaseModel):
 
         """
         start_time = time.time()
+        self.X = X
+        self.y = y
 
-        # Normalize inputs
-        if self.normalize_input:
-            self.X, self.X_mean, self.X_std = zero_mean_unit_var_normalization(X)
-        else:
-            self.X = X
-
-        # Normalize ouputs
-        if self.normalize_output:
-            self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(y)
-        else:
-            self.y = y
+        # Normalize inputs and outputs if the respective flags were set
+        self.normalize_data()
 
         self.y = self.y[:, None]
 
@@ -158,7 +153,7 @@ class DNGO(BaseModel):
 
         if TENSORBOARD_LOGGING:
             with SummaryWriter() as writer:
-                writer.add_graph(self.network, torch.rand(size=[batch_size, features],
+                writer.add_graph(self.network, torch.rand(size=[self.batch_size, features],
                                                           dtype=torch.float, requires_grad=False))
 
     # Start training
@@ -201,8 +196,6 @@ class DNGO(BaseModel):
 
         if do_optimize:
             if self.do_mcmc:
-                self.sampler = emcee.EnsembleSampler(self.n_hypers, 2,
-                                                     self.marginal_log_likelihood)
 
                 # Do a burn-in in the first iteration
                 if not self.burned:
@@ -313,19 +306,6 @@ class DNGO(BaseModel):
         nll = -self.marginal_log_likelihood(theta)
         return nll
 
-    def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
-        assert inputs.shape[0] == targets.shape[0], \
-            "The number of training points is not the same"
-        if shuffle:
-            indices = np.arange(inputs.shape[0])
-            self.rng.shuffle(indices)
-        for start_idx in range(0, inputs.shape[0] - batchsize + 1, batchsize):
-            if shuffle:
-                excerpt = indices[start_idx:start_idx + batchsize]
-            else:
-                excerpt = slice(start_idx, start_idx + batchsize)
-            yield inputs[excerpt], targets[excerpt]
-
     @BaseModel._check_shapes_predict
     def predict(self, X_test):
         r"""
@@ -380,24 +360,3 @@ class DNGO(BaseModel):
             v *= self.y_std ** 2
 
         return m, v
-
-    def get_incumbent(self):
-        """
-        Returns the best observed point and its function value
-
-        Returns
-        ----------
-        incumbent: ndarray (D,)
-            current incumbent
-        incumbent_value: ndarray (N,)
-            the observed value of the incumbent
-        """
-
-        inc, inc_value = super(DNGO, self).get_incumbent()
-        if self.normalize_input:
-            inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
-
-        if self.normalize_output:
-            inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
-
-        return inc, inc_value
