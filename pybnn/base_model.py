@@ -1,7 +1,7 @@
 import abc
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-
+import torch
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
@@ -117,15 +117,31 @@ class BaseModel(object):
             self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(self.y)
 
 
-    def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
+    def iterate_minibatches(self, inputs, targets, batchsize=None, shuffle=False, as_tensor=False):
+        """
+        Iterates over zip(inputs, targets) and generates minibatches. If batchsize is given, it uses the given
+        batch size without performing any checks. If batchsize is None (default), it uses either the internal batch_size
+        value or the size of inputs, whichever is appropriate.
+        """
         assert inputs.shape[0] == targets.shape[0], \
             "The number of training points is not the same"
+
+        # Check if we have enough points to create a minibatch, otherwise use all data points
+        if batchsize is None:
+            if inputs.shape[0] <= self.batch_size:
+                batchsize = self.X.shape[0]
+            else:
+                batchsize = self.batch_size
+
         indices = np.arange(inputs.shape[0])
         if shuffle:
             self.rng.shuffle(indices)
         for start_idx in range(0, inputs.shape[0] - batchsize + 1, batchsize):
             excerpt = indices[start_idx:start_idx + batchsize]
-            yield inputs[excerpt], targets[excerpt]
+            if as_tensor:
+                yield torch.Tensor(inputs[excerpt]), torch.Tensor(targets[excerpt])
+            else:
+                yield inputs[excerpt], targets[excerpt]
 
     def get_incumbent(self):
         """

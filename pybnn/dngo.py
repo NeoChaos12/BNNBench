@@ -17,7 +17,6 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 
 from pybnn.mlp import MLP
 
-
 TENSORBOARD_LOGGING = False
 
 
@@ -136,12 +135,6 @@ class DNGO(BaseModel):
 
         self.y = self.y[:, None]
 
-        # Check if we have enough points to create a minibatch otherwise use all data points
-        if self.X.shape[0] <= self.batch_size:
-            batch_size = self.X.shape[0]
-        else:
-            batch_size = self.batch_size
-
         # Create the neural network
         features = X.shape[1]
 
@@ -155,7 +148,7 @@ class DNGO(BaseModel):
                 writer.add_graph(self.network, torch.rand(size=[self.batch_size, features],
                                                           dtype=torch.float, requires_grad=False))
 
-    # Start training
+        # Start training
         lc = np.zeros([self.num_epochs])
         for epoch in range(self.num_epochs):
 
@@ -164,14 +157,9 @@ class DNGO(BaseModel):
             train_err = 0
             train_batches = 0
 
-            for batch in self.iterate_minibatches(self.X, self.y,
-                                                  batch_size, shuffle=True):
-                inputs = torch.Tensor(batch[0])
-                targets = torch.Tensor(batch[1])
-
+            for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
                 optimizer.zero_grad()
                 output = self.network(inputs)
-
 
                 loss = torch.nn.functional.mse_loss(output, targets)
                 loss.backward()
@@ -179,8 +167,6 @@ class DNGO(BaseModel):
 
                 train_err += loss
                 train_batches += 1
-
-                # print("Adding graph using tensor {}".format(inputs))
 
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
@@ -272,7 +258,7 @@ class DNGO(BaseModel):
         try:
             K_inv = np.linalg.inv(K)
         except np.linalg.linalg.LinAlgError:
-             K_inv = np.linalg.inv(K + np.random.rand(K.shape[0], K.shape[1]) * 1e-8)
+            K_inv = np.linalg.inv(K + np.random.rand(K.shape[0], K.shape[1]) * 1e-8)
 
         m = beta * np.dot(K_inv, self.Theta.T)
         m = np.dot(m, self.y)
