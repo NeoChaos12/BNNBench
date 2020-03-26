@@ -74,18 +74,18 @@ class DNGO(BaseModel):
             Random number generator
         """
 
-        if rng is None:
-            self.rng = np.random.RandomState(np.random.randint(0, 10000))
-        else:
-            self.rng = rng
+        super(DNGO, self).__init__(
+            batch_size=batch_size,
+            normalize_input=normalize_input,
+            normalize_output=normalize_output,
+            rng=rng
+        )
 
         self.X = None
         self.y = None
         self.network = None
         self.alpha = alpha
         self.beta = beta
-        self.normalize_input = normalize_input
-        self.normalize_output = normalize_output
 
         # MCMC hyperparameters
         self.do_mcmc = do_mcmc
@@ -102,7 +102,6 @@ class DNGO(BaseModel):
 
         # Network hyper parameters
         self.num_epochs = num_epochs
-        self.batch_size = batch_size
         self.init_learning_rate = learning_rate
 
         self.n_units = n_units

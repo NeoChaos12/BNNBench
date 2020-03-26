@@ -6,15 +6,22 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self):
+    def __init__(self, batch_size, normalize_input, normalize_output, rng):
         """
         Abstract base class for all models
         """
         self.X = None
         self.y = None
-        self.rng = None
-        self.normalize_input = False
-        self.normalize_output = False
+
+        self.batch_size = batch_size
+        self.normalize_input = normalize_input
+        self.normalize_output = normalize_output
+
+        if rng is None:
+            self.rng = np.random.RandomState(np.random.randint(0, 10000))
+        else:
+            self.rng = rng
+
 
     @abc.abstractmethod
     def train(self, X, y):
