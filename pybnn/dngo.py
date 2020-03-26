@@ -7,40 +7,25 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from torch.utils.tensorboard import SummaryWriter
+
 from scipy import optimize
 
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.bayesian_linear_regression import BayesianLinearRegression, Prior
 
+from pybnn.mlp import MLP
 
-class Net(nn.Module):
-    def __init__(self, n_inputs, n_units=[50, 50, 50]):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(n_inputs, n_units[0])
-        self.fc2 = nn.Linear(n_units[0], n_units[1])
-        self.fc3 = nn.Linear(n_units[1], n_units[2])
-        self.out = nn.Linear(n_units[2], 1)
 
-    def forward(self, x):
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
-
-        return self.out(x)
-
-    def basis_funcs(self, x):
-        x = torch.tanh(self.fc1(x))
-        x = torch.tanh(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
-        return x
+TENSORBOARD_LOGGING = False
 
 
 class DNGO(BaseModel):
 
     def __init__(self, batch_size=10, num_epochs=500,
                  learning_rate=0.01,
-                 adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
+                 adapt_epoch=5000, n_units=[50, 50, 50],
                  alpha=1.0, beta=1000, prior=None, do_mcmc=True,
                  n_hypers=20, chain_length=2000, burnin_steps=2000,
                  normalize_input=True, normalize_output=True, rng=None):
@@ -64,12 +49,8 @@ class DNGO(BaseModel):
             Initial learning rate for Adam
         adapt_epoch: int
             Defines after how many epochs the learning rate will be decayed by a factor 10
-        n_units_1: int
-            Number of units in layer 1
-        n_units_2: int
-            Number of units in layer 2
-        n_units_3: int
-            Number of units in layer 3
+        n_units: list
+            Defines a list containing the number of hidden units in each hidden layer of the network
         alpha: float
             Hyperparameter of the Bayesian linear regression
         beta: float
@@ -89,7 +70,7 @@ class DNGO(BaseModel):
             Zero mean unit variance normalization of the output values
         normalize_input : bool
             Zero mean unit variance normalization of the input values
-        rng: np.random.RandomState
+        rng: nfrom torch.utils.tensorboard import SummaryWriterp.random.RandomState
             Random number generator
         """
 
@@ -122,9 +103,7 @@ class DNGO(BaseModel):
         self.batch_size = batch_size
         self.init_learning_rate = learning_rate
 
-        self.n_units_1 = n_units_1
-        self.n_units_2 = n_units_2
-        self.n_units_3 = n_units_3
+        self.n_units = n_units
         self.adapt_epoch = adapt_epoch
         self.network = None
         self.models = []
@@ -172,12 +151,17 @@ class DNGO(BaseModel):
         # Create the neural network
         features = X.shape[1]
 
-        self.network = Net(n_inputs=features, n_units=[self.n_units_1, self.n_units_2, self.n_units_3])
+        self.network = MLP(n_inputs=features, n_units=self.n_units)
 
         optimizer = optim.Adam(self.network.parameters(),
                                lr=self.init_learning_rate)
 
-        # Start training
+        if TENSORBOARD_LOGGING:
+            with SummaryWriter() as writer:
+                writer.add_graph(self.network, torch.rand(size=[batch_size, features],
+                                                          dtype=torch.float, requires_grad=False))
+
+    # Start training
         lc = np.zeros([self.num_epochs])
         for epoch in range(self.num_epochs):
 
@@ -193,12 +177,16 @@ class DNGO(BaseModel):
 
                 optimizer.zero_grad()
                 output = self.network(inputs)
+
+
                 loss = torch.nn.functional.mse_loss(output, targets)
                 loss.backward()
                 optimizer.step()
 
                 train_err += loss
                 train_batches += 1
+
+                # print("Adding graph using tensor {}".format(inputs))
 
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
