@@ -5,6 +5,10 @@ import torch
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
+    normalize_input: bool
+    normalize_output: bool
+    rng: np.random.RandomState
+    batch_size: int
 
     def __init__(self, batch_size, normalize_input, normalize_output, rng):
         """
