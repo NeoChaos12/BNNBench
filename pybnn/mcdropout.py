@@ -1,4 +1,5 @@
 import logging
+import time
 import numpy as np
 from typing import Union, Iterable
 
@@ -14,10 +15,13 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 
 from pybnn.mlp import MLP
 
+TENSORBOARD_LOGGING = False
+
 DEFAULT_MLP_PARAMS = {
     "num_epochs": 500,
     "learning_rate": 0.01,
     "adapt_epoch": 5000,
+    "batch_size": 10,
     "n_units": [50, 50, 50],
     "input_dims": 1,
     "output_dims": 1,
@@ -28,7 +32,7 @@ class MCDropout(BaseModel):
     pdrop: Union[float, Iterable]
     mlp_params: dict
 
-    def __init__(self, mlp_params=None, pdrop=0.5, batch_size=10, normalize_input=True,
+    def __init__(self, mlp_params=None, pdrop=0.5, normalize_input=True,
                  normalize_output=True, rng=None):
         r"""
         Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with MC-Dropout.
@@ -91,12 +95,110 @@ class MCDropout(BaseModel):
         self.model.add_module("Output", n_units[-1], output_dims)
 
 
-    def fit(self, X, Y):
+    def fit(self, X, y):
         r"""
         Fit the model to the given dataset (X, Y).
 
-        :param X: (Iterable) Set of sampled inputs.
-        :param Y: (Iterable) Set of observed outputs.
+        Parameters
+        ----------
+
+        X: array-like
+            Set of sampled inputs.
+        y: array-like
+            Set of observed outputs.
         """
 
-        pass
+
+        start_time = time.time()
+        self.X = X
+        self.y = y
+
+        # Normalize inputs and outputs if the respective flags were set
+        self.normalize_data()
+
+        self.y = self.y[:, None]
+
+        # Create the neural network
+        # self._init_nn()
+
+        optimizer = optim.Adam(self.model.parameters(),
+                               lr=self.mlp_params["learning_rate"])
+
+        if TENSORBOARD_LOGGING:
+            with SummaryWriter() as writer:
+                writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
+                                                          dtype=torch.float, requires_grad=False))
+
+        # Start training
+        lc = np.zeros([self.mlp_params["num_epochs"]])
+        for epoch in range(self.mlp_params["num_epochs"]):
+
+            epoch_start_time = time.time()
+
+            train_err = 0
+            train_batches = 0
+
+            for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
+                optimizer.zero_grad()
+                output = self.model(inputs)
+
+                loss = torch.nn.functional.mse_loss(output, targets)
+                loss.backward()
+                optimizer.step()
+
+                train_err += loss
+                train_batches += 1
+
+            lc[epoch] = train_err / train_batches
+            logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
+            curtime = time.time()
+            epoch_time = curtime - epoch_start_time
+            total_time = curtime - start_time
+            logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
+            logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
+
+        return
+
+
+    def predict(self, X_test, nsamples=1000):
+        r"""
+        Returns the predictive mean and variance of the objective function at
+        the given test points.
+
+        Parameters
+        ----------
+        X_test: np.ndarray (N, D)
+            N input test points
+
+        nsamples: int
+            Number of samples to generate for each test point
+
+        Returns
+        ----------
+        np.array(N,)
+            predictive mean
+        np.array(N,)
+            predictive variance
+
+        """
+        # Normalize inputs
+        if self.normalize_input:
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
+
+        # Keep dropout on for MC-Dropout predictions
+        # Sample a number of predictions for each given point
+        # Generate mean and variance for each given point from sampled predictions
+
+        outputs = np.array([])
+
+        for i in range(nsamples):
+            output = self.model(X_)
+            np.vstack((outputs, output))
+
+        # calc_axes = [a for a in range(len(X_.shape) + 1)]
+        mean = np.mean(outputs, axis=0)
+        variance = np.var(outputs, axis=0)
+
+        return mean, variance
