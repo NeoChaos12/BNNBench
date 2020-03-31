@@ -32,7 +32,7 @@ class MCDropout(BaseModel):
     pdrop: Union[float, Iterable]
     mlp_params: dict
 
-    def __init__(self, mlp_params=None, pdrop=0.5, normalize_input=True,
+    def __init__(self, batch_size=10, mlp_params=None, pdrop=0.5, normalize_input=True,
                  normalize_output=True, rng=None):
         r"""
         Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with MC-Dropout.
@@ -51,7 +51,7 @@ class MCDropout(BaseModel):
         :param normalize_output:bool Switch to control if outputs should be normalized before processing.
         """
         super(MCDropout, self).__init__(
-            batch_size=batch_size,
+            batch_size=batch_size,  # TODO: Unify notation, batch_size should be part of mlp_params
             normalize_input=normalize_input,
             normalize_output=normalize_output,
             rng=rng
@@ -69,19 +69,19 @@ class MCDropout(BaseModel):
         input_dims = self.mlp_params["input_dims"]
         output_dims = self.mlp_params["output_dims"]
         n_units = np.array([input_dims])
-        np.append(n_units, self.mlp_params["n_units"])
+        n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
 
         try:
             # Check if pdrop is iterable
             iter(self.pdrop)
         except TypeError:
             # A single value of pdrop is to be used for all layers
-            pdrop = np.full_like(n_units, self.pdrop)
+            pdrop = np.full_like(n_units, fill_value=self.pdrop, dtype=np.float)
         else:
             # A list of proabilities for each layer was given
             pdrop = np.array(self.pdrop)
 
-        for layer_ctr in range(len(n_units) - 1):
+        for layer_ctr in range(n_units.shape[0] - 1):
             self.model.add_module(
                 "FC_{0}".format(layer_ctr),
                 nn.Linear(
@@ -92,7 +92,7 @@ class MCDropout(BaseModel):
             self.model.add_module("Dropout_{0}".format(layer_ctr), nn.Dropout(p=pdrop[layer_ctr]))
             self.model.add_module("Tanh_{0}".format(layer_ctr), nn.Tanh())
 
-        self.model.add_module("Output", n_units[-1], output_dims)
+        self.model.add_module("Output", nn.Linear(n_units[-1], output_dims))
 
 
     def fit(self, X, y):
@@ -130,6 +130,7 @@ class MCDropout(BaseModel):
                                                           dtype=torch.float, requires_grad=False))
 
         # Start training
+        self.model.train()
         lc = np.zeros([self.mlp_params["num_epochs"]])
         for epoch in range(self.mlp_params["num_epochs"]):
 
@@ -150,12 +151,13 @@ class MCDropout(BaseModel):
                 train_batches += 1
 
             lc[epoch] = train_err / train_batches
-            logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
             curtime = time.time()
             epoch_time = curtime - epoch_start_time
             total_time = curtime - start_time
-            logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
-            logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
+            if epoch % 100 == 0:
+                logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
+                logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
+                logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
 
         return
 
@@ -187,18 +189,31 @@ class MCDropout(BaseModel):
         else:
             X_ = X_test
 
+        X_ = torch.Tensor(X_)
+
         # Keep dropout on for MC-Dropout predictions
         # Sample a number of predictions for each given point
         # Generate mean and variance for each given point from sampled predictions
 
-        outputs = np.array([])
+        self.model.train()
 
-        for i in range(nsamples):
-            output = self.model(X_)
-            np.vstack((outputs, output))
+        if self.normalize_output:
+            Yt_hat = np.array(
+                [zero_mean_unit_var_denormalization(
+                    self.model(X_).data.cpu().numpy(),
+                    self.y_mean,
+                    self.y_std
+                ) for _ in range(nsamples)]).squeeze()
+        else:
+            Yt_hat = np.array([self.model(X_).data.cpu().numpy() for _ in range(nsamples)]).squeeze()
+
+        logging.debug("Generated final outputs array of shape {}".format(Yt_hat.shape))
 
         # calc_axes = [a for a in range(len(X_.shape) + 1)]
-        mean = np.mean(outputs, axis=0)
-        variance = np.var(outputs, axis=0)
+        mean = np.mean(Yt_hat, axis=0)
+        variance = np.var(Yt_hat, axis=0)
+
+        logging.debug("Generated final mean values of shape {}:\n{}\n\n".format(mean.shape, mean))
+        logging.debug("Generated final variance values of shape {}:\n{}\n\n".format(variance.shape, variance))
 
         return mean, variance
