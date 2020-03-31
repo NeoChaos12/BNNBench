@@ -110,7 +110,7 @@ class DNGO(BaseModel):
         self.hypers = None
 
     @BaseModel._check_shapes_train
-    def train(self, X, y, do_optimize=True):
+    def fit(self, X, y, do_optimize=True):
         """
         Trains the model on the provided data.
 
@@ -222,7 +222,7 @@ class DNGO(BaseModel):
             model = BayesianLinearRegression(alpha=sample[0],
                                              beta=sample[1],
                                              basis_func=None)
-            model.train(self.Theta, self.y[:, 0], do_optimize=False)
+            model.fit(self.Theta, self.y[:, 0], do_optimize=False)
 
             self.models.append(model)
 

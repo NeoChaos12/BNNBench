@@ -12,7 +12,7 @@ class TestBohamiann(unittest.TestCase):
         self.X = np.random.rand(10, 3)
         self.y = np.sinc(self.X * 10 - 5).sum(axis=1)
         self.model = Bohamiann(normalize_input=True, normalize_output=True, use_double_precision=True)
-        self.model.train(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
+        self.model.fit(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
 
     def test_predict(self):
         X_test = np.random.rand(10, self.X.shape[1])
@@ -65,28 +65,28 @@ class TestBohamiannSampler(unittest.TestCase):
         self.y = np.sinc(self.X * 10 - 5).sum(axis=1)
         self.model = Bohamiann(normalize_input=True, normalize_output=True,
                                use_double_precision=True, sampling_method="sgld")
-        self.model.train(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
+        self.model.fit(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
 
     def test_preconditioned_sgld(self):
         self.X = np.random.rand(10, 3)
         self.y = np.sinc(self.X * 10 - 5).sum(axis=1)
         self.model = Bohamiann(normalize_input=True, normalize_output=True,
                                use_double_precision=True, sampling_method="preconditioned_sgld")
-        self.model.train(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
+        self.model.fit(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
 
     def test_sghmc(self):
         self.X = np.random.rand(10, 3)
         self.y = np.sinc(self.X * 10 - 5).sum(axis=1)
         self.model = Bohamiann(normalize_input=True, normalize_output=True,
                                use_double_precision=True, sampling_method="sghmc")
-        self.model.train(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
+        self.model.fit(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
 
     def test_adaptive_sghmc(self):
         self.X = np.random.rand(10, 3)
         self.y = np.sinc(self.X * 10 - 5).sum(axis=1)
         self.model = Bohamiann(normalize_input=True, normalize_output=True,
                                use_double_precision=True, sampling_method="adaptive_sghmc")
-        self.model.train(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
+        self.model.fit(self.X, self.y, num_burn_in_steps=20, num_steps=100, keep_every=10)
 
 
 if __name__ == "__main__":

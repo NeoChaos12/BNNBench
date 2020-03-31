@@ -172,7 +172,7 @@ class BayesianLinearRegression(BaseModel):
         return -self.marginal_log_likelihood(theta)
 
     @BaseModel._check_shapes_train
-    def train(self, X, y, do_optimize=True):
+    def fit(self, X, y, do_optimize=True):
         """
         First optimized the hyperparameters if do_optimize is True and then computes
         the posterior distribution of the weights. See chapter 3.3 of the book by Bishop

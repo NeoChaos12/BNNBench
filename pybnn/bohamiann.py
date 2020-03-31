@@ -132,17 +132,17 @@ class Bohamiann(BaseModel):
         for parameter, sample in zip(self.model.parameters(), weights):
             parameter.copy_(torch.from_numpy(sample))
 
-    def train(self, x_train: np.ndarray, y_train: np.ndarray,
-              num_steps: int = 13000,
-              keep_every: int = 100,
-              num_burn_in_steps: int = 3000,
-              lr: float = 1e-2,
-              batch_size=20,
-              epsilon: float = 1e-10,
-              mdecay: float = 0.05,
-              continue_training: bool = False,
-              verbose: bool = False,
-              **kwargs):
+    def fit(self, x_train: np.ndarray, y_train: np.ndarray,
+            num_steps: int = 13000,
+            keep_every: int = 100,
+            num_burn_in_steps: int = 3000,
+            lr: float = 1e-2,
+            batch_size=20,
+            epsilon: float = 1e-10,
+            mdecay: float = 0.05,
+            continue_training: bool = False,
+            verbose: bool = False,
+            **kwargs):
 
         """
         Train a BNN using input datapoints `x_train` with corresponding targets `y_train`.
@@ -355,16 +355,16 @@ class Bohamiann(BaseModel):
             batch_size = x_train.shape[0]
 
         # burn-in
-        self.train(x_train, y_train, num_burn_in_steps=num_burn_in_steps, num_steps=num_burn_in_steps,
-                   lr=lr, epsilon=epsilon, mdecay=mdecay, verbose=verbose)
+        self.fit(x_train, y_train, num_burn_in_steps=num_burn_in_steps, num_steps=num_burn_in_steps,
+                 lr=lr, epsilon=epsilon, mdecay=mdecay, verbose=verbose)
 
         learning_curve_mse = []
         learning_curve_ll = []
         n_steps = []
         for i in range(num_steps // validate_every_n_steps):
-            self.train(x_train, y_train, num_burn_in_steps=0, num_steps=validate_every_n_steps,
-                       lr=lr, epsilon=epsilon, mdecay=mdecay, verbose=verbose, keep_every=keep_every,
-                       continue_training=True, batch_size=batch_size)
+            self.fit(x_train, y_train, num_burn_in_steps=0, num_steps=validate_every_n_steps,
+                     lr=lr, epsilon=epsilon, mdecay=mdecay, verbose=verbose, keep_every=keep_every,
+                     continue_training=True, batch_size=batch_size)
 
             mu, var = self.predict(x_valid)
 

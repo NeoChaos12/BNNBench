@@ -89,3 +89,14 @@ class MCDropout(BaseModel):
             self.model.add_module("Tanh_{0}".format(layer_ctr), nn.Tanh())
 
         self.model.add_module("Output", n_units[-1], output_dims)
+
+
+    def fit(self, X, Y):
+        r"""
+        Fit the model to the given dataset (X, Y).
+
+        :param X: (Iterable) Set of sampled inputs.
+        :param Y: (Iterable) Set of observed outputs.
+        """
+
+        pass

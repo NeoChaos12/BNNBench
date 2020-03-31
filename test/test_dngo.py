@@ -12,7 +12,7 @@ class TestDNGO(unittest.TestCase):
 
     def test_mcmc(self):
         model = DNGO(num_epochs=10, burnin_steps=10, chain_length=20, do_mcmc=True)
-        model.train(self.X, self.y)
+        model.fit(self.X, self.y)
 
         X_test = np.random.rand(10, self.X.shape[1])
 
@@ -25,7 +25,7 @@ class TestDNGO(unittest.TestCase):
 
     def test_ml(self):
         model = DNGO(num_epochs=10, do_mcmc=False)
-        model.train(self.X, self.y)
+        model.fit(self.X, self.y)
 
         X_test = np.random.rand(10, self.X.shape[1])
 
@@ -38,7 +38,7 @@ class TestDNGO(unittest.TestCase):
 
     def test_without_normalization(self):
         model = DNGO(num_epochs=10, do_mcmc=False, normalize_output=False, normalize_input=False)
-        model.train(self.X, self.y)
+        model.fit(self.X, self.y)
 
         X_test = np.random.rand(10, self.X.shape[1])
 
@@ -51,7 +51,7 @@ class TestDNGO(unittest.TestCase):
 
     def test_incumbent(self):
         model = DNGO(num_epochs=10, do_mcmc=False)
-        model.train(self.X, self.y)
+        model.fit(self.X, self.y)
 
         x_star, y_star = model.get_incumbent()
 

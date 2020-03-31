@@ -34,7 +34,7 @@ class TestMTBohamiann(unittest.TestCase):
 
         model = MultiTaskBohamiann(n_tasks=3)
 
-        model.train(X, y, num_steps=500, num_burn_in_steps=40, lr=1e-2)
+        model.fit(X, y, num_steps=500, num_burn_in_steps=40, lr=1e-2)
 
         X_test = np.random.rand(5, 1) * upper
         X_test = np.append(X_test, np.ones([X_test.shape[0], 1]), axis=1)

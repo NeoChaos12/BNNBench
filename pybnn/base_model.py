@@ -28,7 +28,7 @@ class BaseModel(object):
 
 
     @abc.abstractmethod
-    def train(self, X, y):
+    def fit(self, X, y):
         """
         Trains the model on the provided data.
 
@@ -57,7 +57,7 @@ class BaseModel(object):
         """
         X = np.append(self.X, X, axis=0)
         y = np.append(self.y, y, axis=0)
-        self.train(X, y)
+        self.fit(X, y)
 
     @abc.abstractmethod
     def predict(self, X_test):

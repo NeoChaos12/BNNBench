@@ -43,7 +43,7 @@ plt.show()
 
 
 model = DNGO(do_mcmc=False)
-model.train(x[:, None], y, do_optimize=True)
+model.fit(x[:, None], y, do_optimize=True)
 
 
 x_test = np.linspace(0, 1, 200)

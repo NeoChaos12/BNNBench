@@ -52,7 +52,7 @@ class TestLCNet(unittest.TestCase):
         print(X_train.shape)
         model = LCNet()
 
-        model.train(X_train, y_train, num_steps=500, num_burn_in_steps=40, lr=1e-2)
+        model.fit(X_train, y_train, num_steps=500, num_burn_in_steps=40, lr=1e-2)
 
         m, v = model.predict(X_test)
 
