@@ -24,31 +24,34 @@ DEFAULT_MLP_PARAMS = {
     "batch_size": 10,
     "n_units": [50, 50, 50],
     "input_dims": 1,
-    "output_dims": 1,
+    "output_dims": 2,           # Should be fixed to 2, corresponding to the mean and variance
 }
 
 
-class MCDropout(BaseModel):
-    pdrop: Union[float, Iterable]
+class DeepEnsemble(BaseModel):
+    nlearners: Union[float, Iterable]
     mlp_params: dict
 
-    def __init__(self, batch_size=10, mlp_params=None, pdrop=0.5, normalize_input=True,
+    def __init__(self, batch_size=10, mlp_params=None, nlearners=5, normalize_input=True,
                  normalize_output=True, rng=None):
         r"""
         Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with MC-Dropout.
 
-        :param mlp_params:dict A dictionary containing the parameters that define the MLP. If None
-        (default), the default parameter dictionary is used. Otherwise, the given values for the
-        keys in mlp_params are used along with the default values for unspecified keys.
+        Parameters
+        ----------
 
-        :param pdrop:Union[float, list] Either a single float value or a list of such values,
-        describing the probability of dropout used by all or specific layers of the network
-        respectively (including the input layer).
-
-        :param batch_size:int The size of each mini-batch used while training the NN.
-
-        :param normalize_input:bool Switch to control if inputs should be normalized before processing.
-        :param normalize_output:bool Switch to control if outputs should be normalized before processing.
+        mlp_params: dict
+            A dictionary containing the parameters that define the MLP. If None (default), the default parameter
+            dictionary is used. Otherwise, the given values for the keys in mlp_params are used along with the default
+            values for unspecified keys.
+        nlearners: int
+            Number of base learners (individual networks) to be trained for the ensemble.
+        batch_size: int
+            The size of each mini-batch used while training the NN.
+        normalize_input: bool
+            Switch to control if inputs should be normalized before processing.
+        normalize_output: bool
+            Switch to control if outputs should be normalized before processing.
         """
         super(MCDropout, self).__init__(
             batch_size=batch_size,  # TODO: Unify notation, batch_size should be part of mlp_params
@@ -60,44 +63,36 @@ class MCDropout(BaseModel):
         if mlp_params is not None:
             for key, value in mlp_params.items():
                 self.mlp_params[key] = value
-        self.pdrop = pdrop
-        self.model = None
-        self._init_nn()
+        self.nlearners = nlearners
+        self.models = []
+        self._init_model()
 
-    def _init_nn(self):
-        self.model = nn.Sequential()
-        input_dims = self.mlp_params["input_dims"]
-        output_dims = self.mlp_params["output_dims"]
-        n_units = np.array([input_dims])
-        n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
+    def _init_model(self):
+        for learner in range(self.nlearners):
+            model = nn.Sequential()
+            input_dims = self.mlp_params["input_dims"]
+            output_dims = self.mlp_params["output_dims"]
+            n_units = np.array([input_dims])
+            n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
 
-        try:
-            # Check if pdrop is iterable
-            iter(self.pdrop)
-        except TypeError:
-            # A single value of pdrop is to be used for all layers
-            pdrop = np.full(shape=(n_units.shape[0] - 1,), fill_value=self.pdrop, dtype=np.float)
-        else:
-            # A list of proabilities for each layer was given
-            pdrop = np.array(self.pdrop)
-
-        for layer_ctr in range(n_units.shape[0] - 1):
-            self.model.add_module(
-                "FC_{0}".format(layer_ctr),
-                nn.Linear(
-                    in_features=n_units[layer_ctr],
-                    out_features=n_units[layer_ctr + 1]
+            for layer_ctr in range(n_units.shape[0] - 1):
+                model.add_module(
+                    f"FC_{learner}_{layer_ctr}",
+                    nn.Linear(
+                        in_features=n_units[layer_ctr],
+                        out_features=n_units[layer_ctr + 1]
+                    )
                 )
-            )
-            self.model.add_module("Dropout_{0}".format(layer_ctr), nn.Dropout(p=pdrop[layer_ctr]))
-            self.model.add_module("Tanh_{0}".format(layer_ctr), nn.Tanh())
+                model.add_module(f"Tanh_{learner}_{layer_ctr}", nn.Tanh())
 
-        self.model.add_module("Output", nn.Linear(n_units[-1], output_dims))
+
+            model.add_module(f"Output_{learner}", nn.Linear(n_units[-1], output_dims))
+            self.models.append(model)
 
 
     def fit(self, X, y):
         r"""
-        Fit the model to the given dataset (X, Y).
+        Fit the model to the given dataset.
 
         Parameters
         ----------
@@ -109,7 +104,6 @@ class MCDropout(BaseModel):
         """
 
 
-        start_time = time.time()
         self.X = X
         self.y = y
 
@@ -118,32 +112,51 @@ class MCDropout(BaseModel):
 
         self.y = self.y[:, None]
 
-        # Create the neural network
-        # self._init_nn()
+        start_time = time.time()
 
-        optimizer = optim.Adam(self.model.parameters(),
+        # Iterate over base learners and train them
+        for learner in range(self.nlearners):
+            logging.info(f"Training learner {learner}.")
+            self._fit_network(self.models[learner])
+            logging.info(f"Finished training learner {learner}\n{'*' * 20}\n")
+
+        total_time = time.time() - start_time
+        logging.info(f"Finished fitting model. Total time: {total_time:.3f}s")
+
+
+    def _fit_network(self, network):
+        r"""
+        Fit an MLP neural network to the stored dataset.
+
+        Parameters
+        ----------
+
+        network: torch.Sequential
+            The network to be fit.
+        """
+        start_time = time.time()
+        optimizer = optim.Adam(network.parameters(),
                                lr=self.mlp_params["learning_rate"])
 
         if TENSORBOARD_LOGGING:
             with SummaryWriter() as writer:
-                writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
+                writer.add_graph(network, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
                                                           dtype=torch.float, requires_grad=False))
 
         # Start training
-        self.model.train()
+        network.train()
         lc = np.zeros([self.mlp_params["num_epochs"]])
         for epoch in range(self.mlp_params["num_epochs"]):
-
             epoch_start_time = time.time()
-
             train_err = 0
             train_batches = 0
 
             for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
                 optimizer.zero_grad()
-                output = self.model(inputs)
+                output = network(inputs)
 
-                loss = torch.nn.functional.mse_loss(output, targets)
+                # loss = torch.nn.functional.mse_loss(output, targets)
+                loss = GaussianNLL(output, targets)
                 loss.backward()
                 optimizer.step()
 
@@ -217,3 +230,37 @@ class MCDropout(BaseModel):
         logging.debug("Generated final variance values of shape {}:\n{}\n\n".format(variance.shape, variance))
 
         return mean, variance
+
+
+class GaussianNLL(nn.Module):
+    r"""
+    Defines the negative log likelihood loss function used for training neural networks that output a tensor
+    [mean, variance], assumed to be approximating the mean and variance of a Gaussian Distribution.
+    """
+
+    def __init__(self):
+        super(self, GaussianNLL).__init__()
+
+
+    def forward(self, outputs, targets):
+        r"""
+        Computes the Negative Log Likelihood loss for predicting Gaussian Mean and Variance.
+
+        Parameters
+        ----------
+        outputs: torch.Tensor
+            Assumed to contain (mean, variance) of the input.
+        targets: torch.Tensor
+            Assumed to contain the target regression values that the network should have predicted as means.
+        """
+
+        mean = outputs[:, 0]
+        variance = outputs[:, 1]
+
+        # Enforce positivity
+        #variance = torch.log(torch.ones_like(variance) + torch.exp(variance)) + 10e-6
+        variance = nn.functional.softplus(variance) + 10e-6
+
+        ret = torch.log(variance) / 2. + (targets - mean) ** 2 / 2 * variance
+
+        return ret

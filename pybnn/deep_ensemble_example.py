@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 import torch
 
-from pybnn import MCDropout
+from pybnn import DeepEnsemble
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 # plt.rc('text', usetex=True)
@@ -54,7 +54,7 @@ mlp_params = {
     "output_dims": 1,
 }
 
-model = MCDropout(batch_size=10, mlp_params=mlp_params, pdrop=[0.2, 0.5, 0.5], normalize_input=True,
+model = DeepEnsemble(batch_size=10, mlp_params=mlp_params, nlearners=5, normalize_input=True,
                  normalize_output=True, rng=None)
 model.fit(x[:, None], y)
 
