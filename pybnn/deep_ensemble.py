@@ -53,7 +53,7 @@ class DeepEnsemble(BaseModel):
         normalize_output: bool
             Switch to control if outputs should be normalized before processing.
         """
-        super(MCDropout, self).__init__(
+        super(DeepEnsemble, self).__init__(
             batch_size=batch_size,  # TODO: Unify notation, batch_size should be part of mlp_params
             normalize_input=normalize_input,
             normalize_output=normalize_output,
@@ -137,6 +137,7 @@ class DeepEnsemble(BaseModel):
         start_time = time.time()
         optimizer = optim.Adam(network.parameters(),
                                lr=self.mlp_params["learning_rate"])
+        criterion = GaussianNLL()
 
         if TENSORBOARD_LOGGING:
             with SummaryWriter() as writer:
@@ -156,7 +157,7 @@ class DeepEnsemble(BaseModel):
                 output = network(inputs)
 
                 # loss = torch.nn.functional.mse_loss(output, targets)
-                loss = GaussianNLL(output, targets)
+                loss = criterion(output, targets)
                 loss.backward()
                 optimizer.step()
 
@@ -175,7 +176,7 @@ class DeepEnsemble(BaseModel):
         return
 
 
-    def predict(self, X_test, nsamples=1000):
+    def predict(self, X_test):
         r"""
         Returns the predictive mean and variance of the objective function at
         the given test points.
@@ -184,9 +185,6 @@ class DeepEnsemble(BaseModel):
         ----------
         X_test: np.ndarray (N, D)
             N input test points
-
-        nsamples: int
-            Number of samples to generate for each test point
 
         Returns
         ----------
@@ -204,32 +202,22 @@ class DeepEnsemble(BaseModel):
 
         X_ = torch.Tensor(X_)
 
-        # Keep dropout on for MC-Dropout predictions
-        # Sample a number of predictions for each given point
-        # Generate mean and variance for each given point from sampled predictions
+        means = []
+        variances = []
 
-        self.model.train()
+        for model in self.models:
+            res = model(X_).view(-1, 2).data.cpu().numpy()
+            means.append(res[:, 0])
+            std = res[:, 1]
+            # Enforce positivity using softplus as here:
+            # https://stackoverflow.com/questions/44230635/avoid-overflow-with-softplus-function-in-python
+            std = np.log1p(np.exp(-np.abs(std))) + np.maximum(std, 0)
+            variances.append(std ** 2)
 
-        if self.normalize_output:
-            Yt_hat = np.array(
-                [zero_mean_unit_var_denormalization(
-                    self.model(X_).data.cpu().numpy(),
-                    self.y_mean,
-                    self.y_std
-                ) for _ in range(nsamples)]).squeeze()
-        else:
-            Yt_hat = np.array([self.model(X_).data.cpu().numpy() for _ in range(nsamples)]).squeeze()
+        mean = np.mean(means, axis=0)
+        std = np.sqrt(np.mean(variances + np.square(means), axis=0) - mean ** 2)
 
-        logging.debug("Generated final outputs array of shape {}".format(Yt_hat.shape))
-
-        # calc_axes = [a for a in range(len(X_.shape) + 1)]
-        mean = np.mean(Yt_hat, axis=0)
-        variance = np.var(Yt_hat, axis=0)
-
-        logging.debug("Generated final mean values of shape {}:\n{}\n\n".format(mean.shape, mean))
-        logging.debug("Generated final variance values of shape {}:\n{}\n\n".format(variance.shape, variance))
-
-        return mean, variance
+        return mean, std
 
 
 class GaussianNLL(nn.Module):
@@ -239,28 +227,14 @@ class GaussianNLL(nn.Module):
     """
 
     def __init__(self):
-        super(self, GaussianNLL).__init__()
+        super(GaussianNLL, self).__init__()
 
 
-    def forward(self, outputs, targets):
-        r"""
-        Computes the Negative Log Likelihood loss for predicting Gaussian Mean and Variance.
-
-        Parameters
-        ----------
-        outputs: torch.Tensor
-            Assumed to contain (mean, variance) of the input.
-        targets: torch.Tensor
-            Assumed to contain the target regression values that the network should have predicted as means.
-        """
-
-        mean = outputs[:, 0]
-        variance = outputs[:, 1]
-
-        # Enforce positivity
-        #variance = torch.log(torch.ones_like(variance) + torch.exp(variance)) + 10e-6
-        variance = nn.functional.softplus(variance) + 10e-6
-
-        ret = torch.log(variance) / 2. + (targets - mean) ** 2 / 2 * variance
-
-        return ret
+    def forward(self, input, target):
+        # Assuming network outputs std
+        std = input[:, 1].view(-1, 1)
+        std = nn.functional.softplus(std) + 10e-6
+        mu = input[:, 0].view(-1, 1)
+        n = torch.distributions.normal.Normal(mu, std)
+        loss = n.log_prob(target)
+        return -torch.mean(loss)
