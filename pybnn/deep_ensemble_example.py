@@ -56,8 +56,8 @@ mlp_params = {
     "output_dims": 2,
 }
 
-model = DeepEnsemble(batch_size=10, mlp_params=mlp_params, nlearners=5, normalize_input=False,
-                 normalize_output=False, rng=None)
+model = DeepEnsemble(batch_size=10, mlp_params=mlp_params, nlearners=5, normalize_input=True,
+                 normalize_output=True, rng=None)
 model.fit(x[:, None], y)
 
 

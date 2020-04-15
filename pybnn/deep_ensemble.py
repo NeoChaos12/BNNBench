@@ -217,6 +217,10 @@ class DeepEnsemble(BaseModel):
         mean = np.mean(means, axis=0)
         std = np.sqrt(np.mean(variances + np.square(means), axis=0) - mean ** 2)
 
+        if self.normalize_output:
+            mean = zero_mean_unit_var_denormalization(mean, self.y_mean, self.y_std)
+            std *= self.y_std
+
         return mean, std
 
 
