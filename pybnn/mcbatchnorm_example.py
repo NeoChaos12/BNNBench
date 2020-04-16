@@ -40,16 +40,16 @@ plt.show()
 
 mlp_params = {
     "num_epochs": 500,
-    "learning_rate": 0.01,
+    "learning_rate": 0.1,
     "adapt_epoch": 5000,
-    "batch_size": 10,
+    "batch_size": 32,
     "n_units": [50, 50, 50],
     "input_dims": 1,
     "output_dims": 1,
 }
 
 model = MCBatchNorm(batch_size=10, mlp_params=mlp_params, normalize_input=True,
-                 normalize_output=True, rng=None, debug=True, learn_affines=True, use_reg_bn=False, bn_momentum=0.1)
+                    normalize_output=True, rng=None, debug=True, learn_affines=True, running_stats=True, bn_momentum=0.1)
 model.fit(x[:, None], y)
 
 

@@ -32,7 +32,7 @@ class MCBatchNorm(BaseModel):
     mlp_params: dict
 
     def __init__(self, batch_size=10, mlp_params=None, normalize_input=True,
-                 normalize_output=True, rng=None, debug=False, learn_affines=True, use_reg_bn=False, bn_momentum=0.1):
+                 normalize_output=True, rng=None, debug=False, learn_affines=True, running_stats=True, bn_momentum=0.1):
         r"""
         Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with MC-Dropout.
 
@@ -56,8 +56,8 @@ class MCBatchNorm(BaseModel):
         learn_affines bool
             Whether or not to make the affine transformation parameters of batch normalization learnabe. True by
             default.
-        use_reg_bn bool
-            Toggle usage of regular Batch Normalization instead of the Monte Carlo variant. False by default.
+        running_stats bool
+            Toggle tracking running stats across batches in BatchNorm layers. True by default.
         bn_momentum float
             Momentum value used by regular Batch Normalization for tracking running mean and std of batches. Set to 0
             to use simple mean and std instead of exponential. Default is 0.1.
@@ -76,11 +76,11 @@ class MCBatchNorm(BaseModel):
                     _ = self.mlp_params[key]
                     self.mlp_params[key] = value
                 except KeyError:
-                    logger.error(f"Key value {key} is not an accepted parameter for MLP. Skipped. "
+                    logger.error(f"Key value {key} is not an accepted parameter for MLP. Skipped.\n"
                                  f"Valid keys are: {DEFAULT_MLP_PARAMS.keys()}")
         self.model = None
         self.learn_affines = learn_affines
-        self.use_reg_bn = use_reg_bn
+        self.running_stats = running_stats
         self.bn_momentum = bn_momentum
         self._init_nn()
 
@@ -91,9 +91,11 @@ class MCBatchNorm(BaseModel):
         n_units = np.array([input_dims])
         n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
 
-        logger.debug(f"Generating NN for MCBatchNorm using parameters:\nuse regular BatchNorm:{self.use_reg_bn}"
+        logger.debug(f"Generating NN for MCBatchNorm using parameters:\nTrack running stats:{self.running_stats}"
                      f"\nMomentum:{self.bn_momentum}\nlearn affines: {self.learn_affines}"
         )
+
+        self.batchnorm_layers = []
 
         for layer_ctr in range(n_units.shape[0] - 1):
             in_features = n_units[layer_ctr]
@@ -103,20 +105,26 @@ class MCBatchNorm(BaseModel):
                 "FC_{0}".format(layer_ctr),
                 nn.Linear(
                     in_features=in_features,
-                    out_features=out_features
+                    out_features=out_features,
+                    bias=False  # In MCBN, adding a bias here is redundant
                 )
             )
             # self.model.add_module("Dropout_{0}".format(layer_ctr), nn.Dropout(p=pdrop[layer_ctr]))
 
-            self.model.add_module(
-                f"BatchNorm_{layer_ctr}",
+            self.batchnorm_layers.append(
                 nn.BatchNorm1d(
                     num_features=out_features,
                     eps=1e-5,
                     momentum=self.bn_momentum,
                     affine=self.learn_affines,
-                    track_running_stats=self.use_reg_bn  # Track running stats only if using MC BatchNorm
-                ))
+                    track_running_stats=self.running_stats
+                )
+            )
+
+            self.model.add_module(
+                f"BatchNorm_{layer_ctr}",
+                self.batchnorm_layers[-1]
+            )
             self.model.add_module("Tanh_{0}".format(layer_ctr), nn.Tanh())
 
         self.model.add_module("Output", nn.Linear(n_units[-1], output_dims))
@@ -208,28 +216,42 @@ class MCBatchNorm(BaseModel):
 
         """
 
-        self.model.eval()
-
         # Normalize inputs
         if self.normalize_input:
             X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
         else:
             X_ = X_test
 
-        X_ = torch.Tensor(X_)
-
         # Sample a number of predictions for each given point
         # Generate mean and variance for each given point from sampled predictions
 
+        X_ = torch.Tensor(X_)
+        Yt_hat = []
+
+        # We want to generate 'nsamples' minibatches
+        for ctr in range(nsamples * self.batch_size // self.X.shape[0]):
+            for batch_inputs, _ in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
+                # Reset all previous running statistics for all BatchNorm layers
+                [layer.reset_running_stats() for layer in self.batchnorm_layers]
+
+                # Perform a forward pass on one mini-batch in training mode in order to update running statistics with
+                # only one mini-batch's mean and variance
+                self.model.train()
+                _ = self.model(batch_inputs)
+
+                # Switch to evaluation mode and perform a forward pass on the points to be evaluated, which will use
+                # the running statistics to perform batch normalization
+                self.model.eval()
+                Yt_hat.append(self.model(X_).data.cpu().numpy())
+
+        logger.debug(f"Generated outputs list of length {len(Yt_hat)}")
+
         if self.normalize_output:
-            Yt_hat = np.array(
-                [zero_mean_unit_var_denormalization(
-                    self.model(X_).data.cpu().numpy(),
-                    self.y_mean,
-                    self.y_std
-                ) for _ in range(nsamples)]).squeeze()
+            from functools import partial
+            denorm = partial(zero_mean_unit_var_denormalization, mean=self.y_mean, std=self.y_std)
+            Yt_hat = np.array(list(map(denorm, Yt_hat))).squeeze()
         else:
-            Yt_hat = np.array([self.model(X_).data.cpu().numpy() for _ in range(nsamples)]).squeeze()
+            Yt_hat = np.array(Yt_hat).squeeze()
 
         logger.debug(f"Generated final outputs array of shape {Yt_hat.shape}")
 
