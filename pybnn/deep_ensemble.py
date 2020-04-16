@@ -62,7 +62,12 @@ class DeepEnsemble(BaseModel):
         self.mlp_params = DEFAULT_MLP_PARAMS
         if mlp_params is not None:
             for key, value in mlp_params.items():
-                self.mlp_params[key] = value
+                try:
+                    _ = self.mlp_params[key]
+                    self.mlp_params[key] = value
+                except KeyError:
+                    logging.error(f"Key value {key} is not an accepted parameter for MLP. Skipped. "
+                                 f"Valid keys are: {DEFAULT_MLP_PARAMS.keys()}")
         self.nlearners = nlearners
         self.models = []
         self._init_model()
