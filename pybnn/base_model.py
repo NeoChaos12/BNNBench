@@ -21,6 +21,8 @@ class BaseModel(object):
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
 
+        # TODO: Update all sub-models to use rng properly
+        # TODO: Include check for rng specified as int
         if rng is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
