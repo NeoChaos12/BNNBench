@@ -11,8 +11,8 @@ from torch.utils.tensorboard import SummaryWriter
 
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-
 from pybnn.mlp import MLP
+
 from functools import partial
 
 TAG_TRAIN_LOSS = "Loss/Train"
@@ -29,14 +29,14 @@ DEFAULT_MLP_PARAMS = {
 }
 
 
-class MCBatchNorm(BaseModel):
+class BatchNorm(BaseModel):
     mlp_params: dict
 
     def __init__(self, batch_size=10, mlp_params=None, normalize_input=True,
                  normalize_output=True, rng=None, debug=False, tb_logging=False, tb_log_dir="runs/", tb_exp_name="exp",
                  learn_affines=True, running_stats=True, bn_momentum=0.1):
         r"""
-        Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with MC-BatchNorm.
+        Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with Batchnorm layers.
 
         Parameters
         ----------
@@ -70,7 +70,7 @@ class MCBatchNorm(BaseModel):
             Momentum value used by regular Batch Normalization for tracking running mean and std of batches. Set to 0
             to use simple mean and std instead of exponential. Default is 0.1.
         """
-        super(MCBatchNorm, self).__init__(
+        super(BatchNorm, self).__init__(
             batch_size=batch_size,  # TODO: Unify notation, batch_size should be part of mlp_params
             normalize_input=normalize_input,
             normalize_output=normalize_output,
@@ -95,7 +95,6 @@ class MCBatchNorm(BaseModel):
             self.log_plots = True    # Attempt to log plots of training progress results
             self.tb_writer = SummaryWriter(tb_log_dir + tb_exp_name)
             self.log_train_loss = partial(self.tb_writer.add_scalar, tag=TAG_TRAIN_LOSS)
-            self.log_train_progress = partial(self.tb_writer.add_figure, tag=TAG_TRAIN_FIG)
         else:
             self.log_plots = False
         self._init_nn()
@@ -107,7 +106,7 @@ class MCBatchNorm(BaseModel):
         n_units = np.array([input_dims])
         n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
 
-        logger.debug(f"Generating NN for MCBatchNorm using parameters:\nTrack running stats:{self.running_stats}"
+        logger.debug(f"Generating NN for BatchNorm using parameters:\nTrack running stats:{self.running_stats}"
                      f"\nMomentum:{self.bn_momentum}\nlearn affines: {self.learn_affines}"
         )
 
@@ -122,7 +121,7 @@ class MCBatchNorm(BaseModel):
                 nn.Linear(
                     in_features=in_features,
                     out_features=out_features,
-                    bias=False  # In MCBN, adding a bias here is redundant
+                    bias=True  # TODO: Verify if BatchNorm makes the bias term redundant
                 )
             )
             # self.model.add_module("Dropout_{0}".format(layer_ctr), nn.Dropout(p=pdrop[layer_ctr]))
@@ -204,35 +203,31 @@ class MCBatchNorm(BaseModel):
             total_time = curtime - start_time
 
             if self.tb_logging:
+                # self.log_train_loss(scalar_value=lc[-1], global_step=(epoch + 1) * self.batch_size)
                 self.log_train_loss(scalar_value=lc[epoch], global_step=epoch + 1)
 
             if epoch % 100 == 99:
                 logger.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
                 logger.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
                 logger.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
-
                 if self.log_plots:
                     try:
                         plotter = kwargs["plotter"]
-                        self.log_train_progress(figure=plotter(self.predict), global_step=epoch + 1)
+                        self.tb_writer.add_figure(tag=TAG_TRAIN_FIG, figure=plotter(self.predict), global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
                         self.log_plots = False
 
         return
 
-    def predict(self, X_test, nsamples=1000):
+    def predict(self, X_test, **kwargs):
         r"""
-        Returns the predictive mean and variance of the objective function at
-        the given test points.
+        Returns the predicted output for a trained network on the given test set.
 
         Parameters
         ----------
         X_test: np.ndarray (N, D)
             N input test points
-
-        nsamples: int
-            Number of samples to generate for each test point
 
         Returns
         ----------
@@ -253,39 +248,12 @@ class MCBatchNorm(BaseModel):
         # Generate mean and variance for each given point from sampled predictions
 
         X_ = torch.Tensor(X_)
-        Yt_hat = []
-
-        # We want to generate 'nsamples' minibatches
-        for ctr in range(nsamples * self.batch_size // self.X.shape[0]):
-            for batch_inputs, _ in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
-                # Reset all previous running statistics for all BatchNorm layers
-                [layer.reset_running_stats() for layer in self.batchnorm_layers]
-
-                # Perform a forward pass on one mini-batch in training mode in order to update running statistics with
-                # only one mini-batch's mean and variance
-                self.model.train()
-                _ = self.model(batch_inputs)
-
-                # Switch to evaluation mode and perform a forward pass on the points to be evaluated, which will use
-                # the running statistics to perform batch normalization
-                self.model.eval()
-                Yt_hat.append(self.model(X_).data.cpu().numpy())
-
-        logger.debug(f"Generated outputs list of length {len(Yt_hat)}")
+        self.model.eval()
+        Yt_hat = self.model(X_).data.cpu().numpy()
 
         if self.normalize_output:
-            from functools import partial
-            denorm = partial(zero_mean_unit_var_denormalization, mean=self.y_mean, std=self.y_std)
-            Yt_hat = np.array(list(map(denorm, Yt_hat))).squeeze()
-        else:
-            Yt_hat = np.array(Yt_hat).squeeze()
+            Yt_hat = zero_mean_unit_var_denormalization(Yt_hat, self.y_mean, self.y_std)
 
         logger.debug(f"Generated final outputs array of shape {Yt_hat.shape}")
 
-        mean = np.mean(Yt_hat, axis=0)
-        variance = np.var(Yt_hat, axis=0)
-
-        logger.debug(f"Generated final mean values of shape {mean.shape}")
-        logger.debug(f"Generated final variance values of shape {variance.shape}")
-
-        return mean, variance
+        return Yt_hat

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 import torch
 
-from pybnn import MCBatchNorm
+from pybnn import BatchNorm
 
 # plt.rc('text', usetex=True)
 
@@ -18,45 +18,45 @@ plt.rcParams['text.latex.preamble'] = [r"\usepackage{amsmath}"]
 
 
 
-def sinc(x):
+def f(x):
     return np.sinc(x * 10 - 5)
 
-def tanh_p_sinc(x):
-    return np.tanh(x * 5) + np.sinc(x * 10 - 5)
+# def f(x):
+#     return np.tanh(x * 5) + np.sinc(x * 10 - 5)
 
-objective_func = sinc
+
 
 rng = np.random.RandomState(42)
 
 TRAIN_SET_SIZE = 100
-BATCH_SIZE = 10
+BATCH_SIZE = 64
 
 x = rng.rand(TRAIN_SET_SIZE)
-y = objective_func(x)
+y = f(x)
 
 grid = np.linspace(0, 1, 100)
-fvals = objective_func(grid)
+fvals = f(grid)
 
 plt.plot(grid, fvals, "k--")
 plt.plot(x, y, "ro")
 plt.grid()
 plt.xlim(0, 1)
 
-# plt.show()
+plt.show()
 
 
 def final_plotter(predict):
     fig, ax = plt.subplots(1, 1, squeeze=True)
 
-    m, v = predict(grid[:, None])
+    m = predict(grid[:, None])
 
     ax.plot(x, y, "ro")
     ax.grid()
     ax.plot(grid, fvals, "k--")
     ax.plot(grid, m, "blue")
-    ax.fill_between(grid, m + np.sqrt(v), m - np.sqrt(v), color="orange", alpha=0.8)
-    ax.fill_between(grid, m + 2 * np.sqrt(v), m - 2 * np.sqrt(v), color="orange", alpha=0.6)
-    ax.fill_between(grid, m + 3 * np.sqrt(v), m - 3 * np.sqrt(v), color="orange", alpha=0.4)
+    # ax.fill_between(grid, m + np.sqrt(v), m - np.sqrt(v), color="orange", alpha=0.8)
+    # ax.fill_between(grid, m + 2 * np.sqrt(v), m - 2 * np.sqrt(v), color="orange", alpha=0.6)
+    # ax.fill_between(grid, m + 3 * np.sqrt(v), m - 3 * np.sqrt(v), color="orange", alpha=0.4)
     ax.set_xlim(0, 1)
     ax.set_xlabel(r"Input $x$")
     ax.set_ylabel(r"Output $f(x)$")
@@ -77,7 +77,7 @@ exp_params = {
     "rng": None,
     "debug": True,
     "tb_logging": True,
-    "tb_log_dir": f"runs/mcbatchnorm__{objective_func.__name__}/",
+    "tb_log_dir": "runs/batchnorm__tanh/",
     # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
     "tb_exp_name": f"lr {mlp_params['learning_rate']} epochs {mlp_params['num_epochs']} "
                    f"minba {mlp_params['batch_size']} hu {' '.join([str(x) for x in mlp_params['n_units']])} "
@@ -90,11 +90,11 @@ model_params = {
     "bn_momentum": 0.1
 }
 
-model = MCBatchNorm(batch_size=BATCH_SIZE, mlp_params=mlp_params, **exp_params, **model_params)
+model = BatchNorm(batch_size=BATCH_SIZE, mlp_params=mlp_params, **exp_params, **model_params)
 
 model.fit(x[:, None], y, plotter=final_plotter)
 
 fig = final_plotter(predict=model.predict)
 # # plt.show()
-# fig.draw()
-# fig.show()
+fig.draw()
+fig.show()
