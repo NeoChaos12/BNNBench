@@ -37,7 +37,7 @@ BATCH_SIZE = 20
 x = rng.rand(TRAIN_SET_SIZE)
 y = objective_func(x)
 
-grid = np.linspace(0, 1, 100)
+grid = np.linspace(0, 1, 1000)
 fvals = objective_func(grid)
 
 plt.plot(grid, fvals, "k--")
@@ -87,7 +87,6 @@ exp_params = {
                    f"trainsize {TRAIN_SET_SIZE} {np.random.randint(0, 1e6)}",
 }
 
-print(f"Generating experiment: {exp_params['tb_exp_name']}")
 
 model_params = {
     "learn_affines": True,
@@ -98,3 +97,4 @@ model_params = {
 model = MCBatchNorm(batch_size=BATCH_SIZE, mlp_params=mlp_params, **exp_params, **model_params)
 
 model.fit(x[:, None], y, plotter=final_plotter)
+print(f"Generating experiment: {exp_params['tb_log_dir'] + exp_params['tb_exp_name']}")

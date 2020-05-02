@@ -93,9 +93,7 @@ class MCBatchNorm(BaseModel):
         self.tb_logging = tb_logging
         if self.tb_logging:
             self.log_plots = True    # Attempt to log plots of training progress results
-            self.tb_writer = SummaryWriter(tb_log_dir + tb_exp_name)
-            self.log_train_loss = partial(self.tb_writer.add_scalar, tag=TAG_TRAIN_LOSS)
-            self.log_train_progress = partial(self.tb_writer.add_figure, tag=TAG_TRAIN_FIG)
+            self.tb_writer = partial(SummaryWriter, log_dir=tb_log_dir + tb_exp_name)
         else:
             self.log_plots = False
         self._init_nn()
@@ -164,8 +162,9 @@ class MCBatchNorm(BaseModel):
                                lr=self.mlp_params["learning_rate"])
 
         if self.tb_logging:
-            self.tb_writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
-                dtype=torch.float, requires_grad=False))
+            with self.tb_writer() as writer:
+                writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
+                    dtype=torch.float, requires_grad=False))
 
         # Start training
         self.model.train()
@@ -194,7 +193,8 @@ class MCBatchNorm(BaseModel):
             total_time = curtime - start_time
 
             if self.tb_logging:
-                self.log_train_loss(scalar_value=lc[epoch], global_step=epoch + 1)
+                with self.tb_writer() as writer:
+                    writer.add_scalar(tag=TAG_TRAIN_LOSS ,scalar_value=lc[epoch], global_step=epoch + 1)
 
             if epoch % 100 == 99:
                 logger.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
@@ -204,7 +204,9 @@ class MCBatchNorm(BaseModel):
                 if self.log_plots:
                     try:
                         plotter = kwargs["plotter"]
-                        self.log_train_progress(figure=plotter(self.predict), global_step=epoch + 1)
+                        logger.debug(f"Saving performance plot at training epoch {epoch + 1}")
+                        with self.tb_writer() as writer:
+                            writer.add_figure(tag=TAG_TRAIN_FIG, figure=plotter(self.predict), global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
                         self.log_plots = False
@@ -279,3 +281,10 @@ class MCBatchNorm(BaseModel):
         logger.debug(f"Generated final variance values of shape {variance.shape}")
 
         return mean, variance
+
+
+    # def __del__(self):
+    #     if self.tb_logging:
+    #         self.tb_writer.flush()
+    #         self.tb_writer.close()
+    #     super()
