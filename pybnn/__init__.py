@@ -8,4 +8,5 @@ from pybnn.batchnorm import BatchNorm
 from pybnn.deep_ensemble import DeepEnsemble
 
 import logging
+
 logging.getLogger(__name__).addHandler(logging.StreamHandler())

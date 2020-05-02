@@ -10,10 +10,8 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from pybnn.base_model import BaseModel
-from pybnn.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-
-from pybnn.mlp import MLP
+from collections import OrderedDict
 
 TENSORBOARD_LOGGING = False
 
@@ -74,24 +72,21 @@ class DeepEnsemble(BaseModel):
 
     def _init_model(self):
         for learner in range(self.nlearners):
-            model = nn.Sequential()
             input_dims = self.mlp_params["input_dims"]
             output_dims = self.mlp_params["output_dims"]
             n_units = np.array([input_dims])
             n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
 
+            layers = []
             for layer_ctr in range(n_units.shape[0] - 1):
-                model.add_module(
-                    f"FC_{learner}_{layer_ctr}",
-                    nn.Linear(
-                        in_features=n_units[layer_ctr],
-                        out_features=n_units[layer_ctr + 1]
-                    )
-                )
-                model.add_module(f"Tanh_{learner}_{layer_ctr}", nn.Tanh())
+                layers.append((f"FC_{learner}_{layer_ctr}", nn.Linear(
+                    in_features=n_units[layer_ctr],
+                    out_features=n_units[layer_ctr + 1]
+                )))
+                layers.append((f"Tanh_{learner}_{layer_ctr}", nn.Tanh()))
 
-
-            model.add_module(f"Output_{learner}", nn.Linear(n_units[-1], output_dims))
+            layers.append((f"Output_{learner}", nn.Linear(n_units[-1], output_dims)))
+            model = nn.Sequential(OrderedDict(layers))
             self.models.append(model)
 
 

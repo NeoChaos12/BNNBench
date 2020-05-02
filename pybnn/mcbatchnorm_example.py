@@ -24,12 +24,15 @@ def sinc(x):
 def tanh_p_sinc(x):
     return np.tanh(x * 5) + np.sinc(x * 10 - 5)
 
-objective_func = sinc
+def sinc_m_tanh(x):
+    return np.sinc(x * 10 - 5) - np.tanh(x * 5)
+
+objective_func = sinc_m_tanh
 
 rng = np.random.RandomState(42)
 
-TRAIN_SET_SIZE = 100
-BATCH_SIZE = 10
+TRAIN_SET_SIZE = 200
+BATCH_SIZE = 20
 
 x = rng.rand(TRAIN_SET_SIZE)
 y = objective_func(x)

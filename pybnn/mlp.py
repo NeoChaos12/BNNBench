@@ -1,24 +1,25 @@
 import torch
 import torch.nn as nn
-
+from pybnn.config import defaultMlpParams
 
 
 class MLP(nn.Module):
-    def __init__(self, n_inputs, n_units=[50, 50, 50], n_outputs=1):
-        super(MLP, self).__init__()
+    def __init__(self, input_dims=defaultMlpParams['input_dims'], hidden_layer_sizes=defaultMlpParams['hidden_layer_sizes'],
+                 output_dims=defaultMlpParams['output_dims'], **kwargs):
+        super(MLP, self).__init__(**kwargs)
 
-        self.layer_sizes = [n_inputs]
+        self.layer_sizes = [input_dims]
         self.fclayers = nn.ModuleList()
 
-        for layer_size in n_units:
+        for layer_size in hidden_layer_sizes:
             # print("Connecting layer of sizes {}->{}".format(self.layer_sizes[-1], layer_size))
             layer = nn.Linear(self.layer_sizes[-1], layer_size)
             self.layer_sizes.append(layer_size)
             self.fclayers.append(layer)
 
         # print("Connecting output layer of sizes {}->{}".format(self.layer_sizes[-1], n_outputs))
-        self.out = nn.Linear(self.layer_sizes[-1], n_outputs)
-        self.layer_sizes.append(n_outputs)
+        self.out = nn.Linear(self.layer_sizes[-1], output_dims)
+        self.layer_sizes.append(output_dims)
         self.fclayers.append(self.out)
 
         # self.fc1 = nn.Linear(n_inputs, n_units[0])

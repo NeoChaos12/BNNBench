@@ -2,31 +2,72 @@ import abc
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 import torch
+from pybnn.config import defaultMlpParams, defaultModelParams
+import logging
+
+logger = logging.getLogger(__name__)
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
     normalize_input: bool
     normalize_output: bool
-    rng: np.random.RandomState
     batch_size: int
 
-    def __init__(self, batch_size, normalize_input, normalize_output, rng):
+    def __init__(self,
+                 num_epochs=defaultModelParams['num_epochs'],
+                 batch_size=defaultModelParams['batch_size'],
+                 learning_rate=defaultModelParams['learning_rate'],
+                 normalize_input=defaultModelParams['normalize_input'],
+                 normalize_output=defaultModelParams['normalize_output'],
+                 rng=None, **kwargs):
         """
-        Abstract base class for all models
+        Abstract base class for all models.
+
+        Parameters
+        ----------
+        num_epochs: int
+            Number of epochs that the model trains its MLP for.
+        batch_size: int
+            Size of each minibatch used for MLP training.
+        learning_rate: float
+            Learning rate used for MLP training.
+        normalize_input: bool
+            Whether or not the inputs to the MLP should be normalized first before use for training. Default is True.
+        normalize_output: bool
+            Whether or not the outputs to the MLP should be normalized first before use for training. Default is True.
+        rng: None or int or np.random.RandomState
+            The random number generator to be used for all stochastic operations that rely on np.random.
         """
+
         self.X = None
         self.y = None
 
+        # TODO: Create separate MLP and CNN versions as sub-classes, also possibly ABCs.
+        self.num_epochs = num_epochs
         self.batch_size = batch_size
+        self.learning_rate = learning_rate
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
 
         # TODO: Update all sub-models to use rng properly
-        # TODO: Include check for rng specified as int
         if rng is None:
-            self.rng = np.random.RandomState(np.random.randint(0, 10000))
+            self.rng = np.random.RandomState(np.random.randint(0, 1e6))
+        elif type(rng) is int:
+            self.rng = np.random.RandomState(rng)
         else:
             self.rng = rng
+        if kwargs:
+            logger.info("Ignoring unknown keyword arguments:\n%s" %
+                        '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
+
+
+    @abc.abstractmethod
+    def _init_nn(self):
+        """
+        Called only through __init__. Used to initialize the neural network specific to this model using the parameters
+        initialized in __init__.
+        """
+        pass
 
 
     @abc.abstractmethod

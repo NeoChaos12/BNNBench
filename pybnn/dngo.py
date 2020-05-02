@@ -138,7 +138,7 @@ class DNGO(BaseModel):
         # Create the neural network
         features = X.shape[1]
 
-        self.network = MLP(n_inputs=features, n_units=self.n_units)
+        self.network = MLP(input_dims=features, hidden_layer_sizes=self.n_units)
 
         optimizer = optim.Adam(self.network.parameters(),
                                lr=self.init_learning_rate)
