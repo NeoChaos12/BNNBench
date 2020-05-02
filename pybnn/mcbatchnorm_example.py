@@ -98,8 +98,3 @@ model_params = {
 model = MCBatchNorm(batch_size=BATCH_SIZE, mlp_params=mlp_params, **exp_params, **model_params)
 
 model.fit(x[:, None], y, plotter=final_plotter)
-
-fig = final_plotter(predict=model.predict)
-# # plt.show()
-# fig.draw()
-# fig.show()

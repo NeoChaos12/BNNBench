@@ -41,32 +41,32 @@ class MCBatchNorm(BaseModel):
         Parameters
         ----------
 
-        mlp_params dict
+        mlp_params: dict
             A dictionary containing the parameters that define the MLP. If None
             (default), the default parameter dictionary is used. Otherwise, the given values for the
             keys in mlp_params are used along with the default values for unspecified keys.
-        batch_size int
+        batch_size: int
             The size of each mini-batch used while training the NN.
-        normalize_input bool
+        normalize_input: bool
             Switch to control if inputs should be normalized before processing.
-        normalize_output bool
+        normalize_output: bool
             Switch to control if outputs should be normalized before processing.
-        rng int or numpy.random.RandomState
+        rng: int or numpy.random.RandomState
             Random number generator seed or state, useful for generating repeatable results.
-        debug bool
+        debug: bool
             Turn on debug mode logging. False by default.
-        tb_logging bool
+        tb_logging: bool
             Turn on Tensorboard logging. False by default.
-        tb_exp_name String
+        tb_exp_name: String
             Name of the folder containing tensorboard logs, with a '/' at the end.
-        tb_exp_name String
+        tb_exp_name: String
             Name of the current experiment run.
-        learn_affines bool
+        learn_affines: bool
             Whether or not to make the affine transformation parameters of batch normalization learnabe. True by
             default.
-        running_stats bool
+        running_stats: bool
             Toggle tracking running stats across batches in BatchNorm layers. True by default.
-        bn_momentum float
+        bn_momentum: float
             Momentum value used by regular Batch Normalization for tracking running mean and std of batches. Set to 0
             to use simple mean and std instead of exponential. Default is 0.1.
         """
@@ -165,7 +165,7 @@ class MCBatchNorm(BaseModel):
 
         if self.tb_logging:
             self.tb_writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
-                                                        dtype=torch.float, requires_grad=False))
+                dtype=torch.float, requires_grad=False))
 
         # Start training
         self.model.train()
