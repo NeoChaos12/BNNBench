@@ -87,6 +87,8 @@ exp_params = {
                    f"trainsize {TRAIN_SET_SIZE} {np.random.randint(0, 1e6)}",
 }
 
+print(f"Generating experiment: {exp_params['tb_exp_name']}")
+
 model_params = {
     "learn_affines": True,
     "running_stats": True,

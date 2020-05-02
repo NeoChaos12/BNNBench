@@ -1,7 +1,6 @@
 import logging
 import time
 import numpy as np
-from typing import Union, Iterable
 
 import torch
 import torch.nn as nn
@@ -12,8 +11,9 @@ from torch.utils.tensorboard import SummaryWriter
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
-from pybnn.mlp import MLP
+from pybnn.mlp import mlplayergen
 from functools import partial
+from collections import OrderedDict
 
 TAG_TRAIN_LOSS = "Loss/Train"
 TAG_TRAIN_FIG = "Results/Train"
@@ -101,49 +101,39 @@ class MCBatchNorm(BaseModel):
         self._init_nn()
 
     def _init_nn(self):
-        self.model = nn.Sequential()
         input_dims = self.mlp_params["input_dims"]
         output_dims = self.mlp_params["output_dims"]
-        n_units = np.array([input_dims])
-        n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
+        n_units = self.mlp_params["n_units"]
+
+        layer_gen = mlplayergen(
+            layer_size=n_units,
+            input_dims=input_dims,
+            output_dims=None    # Don't generate the output layer yet
+        )
 
         logger.debug(f"Generating NN for MCBatchNorm using parameters:\nTrack running stats:{self.running_stats}"
                      f"\nMomentum:{self.bn_momentum}\nlearn affines: {self.learn_affines}"
         )
 
+        layers = []
         self.batchnorm_layers = []
 
-        for layer_ctr in range(n_units.shape[0] - 1):
-            in_features = n_units[layer_ctr]
-            out_features = n_units[layer_ctr + 1]
+        for layer_idx, fclayer in enumerate(layer_gen, start=1):
+            layers.append((f"FC_{layer_idx}", fclayer))
 
-            self.model.add_module(
-                "FC_{0}".format(layer_ctr),
-                nn.Linear(
-                    in_features=in_features,
-                    out_features=out_features,
-                    bias=False  # In MCBN, adding a bias here is redundant
-                )
-            )
-            # self.model.add_module("Dropout_{0}".format(layer_ctr), nn.Dropout(p=pdrop[layer_ctr]))
+            self.batchnorm_layers.append(nn.BatchNorm1d(
+                num_features=fclayer.out_features,
+                eps=1e-5,
+                momentum=self.bn_momentum,
+                affine=self.learn_affines,
+                track_running_stats=self.running_stats
+            ))
 
-            self.batchnorm_layers.append(
-                nn.BatchNorm1d(
-                    num_features=out_features,
-                    eps=1e-5,
-                    momentum=self.bn_momentum,
-                    affine=self.learn_affines,
-                    track_running_stats=self.running_stats
-                )
-            )
+            layers.append((f"BatchNorm_{layer_idx}", self.batchnorm_layers[-1]))
+            layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
 
-            self.model.add_module(
-                f"BatchNorm_{layer_ctr}",
-                self.batchnorm_layers[-1]
-            )
-            self.model.add_module("Tanh_{0}".format(layer_ctr), nn.Tanh())
-
-        self.model.add_module("Output", nn.Linear(n_units[-1], output_dims))
+        layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
+        self.model = nn.Sequential(OrderedDict(layers))
 
     def fit(self, X, y, **kwargs):
         r"""
