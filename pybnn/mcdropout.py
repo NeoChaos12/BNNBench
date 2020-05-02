@@ -6,16 +6,16 @@ from typing import Union, Iterable
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from torch.utils.tensorboard import SummaryWriter
 
 from pybnn.base_model import BaseModel
-from pybnn.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.mlp import mlplayergen
 
-from pybnn.mlp import MLP
+from collections import OrderedDict
 
 TENSORBOARD_LOGGING = False
+logger = logging.getLogger(__name__)
 
 DEFAULT_MLP_PARAMS = {
     "num_epochs": 500,
@@ -63,41 +63,51 @@ class MCDropout(BaseModel):
                     _ = self.mlp_params[key]
                     self.mlp_params[key] = value
                 except KeyError:
-                    logging.error(f"Key value {key} is not an accepted parameter for MLP. Skipped. "
+                    logger.error(f"Key value {key} is not an accepted parameter for MLP. Skipped. "
                                  f"Valid keys are: {DEFAULT_MLP_PARAMS.keys()}")
         self.pdrop = pdrop
         self.model = None
         self._init_nn()
 
+
+    def _pdrop_iterator(self):
+        """
+        Processes pdrop for use in MLP generation. Returns an iterator on pdrop for successive dropout layers.
+        """
+        try:
+            # If pdrop is iterable, get an iterator over it
+            pdrop = iter(self.pdrop)
+        except TypeError:
+            # Assume that a single value of pdrop is to be used for all layers
+            from itertools import repeat
+            pdrop = repeat(self.pdrop, len(self.mlp_params["n_units"])) # TODO: Simplify usage of config dict
+
+        return pdrop
+
+
     def _init_nn(self):
-        self.model = nn.Sequential()
         input_dims = self.mlp_params["input_dims"]
         output_dims = self.mlp_params["output_dims"]
-        n_units = np.array([input_dims])
-        n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
+        n_units = self.mlp_params["n_units"]
 
-        try:
-            # Check if pdrop is iterable
-            iter(self.pdrop)
-        except TypeError:
-            # A single value of pdrop is to be used for all layers
-            pdrop = np.full(shape=(n_units.shape[0] - 1,), fill_value=self.pdrop, dtype=np.float)
-        else:
-            # A list of proabilities for each layer was given
-            pdrop = np.array(self.pdrop)
+        logger.debug(f"Generating NN for MCDropout using PDrop: {self.pdrop}")
 
-        for layer_ctr in range(n_units.shape[0] - 1):
-            self.model.add_module(
-                "FC_{0}".format(layer_ctr),
-                nn.Linear(
-                    in_features=n_units[layer_ctr],
-                    out_features=n_units[layer_ctr + 1]
-                )
-            )
-            self.model.add_module("Dropout_{0}".format(layer_ctr), nn.Dropout(p=pdrop[layer_ctr]))
-            self.model.add_module("Tanh_{0}".format(layer_ctr), nn.Tanh())
+        pdrop = self._pdrop_iterator()
 
-        self.model.add_module("Output", nn.Linear(n_units[-1], output_dims))
+        layer_gen = mlplayergen(
+            layer_size=n_units,
+            input_dims=input_dims,
+            output_dims=None    # Don't generate the output layer yet
+        )
+
+        layers = []
+        for layer_idx, fclayer in enumerate(layer_gen, start=1):
+            layers.append((f"FC_{layer_idx}", fclayer))
+            layers.append((f"Dropout_{layer_idx}", nn.Dropout(p=pdrop.next())))
+            layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
+
+        layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
+        self.model = nn.Sequential(OrderedDict(layers))
 
 
     def fit(self, X, y):
@@ -160,9 +170,9 @@ class MCDropout(BaseModel):
             epoch_time = curtime - epoch_start_time
             total_time = curtime - start_time
             if epoch % 100 == 0:
-                logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
-                logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
-                logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
+                logger.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
+                logger.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
+                logger.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
 
         return
 
@@ -212,13 +222,13 @@ class MCDropout(BaseModel):
         else:
             Yt_hat = np.array([self.model(X_).data.cpu().numpy() for _ in range(nsamples)]).squeeze()
 
-        logging.debug("Generated final outputs array of shape {}".format(Yt_hat.shape))
+        logger.debug("Generated final outputs array of shape {}".format(Yt_hat.shape))
 
         # calc_axes = [a for a in range(len(X_.shape) + 1)]
         mean = np.mean(Yt_hat, axis=0)
         variance = np.var(Yt_hat, axis=0)
 
-        logging.debug("Generated final mean values of shape {}:\n{}\n\n".format(mean.shape, mean))
-        logging.debug("Generated final variance values of shape {}:\n{}\n\n".format(variance.shape, variance))
+        logger.debug("Generated final mean values of shape {}:\n{}\n\n".format(mean.shape, mean))
+        logger.debug("Generated final variance values of shape {}:\n{}\n\n".format(variance.shape, variance))
 
         return mean, variance
