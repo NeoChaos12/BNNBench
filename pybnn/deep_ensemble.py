@@ -12,8 +12,9 @@ from torch.utils.tensorboard import SummaryWriter
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict
+from pybnn.mlp import mlplayergen
 
-TENSORBOARD_LOGGING = False
+TENSORBOARD_LOGGING = True
 
 DEFAULT_MLP_PARAMS = {
     "num_epochs": 500,
@@ -27,7 +28,7 @@ DEFAULT_MLP_PARAMS = {
 
 
 class DeepEnsemble(BaseModel):
-    nlearners: Union[float, Iterable]
+    nlearners: int
     mlp_params: dict
 
     def __init__(self, batch_size=10, mlp_params=None, nlearners=5, normalize_input=True,
@@ -71,21 +72,24 @@ class DeepEnsemble(BaseModel):
         self._init_model()
 
     def _init_model(self):
-        for learner in range(self.nlearners):
+        for learner in range(1, self.nlearners + 1):
             input_dims = self.mlp_params["input_dims"]
             output_dims = self.mlp_params["output_dims"]
-            n_units = np.array([input_dims])
-            n_units = np.concatenate((n_units, self.mlp_params["n_units"]))
+            n_units = self.mlp_params["n_units"]
 
             layers = []
-            for layer_ctr in range(n_units.shape[0] - 1):
-                layers.append((f"FC_{learner}_{layer_ctr}", nn.Linear(
-                    in_features=n_units[layer_ctr],
-                    out_features=n_units[layer_ctr + 1]
-                )))
-                layers.append((f"Tanh_{learner}_{layer_ctr}", nn.Tanh()))
+            layer_gen = mlplayergen(
+                layer_size=n_units,
+                input_dims=input_dims,
+                output_dims=None    # Don't generate the output layer
+            )
+
+            for layer_idx, layer in enumerate(layer_gen, start=1):
+                layers.append((f"FC_{learner}_{layer_idx}", layer))
+                layers.append((f"Tanh_{learner}_{layer_idx}", nn.Tanh()))
 
             layers.append((f"Output_{learner}", nn.Linear(n_units[-1], output_dims)))
+
             model = nn.Sequential(OrderedDict(layers))
             self.models.append(model)
 
