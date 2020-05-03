@@ -9,8 +9,8 @@ import torch.nn as nn
 import torch.utils.data as data_utils
 from scipy.stats import norm
 
-from pybnn.base_model import BaseModel
-from pybnn.priors import weight_prior, log_variance_prior
+from pybnn.models.base_model import BaseModel
+from pybnn.models.priors import weight_prior, log_variance_prior
 from pybnn.sampler import AdaptiveSGHMC, SGLD, SGHMC, PreconditionedSGLD
 from pybnn.util.infinite_dataloader import infinite_dataloader
 from pybnn.util.layers import AppendLayer

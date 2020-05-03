@@ -5,7 +5,7 @@ sys.path.append('/home/archit/master_project/pybnn')
 import numpy as np
 import matplotlib.pyplot as plt
 
-from pybnn import MCDropout
+from pybnn.models import MCDropout
 
 # plt.rc('text', usetex=True)
 

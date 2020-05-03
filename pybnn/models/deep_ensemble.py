@@ -1,7 +1,6 @@
 import logging
 import time
 import numpy as np
-from typing import Union, Iterable
 
 import torch
 import torch.nn as nn
@@ -9,10 +8,10 @@ import torch.optim as optim
 
 from torch.utils.tensorboard import SummaryWriter
 
-from pybnn.base_model import BaseModel
+from pybnn.models.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict
-from pybnn.mlp import mlplayergen
+from pybnn.models.mlp import mlplayergen
 
 TENSORBOARD_LOGGING = True
 

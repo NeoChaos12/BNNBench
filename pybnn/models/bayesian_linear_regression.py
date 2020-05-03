@@ -5,7 +5,7 @@ import numpy as np
 from scipy import optimize
 from scipy import stats
 
-from pybnn.base_model import BaseModel
+from pybnn.models.base_model import BaseModel
 
 
 def linear_basis_func(x):

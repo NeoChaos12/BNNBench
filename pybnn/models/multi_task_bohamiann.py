@@ -3,7 +3,7 @@ from functools import partial
 import numpy as np
 import torch
 import torch.nn as nn
-from pybnn.bohamiann import Bohamiann
+from pybnn.models.bohamiann import Bohamiann
 from pybnn.util.layers import AppendLayer
 
 

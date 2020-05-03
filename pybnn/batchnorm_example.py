@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 import torch
 
-from pybnn import BatchNorm
+from pybnn.models import BatchNorm
 
 # plt.rc('text', usetex=True)
 

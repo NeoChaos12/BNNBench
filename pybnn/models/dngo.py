@@ -4,18 +4,16 @@ import numpy as np
 import emcee
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
-
 from torch.utils.tensorboard import SummaryWriter
 
 from scipy import optimize
 
-from pybnn.base_model import BaseModel
-from pybnn.bayesian_linear_regression import BayesianLinearRegression, Prior
+from pybnn.models.base_model import BaseModel
+from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
-from pybnn.mlp import MLP
+from pybnn.models.mlp import MLP
 
 TENSORBOARD_LOGGING = False
 

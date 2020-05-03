@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 import torch
 
-from pybnn import DNGO
+from pybnn.models import DNGO
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 # plt.rc('text', usetex=True)
