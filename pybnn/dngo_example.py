@@ -50,10 +50,10 @@ x_test = np.linspace(0, 1, 200)
 x_test_norm = zero_mean_unit_var_normalization(x_test[:, None], model.X_mean, model.X_std)[0]
 
 # Get basis functions from the network
-basis_funcs = model.network.basis_funcs(torch.Tensor(x_test_norm)).data.numpy()
+basis_funcs = model.basis_funcs(torch.Tensor(x_test_norm)).data.numpy()
 
 # for i in range(min(50, model.n_units[-1])):
-for i in range(min(50, model.n_units[-1])):
+for i in range(min(50, model.mlp_params.hidden_layer_sizes[-1])):
     plt.plot(x_test, basis_funcs[:, i])
 plt.grid()
 plt.xlabel(r"Input $x$")

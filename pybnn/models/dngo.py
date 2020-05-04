@@ -15,6 +15,7 @@ from pybnn.models.base_model import BaseModel
 from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.models.mlp import mlplayergen
+from pybnn.config import mlpParams
 from functools import partial
 from collections import OrderedDict
 
@@ -23,12 +24,21 @@ TENSORBOARD_LOGGING = False
 
 class DNGO(BaseModel):
 
-    def __init__(self, batch_size=10, num_epochs=500,
+    def __init__(self, batch_size=10,
+                 num_epochs=500,
                  learning_rate=0.01,
-                 adapt_epoch=5000, n_units=[50, 50, 50],
-                 alpha=1.0, beta=1000, prior=None, do_mcmc=True,
-                 n_hypers=20, chain_length=2000, burnin_steps=2000,
-                 normalize_input=True, normalize_output=True, rng=None):
+                 adapt_epoch=5000,
+                 alpha=1.0, beta=1000,
+                 prior=None,
+                 do_mcmc=True,
+                 n_hypers=20,
+                 chain_length=2000,
+                 burnin_steps=2000,
+                 normalize_input=True,
+                 normalize_output=True,
+                 rng=None,
+                 n_units=[50, 50, 50]):
+
         """
         Deep Networks for Global Optimization [1]. This module performs
         Bayesian Linear Regression with basis function extracted from a
@@ -49,8 +59,6 @@ class DNGO(BaseModel):
             Initial learning rate for Adam
         adapt_epoch: int
             Defines after how many epochs the learning rate will be decayed by a factor 10
-        n_units: list
-            Defines a list containing the number of hidden units in each hidden layer of the network
         alpha: float
             Hyperparameter of the Bayesian linear regression
         beta: float
@@ -72,8 +80,10 @@ class DNGO(BaseModel):
             Zero mean unit variance normalization of the input values
         rng: nfrom torch.utils.tensorboard import SummaryWriterp.random.RandomState
             Random number generator
+        n_units: list
+            Defines a list containing the number of hidden units in each hidden layer of the network
         """
-
+        # TODO: Streamline parameter specification, define namedtuple for parameters
         super(DNGO, self).__init__(
             batch_size=batch_size,
             normalize_input=normalize_input,
@@ -104,18 +114,19 @@ class DNGO(BaseModel):
         self.num_epochs = num_epochs
         self.init_learning_rate = learning_rate
 
-        self.n_units = n_units
+        self.mlp_params = mlpParams(hidden_layer_sizes=n_units)
         self.adapt_epoch = adapt_epoch
         self.network = None
         self.models = []
         self.hypers = None
 
 
-    def _generate_network(self, input_dims):
+    def _generate_network(self):
         logger.debug("Generating NN for DNGO.")
 
-        output_dims = self.mlp_params["output_dims"]
-        n_units = self.mlp_params["n_units"]
+        input_dims = self.mlp_params.input_dims
+        output_dims = self.mlp_params.output_dims
+        n_units = self.mlp_params.hidden_layer_sizes
         layers = []
         self.batchnorm_layers = []
 
@@ -129,7 +140,11 @@ class DNGO(BaseModel):
             layers.append((f"FC_{layer_idx}", fclayer))
             layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
 
-        layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
+        # Set aside this part of the network for later use as basis functions
+        self.basis_funcs = nn.Sequential(OrderedDict(layers))
+
+        # Append an output layer to the basis functions to get the whole network
+        layers = [("Basis_Functions", self.basis_funcs), ("Output", nn.Linear(n_units[-1], output_dims))]
         self.network = nn.Sequential(OrderedDict(layers))
 
 
@@ -153,6 +168,8 @@ class DNGO(BaseModel):
         start_time = time.time()
         self.X = X
         self.y = y
+        if self.mlp_params.input_dims != self.X.shape[1]:
+            self.mlp_params = self.mlp_params._replace(input_dims=X.shape[1])
 
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
@@ -160,8 +177,8 @@ class DNGO(BaseModel):
         self.y = self.y[:, None]
 
         # Create the neural network
-        features = X.shape[1]
-        self._generate_network(features)
+        # features = X.shape[1]
+        self._generate_network()
 
         # self.network = MLP(input_dims=features, hidden_layer_sizes=self.n_units)
 
@@ -170,7 +187,7 @@ class DNGO(BaseModel):
 
         if TENSORBOARD_LOGGING:
             with SummaryWriter() as writer:
-                writer.add_graph(self.network, torch.rand(size=[self.batch_size, features],
+                writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.mlp_params.input_dims],
                                                           dtype=torch.float, requires_grad=False))
 
         # Start training
@@ -202,11 +219,10 @@ class DNGO(BaseModel):
             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
 
         # Design matrix
-        self.Theta = self.network.basis_funcs(torch.Tensor(self.X)).data.numpy()
+        self.Theta = self.basis_funcs(torch.Tensor(self.X)).data.numpy()
 
         if do_optimize:
             if self.do_mcmc:
-
                 # Do a burn-in in the first iteration
                 if not self.burned:
                     # Initialize the walkers by sampling from the prior
@@ -346,7 +362,7 @@ class DNGO(BaseModel):
 
         # Get features from the net
 
-        theta = self.network.basis_funcs(torch.Tensor(X_)).data.numpy()
+        theta = self.basis_funcs(torch.Tensor(X_)).data.numpy()
 
         # Marginalise predictions over hyperparameters of the BLR
         mu = np.zeros([len(self.models), X_test.shape[0]])
