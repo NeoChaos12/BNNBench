@@ -5,19 +5,17 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
 from torch.utils.tensorboard import SummaryWriter
 
+from pybnn.models import logger
 from pybnn.models.base_model import BaseModel
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-
 from pybnn.models.mlp import mlplayergen
+from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from functools import partial
 from collections import OrderedDict
 
 TAG_TRAIN_LOSS = "Loss/Train"
 TAG_TRAIN_FIG = "Results/Train"
-logger = logging.getLogger(__name__)
 
 DEFAULT_MLP_PARAMS = {
     "num_epochs": 500,
@@ -84,49 +82,48 @@ class MCBatchNorm(BaseModel):
                     _ = self.mlp_params[key]
                     self.mlp_params[key] = value
                 except KeyError:
-                    logger.error(f"Key value {key} is not an accepted parameter for MLP. Skipped.\n"
-                                 f"Valid keys are: {DEFAULT_MLP_PARAMS.keys()}")
+                    logger.error("Key value %s is not an accepted parameter for MLP. Skipped.\n"
+                                 "Valid keys are: %s" % (key, DEFAULT_MLP_PARAMS.keys()))
         self.model = None
         self.learn_affines = learn_affines
         self.running_stats = running_stats
         self.bn_momentum = bn_momentum
         self.tb_logging = tb_logging
         if self.tb_logging:
-            self.log_plots = True    # Attempt to log plots of training progress results
+            self.log_plots = True  # Attempt to log plots of training progress results
             self.tb_writer = partial(SummaryWriter, log_dir=tb_log_dir + tb_exp_name)
         else:
             self.log_plots = False
         self._init_nn()
 
     def _init_nn(self):
+        logger.debug("Generating NN for MCBatchNorm using parameters:\nTrack running stats: %s"
+                     "\nMomentum: %s\nlearn affines: %s" % (self.running_stats, self.bn_momentum, self.learn_affines)
+                     )
+
         input_dims = self.mlp_params["input_dims"]
         output_dims = self.mlp_params["output_dims"]
         n_units = self.mlp_params["n_units"]
+        layers = []
+        self.batchnorm_layers = []
 
         layer_gen = mlplayergen(
             layer_size=n_units,
             input_dims=input_dims,
-            output_dims=None    # Don't generate the output layer yet
+            output_dims=None  # Don't generate the output layer yet
         )
 
-        logger.debug(f"Generating NN for MCBatchNorm using parameters:\nTrack running stats:{self.running_stats}"
-                     f"\nMomentum:{self.bn_momentum}\nlearn affines: {self.learn_affines}"
+        bnlayer = partial(
+            nn.BatchNorm1d,
+            eps=1e-5,
+            momentum=self.bn_momentum,
+            affine=self.learn_affines,
+            track_running_stats=self.running_stats
         )
-
-        layers = []
-        self.batchnorm_layers = []
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"FC_{layer_idx}", fclayer))
-
-            self.batchnorm_layers.append(nn.BatchNorm1d(
-                num_features=fclayer.out_features,
-                eps=1e-5,
-                momentum=self.bn_momentum,
-                affine=self.learn_affines,
-                track_running_stats=self.running_stats
-            ))
-
+            self.batchnorm_layers.append(bnlayer(num_features=fclayer.out_features))
             layers.append((f"BatchNorm_{layer_idx}", self.batchnorm_layers[-1]))
             layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
 
@@ -152,11 +149,7 @@ class MCBatchNorm(BaseModel):
 
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
-
         self.y = self.y[:, None]
-
-        # Create the neural network
-        # self._init_nn()
 
         optimizer = optim.Adam(self.model.parameters(),
                                lr=self.mlp_params["learning_rate"])
@@ -164,7 +157,7 @@ class MCBatchNorm(BaseModel):
         if self.tb_logging:
             with self.tb_writer() as writer:
                 writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
-                    dtype=torch.float, requires_grad=False))
+                                                        dtype=torch.float, requires_grad=False))
 
         # Start training
         self.model.train()
@@ -194,7 +187,7 @@ class MCBatchNorm(BaseModel):
 
             if self.tb_logging:
                 with self.tb_writer() as writer:
-                    writer.add_scalar(tag=TAG_TRAIN_LOSS ,scalar_value=lc[epoch], global_step=epoch + 1)
+                    writer.add_scalar(tag=TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
 
             if epoch % 100 == 99:
                 logger.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
@@ -204,7 +197,7 @@ class MCBatchNorm(BaseModel):
                 if self.log_plots:
                     try:
                         plotter = kwargs["plotter"]
-                        logger.debug(f"Saving performance plot at training epoch {epoch + 1}")
+                        logger.debug("Saving performance plot at training epoch %d" % (epoch + 1))
                         with self.tb_writer() as writer:
                             writer.add_figure(tag=TAG_TRAIN_FIG, figure=plotter(self.predict), global_step=epoch + 1)
                     except KeyError:
@@ -263,7 +256,7 @@ class MCBatchNorm(BaseModel):
                 self.model.eval()
                 Yt_hat.append(self.model(X_).data.cpu().numpy())
 
-        logger.debug(f"Generated outputs list of length {len(Yt_hat)}")
+        logger.debug("Generated outputs list of length %d" % (len(Yt_hat)))
 
         if self.normalize_output:
             from functools import partial
@@ -272,16 +265,15 @@ class MCBatchNorm(BaseModel):
         else:
             Yt_hat = np.array(Yt_hat).squeeze()
 
-        logger.debug(f"Generated final outputs array of shape {Yt_hat.shape}")
+        logger.debug("Generated final outputs array of shape %s" % (Yt_hat.shape))
 
         mean = np.mean(Yt_hat, axis=0)
         variance = np.var(Yt_hat, axis=0)
 
-        logger.debug(f"Generated final mean values of shape {mean.shape}")
-        logger.debug(f"Generated final variance values of shape {variance.shape}")
+        logger.debug("Generated final mean values of shape %s" % (mean.shape))
+        logger.debug("Generated final variance values of shape %s" % (variance.shape))
 
         return mean, variance
-
 
     # def __del__(self):
     #     if self.tb_logging:
