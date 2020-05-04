@@ -1,7 +1,7 @@
 import unittest
 
 import numpy as np
-from pybnn.dngo import DNGO
+from pybnn.models.dngo import DNGO
 
 
 class TestDNGO(unittest.TestCase):

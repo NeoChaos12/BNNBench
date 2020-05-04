@@ -2,10 +2,10 @@ import abc
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 import torch
-from pybnn.config import defaultMlpParams, defaultModelParams
-import logging
+from pybnn.config import baseModelParams
+from pybnn.models import logger
 
-logger = logging.getLogger(__name__)
+defaultBaseModelParams = baseModelParams()
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
@@ -14,14 +14,16 @@ class BaseModel(object):
     batch_size: int
 
     def __init__(self,
-                 num_epochs=defaultModelParams['num_epochs'],
-                 batch_size=defaultModelParams['batch_size'],
-                 learning_rate=defaultModelParams['learning_rate'],
-                 normalize_input=defaultModelParams['normalize_input'],
-                 normalize_output=defaultModelParams['normalize_output'],
+                 num_epochs=defaultBaseModelParams.num_epochs,
+                 batch_size=defaultBaseModelParams.batch_size,
+                 learning_rate=defaultBaseModelParams.learning_rate,
+                 normalize_input=defaultBaseModelParams.normalize_input,
+                 normalize_output=defaultBaseModelParams.normalize_output,
                  rng=None, **kwargs):
         """
-        Abstract base class for all models.
+        Abstract base class for all models. Model parameters may be passed as either individual arguments or as a
+        baseModelParams object to the keyword argument baseModelParams. If a baseModelParams object is specified, the
+        other parameter arguments are ignored.
 
         Parameters
         ----------
@@ -42,27 +44,43 @@ class BaseModel(object):
         self.X = None
         self.y = None
 
-        # TODO: Create separate MLP and CNN versions as sub-classes, also possibly ABCs.
-        self.num_epochs = num_epochs
-        self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.normalize_input = normalize_input
-        self.normalize_output = normalize_output
-
-        # TODO: Update all sub-models to use rng properly
-        if rng is None:
-            self.rng = np.random.RandomState(np.random.randint(0, 1e6))
-        elif type(rng) is int:
-            self.rng = np.random.RandomState(rng)
-        else:
+        try:
+            model_params = kwargs.pop('baseModelParams')
+        except (KeyError, AttributeError):
+            # Read model parameters from arguments
+            # TODO: Create separate MLP and CNN versions as sub-classes, also possibly ABCs.
+            self.num_epochs = num_epochs
+            self.batch_size = batch_size
+            self.learning_rate = learning_rate
+            self.normalize_input = normalize_input
+            self.normalize_output = normalize_output
+            # TODO: Update all sub-models to use rng properly
             self.rng = rng
+        else:
+            # Read model parameters from configuration object
+            # noinspection PyProtectedMember
+            [self.__setattr__(attr, val) for attr, val in model_params._asdict().items()]
+
+
         if kwargs:
             logger.info("Ignoring unknown keyword arguments:\n%s" %
                         '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
 
+    @property
+    def rng(self):
+        return self.__rng
+
+    @rng.setter
+    def rng(self, new_rng):
+        if new_rng is None:
+            self.__rng = np.random.RandomState(np.random.randint(0, 1e6))
+        elif type(new_rng) is int:
+            self.__rng = np.random.RandomState(new_rng)
+        else:
+            self.__rng = new_rng
 
     @abc.abstractmethod
-    def _init_nn(self):
+    def _generate_network(self):
         """
         Called only through __init__. Used to initialize the neural network specific to this model using the parameters
         initialized in __init__.

@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from pybnn.lcnet import LCNet
+from pybnn.models.lcnet import LCNet
 
 
 class TestLCNet(unittest.TestCase):

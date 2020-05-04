@@ -95,9 +95,9 @@ class BatchNorm(BaseModel):
             self.log_train_loss = partial(self.tb_writer.add_scalar, tag=TAG_TRAIN_LOSS)
         else:
             self.log_plots = False
-        self._init_nn()
+        self._generate_network()
 
-    def _init_nn(self):
+    def _generate_network(self):
         self.model = nn.Sequential()
         input_dims = self.mlp_params["input_dims"]
         output_dims = self.mlp_params["output_dims"]

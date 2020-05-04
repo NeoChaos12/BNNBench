@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-from pybnn.config import defaultMlpParams
-import logging
+from pybnn.config import mlpParams
+from pybnn.models import logger
 
-logger = logging.getLogger(__name__)
-
+defaultMlpParams = mlpParams()
 
 def mlplayergen(layer_size, input_dims=1, output_dims=None, nlayers=None, bias=True):
     """
@@ -44,8 +43,8 @@ def mlplayergen(layer_size, input_dims=1, output_dims=None, nlayers=None, bias=T
 
 
 class MLP(nn.Module):
-    def __init__(self, input_dims=defaultMlpParams['input_dims'], hidden_layer_sizes=defaultMlpParams['hidden_layer_sizes'],
-                 output_dims=defaultMlpParams['output_dims'], **kwargs):
+    def __init__(self, input_dims=defaultMlpParams.input_dims, hidden_layer_sizes=defaultMlpParams.hidden_layer_sizes,
+                 output_dims=defaultMlpParams.output_dims, **kwargs):
         super(MLP, self).__init__(**kwargs)
 
         self.layer_sizes = [input_dims]

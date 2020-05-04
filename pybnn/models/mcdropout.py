@@ -91,7 +91,7 @@ class MCDropout(BaseModel):
             self.log_train_progress = partial(self.tb_writer.add_figure, tag=TAG_TRAIN_FIG)
         else:
             self.log_plots = False
-        self._init_nn()
+        self._generate_network()
 
 
     def _pdrop_iterator(self):
@@ -109,7 +109,7 @@ class MCDropout(BaseModel):
         return pdrop
 
 
-    def _init_nn(self):
+    def _generate_network(self):
         input_dims = self.mlp_params["input_dims"]
         output_dims = self.mlp_params["output_dims"]
         n_units = self.mlp_params["n_units"]

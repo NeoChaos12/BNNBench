@@ -4,16 +4,19 @@ import numpy as np
 import emcee
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from scipy import optimize
 
+from pybnn.models import logger
 from pybnn.models.base_model import BaseModel
 from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-
-from pybnn.models.mlp import MLP
+from pybnn.models.mlp import mlplayergen
+from functools import partial
+from collections import OrderedDict
 
 TENSORBOARD_LOGGING = False
 
@@ -107,6 +110,29 @@ class DNGO(BaseModel):
         self.models = []
         self.hypers = None
 
+
+    def _generate_network(self, input_dims):
+        logger.debug("Generating NN for DNGO.")
+
+        output_dims = self.mlp_params["output_dims"]
+        n_units = self.mlp_params["n_units"]
+        layers = []
+        self.batchnorm_layers = []
+
+        layer_gen = mlplayergen(
+            layer_size=n_units,
+            input_dims=input_dims,
+            output_dims=None  # Don't generate the output layer yet
+        )
+
+        for layer_idx, fclayer in enumerate(layer_gen, start=1):
+            layers.append((f"FC_{layer_idx}", fclayer))
+            layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
+
+        layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
+        self.network = nn.Sequential(OrderedDict(layers))
+
+
     @BaseModel._check_shapes_train
     def fit(self, X, y, do_optimize=True):
         """
@@ -135,8 +161,9 @@ class DNGO(BaseModel):
 
         # Create the neural network
         features = X.shape[1]
+        self._generate_network(features)
 
-        self.network = MLP(input_dims=features, hidden_layer_sizes=self.n_units)
+        # self.network = MLP(input_dims=features, hidden_layer_sizes=self.n_units)
 
         optimizer = optim.Adam(self.network.parameters(),
                                lr=self.init_learning_rate)
@@ -224,6 +251,7 @@ class DNGO(BaseModel):
 
             self.models.append(model)
 
+
     def marginal_log_likelihood(self, theta):
         """
         Log likelihood of the data marginalised over the weights w. See chapter 3.5 of
@@ -272,6 +300,7 @@ class DNGO(BaseModel):
             return -1e25
         return mll
 
+
     def negative_mll(self, theta):
         """
         Returns the negative marginal log likelihood (for optimizing it with scipy).
@@ -288,6 +317,7 @@ class DNGO(BaseModel):
         """
         nll = -self.marginal_log_likelihood(theta)
         return nll
+
 
     @BaseModel._check_shapes_predict
     def predict(self, X_test):

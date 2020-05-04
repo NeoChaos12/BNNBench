@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from pybnn.multi_task_bohamiann import MultiTaskBohamiann
+from pybnn.models.multi_task_bohamiann import MultiTaskBohamiann
 
 
 class TestMTBohamiann(unittest.TestCase):

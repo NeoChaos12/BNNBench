@@ -84,7 +84,7 @@ class MCBatchNorm(BaseModel):
                 except KeyError:
                     logger.error("Key value %s is not an accepted parameter for MLP. Skipped.\n"
                                  "Valid keys are: %s" % (key, DEFAULT_MLP_PARAMS.keys()))
-        self.model = None
+        self.network = None
         self.learn_affines = learn_affines
         self.running_stats = running_stats
         self.bn_momentum = bn_momentum
@@ -94,9 +94,10 @@ class MCBatchNorm(BaseModel):
             self.tb_writer = partial(SummaryWriter, log_dir=tb_log_dir + tb_exp_name)
         else:
             self.log_plots = False
-        self._init_nn()
+        self._generate_network()
 
-    def _init_nn(self):
+
+    def _generate_network(self):
         logger.debug("Generating NN for MCBatchNorm using parameters:\nTrack running stats: %s"
                      "\nMomentum: %s\nlearn affines: %s" % (self.running_stats, self.bn_momentum, self.learn_affines)
                      )
@@ -128,7 +129,8 @@ class MCBatchNorm(BaseModel):
             layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
 
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
-        self.model = nn.Sequential(OrderedDict(layers))
+        self.network = nn.Sequential(OrderedDict(layers))
+
 
     def fit(self, X, y, **kwargs):
         r"""
@@ -151,16 +153,16 @@ class MCBatchNorm(BaseModel):
         self.normalize_data()
         self.y = self.y[:, None]
 
-        optimizer = optim.Adam(self.model.parameters(),
+        optimizer = optim.Adam(self.network.parameters(),
                                lr=self.mlp_params["learning_rate"])
 
         if self.tb_logging:
             with self.tb_writer() as writer:
-                writer.add_graph(self.model, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
-                                                        dtype=torch.float, requires_grad=False))
+                writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
+                                                          dtype=torch.float, requires_grad=False))
 
         # Start training
-        self.model.train()
+        self.network.train()
         lc = np.zeros([self.mlp_params["num_epochs"]])
         for epoch in range(self.mlp_params["num_epochs"]):
 
@@ -171,7 +173,7 @@ class MCBatchNorm(BaseModel):
 
             for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
                 optimizer.zero_grad()
-                output = self.model(inputs)
+                output = self.network(inputs)
 
                 loss = torch.nn.functional.mse_loss(output, targets)
                 loss.backward()
@@ -205,6 +207,7 @@ class MCBatchNorm(BaseModel):
                         self.log_plots = False
 
         return
+
 
     def predict(self, X_test, nsamples=1000):
         r"""
@@ -248,13 +251,13 @@ class MCBatchNorm(BaseModel):
 
                 # Perform a forward pass on one mini-batch in training mode in order to update running statistics with
                 # only one mini-batch's mean and variance
-                self.model.train()
-                _ = self.model(batch_inputs)
+                self.network.train()
+                _ = self.network(batch_inputs)
 
                 # Switch to evaluation mode and perform a forward pass on the points to be evaluated, which will use
                 # the running statistics to perform batch normalization
-                self.model.eval()
-                Yt_hat.append(self.model(X_).data.cpu().numpy())
+                self.network.eval()
+                Yt_hat.append(self.network(X_).data.cpu().numpy())
 
         logger.debug("Generated outputs list of length %d" % (len(Yt_hat)))
 

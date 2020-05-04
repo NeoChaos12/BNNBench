@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 from scipy.optimize import check_grad
 
-from pybnn.bohamiann import Bohamiann
+from pybnn.models.bohamiann import Bohamiann
 
 
 class TestBohamiann(unittest.TestCase):
