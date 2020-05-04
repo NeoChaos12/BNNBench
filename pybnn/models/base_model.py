@@ -2,10 +2,9 @@ import abc
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 import torch
-from pybnn.config import baseModelParams
 from pybnn.models import logger
+from collections import namedtuple
 
-defaultBaseModelParams = baseModelParams()
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
@@ -13,12 +12,55 @@ class BaseModel(object):
     normalize_output: bool
     batch_size: int
 
+    # Don't let the children see this
+    __modelParamsDefaultDict = {
+        "num_epochs": 500,
+        "batch_size": 10,
+        "learning_rate": 0.01,
+        "normalize_input": True,
+        "normalize_output": True,
+        "rng": None
+    }
+    __modelParams = namedtuple("baseModelParams", __modelParamsDefaultDict.keys(),
+                               defaults=__modelParamsDefaultDict.values())
+
+    # This is children friendly
+
+    # Part of the API, the recommended way to setup a model - also add params from parents
+    modelParamsContainer = __modelParams
+    _default_model_params = modelParamsContainer() # Must be re-defined as-is by each child!!
+
+    @property
+    def model_params(self):
+        return self.modelParamsContainer({[(k, self.__dict__[k])
+                                           for k in self.__class__.modelParamsContainer.fields]})
+
+    @model_params.setter
+    def model_params(self, new_params):
+        if isinstance(new_params, self.model_params):
+            logger.debug("model_params setter called with model_params object. Updating model params.")
+            [setattr(self, k, v) for k, v in new_params._asdict().items()]
+        elif isinstance(new_params, dict):
+            logger.debug("model_params setter called with dict. Updating model params.")
+            if new_params:
+                try:
+                    [setattr(self, k, new_params[k]) for k in self._default_model_params.fields]
+                except KeyError as e:
+                    logger.critical("Failed to update model parameters for %s - "
+                                    "unknown model parameter." % self.__class__)
+                    raise e
+            else:
+                logger.debug("model_params setter called with empty dict. No updates.")
+        else:
+            raise TypeError("Invalid type %s, must be of type %s or dict." %
+                            (type(new_params), type(self.model_params)))
+
     def __init__(self,
-                 num_epochs=defaultBaseModelParams.num_epochs,
-                 batch_size=defaultBaseModelParams.batch_size,
-                 learning_rate=defaultBaseModelParams.learning_rate,
-                 normalize_input=defaultBaseModelParams.normalize_input,
-                 normalize_output=defaultBaseModelParams.normalize_output,
+                 num_epochs=_default_model_params.num_epochs,
+                 batch_size=_default_model_params.batch_size,
+                 learning_rate=_default_model_params.learning_rate,
+                 normalize_input=_default_model_params.normalize_input,
+                 normalize_output=_default_model_params.normalize_output,
                  rng=None, **kwargs):
         """
         Abstract base class for all models. Model parameters may be passed as either individual arguments or as a
@@ -54,17 +96,17 @@ class BaseModel(object):
             self.learning_rate = learning_rate
             self.normalize_input = normalize_input
             self.normalize_output = normalize_output
-            # TODO: Update all sub-models to use rng properly
             self.rng = rng
         else:
             # Read model parameters from configuration object
             # noinspection PyProtectedMember
-            [self.__setattr__(attr, val) for attr, val in model_params._asdict().items()]
-
+            self.model_params = model_params
 
         if kwargs:
             logger.info("Ignoring unknown keyword arguments:\n%s" %
                         '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
+
+        # TODO: Update all sub-models to use rng properly
 
     @property
     def rng(self):
@@ -79,14 +121,14 @@ class BaseModel(object):
         else:
             self.__rng = new_rng
 
+
     @abc.abstractmethod
     def _generate_network(self):
         """
-        Called only through __init__. Used to initialize the neural network specific to this model using the parameters
-        initialized in __init__.
+        Called only through fit. Used to initialize the neural network specific to this model using the parameters
+        initialized in __init__ and fit.
         """
         pass
-
 
     @abc.abstractmethod
     def fit(self, X, y):
@@ -145,6 +187,7 @@ class BaseModel(object):
             assert len(X.shape) == 2
             assert len(y.shape) == 1
             return func(self, X, y, *args, **kwargs)
+
         return func_wrapper
 
     def _check_shapes_predict(func):
@@ -167,7 +210,6 @@ class BaseModel(object):
                      'hyperparameters': ""}
         return json_data
 
-
     def normalize_data(self):
         """
         Check the flags normalize_inputs and normalize_outputs, and normalize the respective data accordingly.
@@ -180,7 +222,6 @@ class BaseModel(object):
         # Normalize ouputs
         if self.normalize_output:
             self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(self.y)
-
 
     def iterate_minibatches(self, inputs, targets, batchsize=None, shuffle=False, as_tensor=False):
         """

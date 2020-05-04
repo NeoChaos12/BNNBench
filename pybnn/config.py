@@ -1,4 +1,5 @@
 from collections import namedtuple
+from functools import partial
 
 _mlpParamsDefaultDict = {
     "input_dims": 1,
@@ -7,17 +8,6 @@ _mlpParamsDefaultDict = {
 }
 
 mlpParams = namedtuple("mlpParams", _mlpParamsDefaultDict.keys(), defaults=_mlpParamsDefaultDict.values())
-
-_modelParamsDefaultDict = {
-    "num_epochs": 500,
-    "batch_size": 10,
-    "learning_rate": 0.01,
-    "normalize_input": True,
-    "normalize_output": True,
-}
-
-baseModelParams = namedtuple("baseModelParams", _modelParamsDefaultDict.keys(),
-                             defaults=_modelParamsDefaultDict.values())
 
 _expParamsDefaultDict = {
     "rng": None,
@@ -28,3 +18,12 @@ _expParamsDefaultDict = {
 }
 
 expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults=_expParamsDefaultDict.values())
+
+
+class ExpConfig:
+    tb_writer: partial
+    tb_logging: bool
+    tag_train_loss = "Loss/Train"
+    tag_train_fig = "Results/Train"
+
+    pass
