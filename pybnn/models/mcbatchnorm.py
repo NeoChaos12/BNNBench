@@ -11,6 +11,10 @@ from collections import OrderedDict, namedtuple
 
 
 class MCBatchNorm(MLP):
+    r"""
+    Extends the MLP model by adding a Batch Normalization layer after each fully connected layer, and generates the
+    predictive mean as well as variance as model output.
+    """
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "learn_affines": True,
@@ -57,12 +61,12 @@ class MCBatchNorm(MLP):
             self.learn_affines = learn_affines
             self.running_stats = running_stats
             self.bn_momentum = bn_momentum
-            super(MCBatchNorm, self).__init__(kwargs)
+            super(MCBatchNorm, self).__init__(**kwargs)
         else:
             self.model_params = model_params
 
         logger.info("Intialized MC-BatchNorm model.")
-        logger.debug(f"Intialized MC-BatchNorm model parameters:\n{self.model_params}")
+        logger.debug("Intialized MC-BatchNorm model parameters:\n%s" % str(self.model_params))
 
 
     def _generate_network(self):

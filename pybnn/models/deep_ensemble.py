@@ -6,94 +6,105 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from torch.utils.tensorboard import SummaryWriter
-
+from pybnn.models import logger
 from pybnn.models.base_model import BaseModel
+from pybnn.models.mlp import mlplayergen, MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from collections import OrderedDict
-from pybnn.models.mlp import mlplayergen
+from collections import OrderedDict, namedtuple
+from torch.utils.tensorboard import SummaryWriter
+from functools import partial
 
-TENSORBOARD_LOGGING = True
-
-DEFAULT_MLP_PARAMS = {
-    "num_epochs": 500,
-    "learning_rate": 0.01,
-    "adapt_epoch": 5000,
-    "batch_size": 10,
-    "n_units": [50, 50, 50],
-    "input_dims": 1,
-    "output_dims": 2,           # Should be fixed to 2, corresponding to the mean and variance
-}
-
-
-class DeepEnsemble(BaseModel):
+class DeepEnsemble(MLP):
+    """
+    An ensemble of MLPs that treats the results from every MLP as an approximation of a Gaussian Distribution and
+    combines them accordingly.
+    """
     nlearners: int
-    mlp_params: dict
 
-    def __init__(self, batch_size=10, mlp_params=None, nlearners=5, normalize_input=True,
-                 normalize_output=True, rng=None):
+    # Add any new parameters needed exclusively by this model here
+    __modelParamsDefaultDict = {
+        "nlearners": 5
+    }
+    __modelParams = namedtuple("deepEnsembleModelParams", __modelParamsDefaultDict.keys(),
+                               defaults=__modelParamsDefaultDict.values())
+
+    # Combine the parameters used by this model with those of the MLP Model
+    modelParamsContainer = namedtuple(
+        "allModelParams",
+        tuple(__modelParams._fields_defaults.keys()) + tuple(MLP.modelParamsContainer._fields_defaults.keys()),
+        defaults=tuple(__modelParams._fields_defaults.values()) +
+                 tuple(MLP.modelParamsContainer._fields_defaults.values())
+    )
+
+    # Create a record of all default parameter values used to run this model, including the Base Model parameters
+    _default_model_params = modelParamsContainer()
+
+    def __init__(self, nlearners=_default_model_params.nlearners, **kwargs):
         r"""
-        Bayesian Optimizer that uses a neural network employing a Multi-Layer Perceptron with MC-Dropout.
-
+        Initialize a Deep Ensemble model.
+        Note that regardless of whether or not a different initial value was supplied, output_dims will always be set
+        to 2 and should not be changed. Similarly, the loss function used is set to
+        pybnn.models.deep_ensembles.GaussianNLL.
         Parameters
         ----------
-
-        mlp_params: dict
-            A dictionary containing the parameters that define the MLP. If None (default), the default parameter
-            dictionary is used. Otherwise, the given values for the keys in mlp_params are used along with the default
-            values for unspecified keys.
         nlearners: int
-            Number of base learners (individual networks) to be trained for the ensemble.
-        batch_size: int
-            The size of each mini-batch used while training the NN.
-        normalize_input: bool
-            Switch to control if inputs should be normalized before processing.
-        normalize_output: bool
-            Switch to control if outputs should be normalized before processing.
+            Number of base learners (i.e. MLPs) to use. Default is 5.
+        kwargs: dict
+            Other model parameters for MLP.
         """
-        super(DeepEnsemble, self).__init__(
-            batch_size=batch_size,  # TODO: Unify notation, batch_size should be part of mlp_params
-            normalize_input=normalize_input,
-            normalize_output=normalize_output,
-            rng=rng
-        )
-        self.mlp_params = DEFAULT_MLP_PARAMS
-        if mlp_params is not None:
-            for key, value in mlp_params.items():
-                try:
-                    _ = self.mlp_params[key]
-                    self.mlp_params[key] = value
-                except KeyError:
-                    logging.error(f"Key value {key} is not an accepted parameter for MLP. Skipped. "
-                                 f"Valid keys are: {DEFAULT_MLP_PARAMS.keys()}")
-        self.nlearners = nlearners
-        self.models = []
-        self._init_model()
+        try:
+            model_params = kwargs.pop('model_params')
+        except (KeyError, AttributeError):
+            self.nlearners = nlearners
+            super(DeepEnsemble, self).__init__(**kwargs)
+        else:
+            self.model_params = model_params
 
-    def _init_model(self):
-        for learner in range(1, self.nlearners + 1):
-            input_dims = self.mlp_params["input_dims"]
-            output_dims = self.mlp_params["output_dims"]
-            n_units = self.mlp_params["n_units"]
+        # Regardless of whether or not a different value was originally supplied, set output_dims to 2
+        self.output_dims = 2
+        # And set the loss function to GaussianNLL
+        self.loss_func = GaussianNLL()
+        self.learners = []
 
-            layers = []
-            layer_gen = mlplayergen(
-                layer_size=n_units,
-                input_dims=input_dims,
-                output_dims=None    # Don't generate the output layer
-            )
-
-            for layer_idx, layer in enumerate(layer_gen, start=1):
-                layers.append((f"FC_{learner}_{layer_idx}", layer))
-                layers.append((f"Tanh_{learner}_{layer_idx}", nn.Tanh()))
-
-            layers.append((f"Output_{learner}", nn.Linear(n_units[-1], output_dims)))
-
-            model = nn.Sequential(OrderedDict(layers))
-            self.models.append(model)
+        logger.info("Intialized Deep Ensemble model.")
+        logger.debug(f"Intialized Deep Ensemble model parameters:\n{self.model_params}")
 
 
-    def fit(self, X, y):
+    # def _init_learners(self):
+        # for learner in range(1, self.nlearners + 1):
+            # input_dims = self.input_dims
+            # output_dims = self.output_dims
+            # n_units = self.n_units
+            #
+            # layers = []
+            # layer_gen = mlplayergen(
+            #     layer_size=n_units,
+            #     input_dims=input_dims,
+            #     output_dims=None    # Don't generate the output layer
+            # )
+            #
+            # for layer_idx, layer in enumerate(layer_gen, start=1):
+            #     layers.append((f"FC_{learner}_{layer_idx}", layer))
+            #     layers.append((f"Tanh_{learner}_{layer_idx}", nn.Tanh()))
+            #
+            # layers.append((f"Output_{learner}", nn.Linear(n_units[-1], output_dims)))
+            #
+            # mlp = nn.Sequential(OrderedDict(layers))
+            # self.learners.append(mlp)
+
+
+    @property
+    def super_model_params(self):
+        """
+        Constructs the model params object of the calling object's super class.
+        """
+        param_dict = self.model_params._asdict()
+        [param_dict.pop(k) for k in self.__modelParamsDefaultDict.keys()]
+        return super(self.__class__, self).modelParamsContainer(**param_dict)
+
+
+    @BaseModel._tensorboard_user
+    def fit(self, X, y, **kwargs):
         r"""
         Fit the model to the given dataset.
 
@@ -111,72 +122,77 @@ class DeepEnsemble(BaseModel):
         self.y = y
 
         # Normalize inputs and outputs if the respective flags were set
-        self.normalize_data()
+        # self.normalize_data()
+        #
+        # self.y = self.y[:, None]
 
-        self.y = self.y[:, None]
-
+        logger.info("Fitting Deep Ensembles model to data.")
         start_time = time.time()
+        mlp_params = self.super_model_params
+        logger.debug("Generating learners using configuration:\n%s" % str(mlp_params))
+        self.learners = [MLP(model_params=mlp_params) for _ in range(self.nlearners)]
 
         # Iterate over base learners and train them
-        for learner in range(self.nlearners):
-            logging.info(f"Training learner {learner}.")
-            self._fit_network(self.models[learner])
-            logging.info(f"Finished training learner {learner}\n{'*' * 20}\n")
+        for idx, learner in enumerate(self.learners, start=1):
+            logger.info("Training learner %d." % idx)
+            # self._fit_network(self.learners[learner])
+            learner.fit(X, y)
+            logger.info("Finished training learner %d\n%s\n" % (idx, {'*' * 20}))
 
         total_time = time.time() - start_time
-        logging.info(f"Finished fitting model. Total time: {total_time:.3f}s")
+        logger.info("Finished fitting model. Total time: %.3fs" % total_time)
 
 
-    def _fit_network(self, network):
-        r"""
-        Fit an MLP neural network to the stored dataset.
-
-        Parameters
-        ----------
-
-        network: torch.Sequential
-            The network to be fit.
-        """
-        start_time = time.time()
-        optimizer = optim.Adam(network.parameters(),
-                               lr=self.mlp_params["learning_rate"])
-        criterion = GaussianNLL()
-
-        if TENSORBOARD_LOGGING:
-            with SummaryWriter() as writer:
-                writer.add_graph(network, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
-                                                          dtype=torch.float, requires_grad=False))
-
-        # Start training
-        network.train()
-        lc = np.zeros([self.mlp_params["num_epochs"]])
-        for epoch in range(self.mlp_params["num_epochs"]):
-            epoch_start_time = time.time()
-            train_err = 0
-            train_batches = 0
-
-            for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
-                optimizer.zero_grad()
-                output = network(inputs)
-
-                # loss = torch.nn.functional.mse_loss(output, targets)
-                loss = criterion(output, targets)
-                loss.backward()
-                optimizer.step()
-
-                train_err += loss
-                train_batches += 1
-
-            lc[epoch] = train_err / train_batches
-            curtime = time.time()
-            epoch_time = curtime - epoch_start_time
-            total_time = curtime - start_time
-            if epoch % 100 == 0:
-                logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
-                logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
-                logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
-
-        return
+    # def _fit_network(self, network):
+    #     r"""
+    #     Fit an MLP neural network to the stored dataset.
+    #
+    #     Parameters
+    #     ----------
+    #
+    #     network: torch.Sequential
+    #         The network to be fit.
+    #     """
+    #     start_time = time.time()
+    #     optimizer = optim.Adam(network.parameters(),
+    #                            lr=self.mlp_params["learning_rate"])
+    #     criterion = GaussianNLL()
+    #
+    #     if TENSORBOARD_LOGGING:
+    #         with SummaryWriter() as writer:
+    #             writer.add_graph(network, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
+    #                                                       dtype=torch.float, requires_grad=False))
+    #
+    #     # Start training
+    #     network.train()
+    #     lc = np.zeros([self.mlp_params["num_epochs"]])
+    #     for epoch in range(self.mlp_params["num_epochs"]):
+    #         epoch_start_time = time.time()
+    #         train_err = 0
+    #         train_batches = 0
+    #
+    #         for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
+    #             optimizer.zero_grad()
+    #             output = network(inputs)
+    #
+    #             # loss = torch.nn.functional.mse_loss(output, targets)
+    #             loss = criterion(output, targets)
+    #             loss.backward()
+    #             optimizer.step()
+    #
+    #             train_err += loss
+    #             train_batches += 1
+    #
+    #         lc[epoch] = train_err / train_batches
+    #         curtime = time.time()
+    #         epoch_time = curtime - epoch_start_time
+    #         total_time = curtime - start_time
+    #         if epoch % 100 == 0:
+    #             logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
+    #             logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
+    #             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
+    #
+    #     return
 
 
     def predict(self, X_test):
@@ -197,6 +213,7 @@ class DeepEnsemble(BaseModel):
             predictive variance
 
         """
+        logging.info("Using Deep Ensembles model to predict.")
         # Normalize inputs
         if self.normalize_input:
             X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
@@ -208,8 +225,8 @@ class DeepEnsemble(BaseModel):
         means = []
         variances = []
 
-        for model in self.models:
-            res = model(X_).view(-1, 2).data.cpu().numpy()
+        for learner in self.learners:
+            res = learner.predict(X_).view(-1, 2).data.cpu().numpy()
             means.append(res[:, 0])
             std = res[:, 1]
             # Enforce positivity using softplus as here:
@@ -235,7 +252,6 @@ class GaussianNLL(nn.Module):
 
     def __init__(self):
         super(GaussianNLL, self).__init__()
-
 
     def forward(self, input, target):
         # Assuming network outputs std

@@ -1,23 +1,14 @@
-#!/usr/bin/env python
 # coding: utf-8
-
-import logging
 import sys
 sys.path.append('/home/archit/master_project/pybnn')
 import numpy as np
 import matplotlib.pyplot as plt
 
-import torch
-
+from pybnn.config import ExpConfig
 from pybnn.models import DeepEnsemble
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.models import logger as model_logger
 
 # plt.rc('text', usetex=True)
-if torch.cuda.is_available():
-    print(f"Using device {torch.cuda.get_device_name(torch.cuda.current_device())}")
-
-# logging.basicConfig(level=logging.DEBUG)
-logging.basicConfig(level=logging.INFO)
 
 plt.rc('text', usetex=False)
 plt.rc('font', size=15.0, family='serif')
@@ -26,51 +17,80 @@ plt.rcParams['text.latex.preamble'] = [r"\usepackage{amsmath}"]
 
 
 
-def f(x):
+def sinc(x):
     return np.sinc(x * 10 - 5)
 
+def tanh_p_sinc(x):
+    return np.tanh(x * 5) + np.sinc(x * 10 - 5)
 
+def sinc_m_tanh(x):
+    return np.sinc(x * 10 - 5) - np.tanh(x * 5)
+
+objective_func = sinc_m_tanh
 
 rng = np.random.RandomState(42)
 
-x = rng.rand(100)
-y = f(x)
+TRAIN_SET_SIZE = 200
+BATCH_SIZE = 20
 
-grid = np.linspace(0, 1, 100)
-fvals = f(grid)
+x = rng.rand(TRAIN_SET_SIZE)
+y = objective_func(x)
+
+grid = np.linspace(0, 1, 1000)
+fvals = objective_func(grid)
 
 plt.plot(grid, fvals, "k--")
 plt.plot(x, y, "ro")
 plt.grid()
 plt.xlim(0, 1)
 
-plt.show()
+# plt.show()
 
-mlp_params = {
+
+def final_plotter(predict):
+    fig, ax = plt.subplots(1, 1, squeeze=True)
+
+    m, v = predict(grid[:, None])
+
+    ax.plot(x, y, "ro")
+    ax.grid()
+    ax.plot(grid, fvals, "k--")
+    ax.plot(grid, m, "blue")
+    ax.fill_between(grid, m + np.sqrt(v), m - np.sqrt(v), color="orange", alpha=0.8)
+    ax.fill_between(grid, m + 2 * np.sqrt(v), m - 2 * np.sqrt(v), color="orange", alpha=0.6)
+    ax.fill_between(grid, m + 3 * np.sqrt(v), m - 3 * np.sqrt(v), color="orange", alpha=0.4)
+    ax.set_xlim(0, 1)
+    ax.set_xlabel(r"Input $x$")
+    ax.set_ylabel(r"Output $f(x)$")
+    return fig
+
+
+
+model_params = {
     "num_epochs": 500,
-    "learning_rate": 0.001,
-    "adapt_epoch": 5000,
-    "batch_size": 10,
-    "n_units": [50, 50, 50],
+    "batch_size": BATCH_SIZE,
+    "learning_rate": 0.01,
+    "normalize_input": True,
+    "normalize_output": True,
+    "rng": None,
+    "hidden_layer_sizes": [100, 100, 100],
     "input_dims": 1,
-    "output_dims": 2,
+    "output_dims": 1,
+    "nlearners": 5
 }
 
-model = DeepEnsemble(batch_size=10, mlp_params=mlp_params, nlearners=5, normalize_input=True,
-                 normalize_output=True, rng=None)
+exp_params = {
+    "debug": False,
+    "tb_logging": True,
+    "tb_log_dir": f"runs/deep_ensemble__{objective_func.__name__}/",
+    # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
+    "tb_exp_name": f"lr {model_params['learning_rate']} epochs {model_params['num_epochs']} "
+                   f"minba {model_params['batch_size']} hu {' '.join([str(x) for x in model_params['hidden_layer_sizes']])} "
+                   f"trainsize {TRAIN_SET_SIZE} {np.random.randint(0, 1e6)}",
+    'model_logger': model_logger
+}
+
+ExpConfig.read_exp_params(exp_params)
+model = DeepEnsemble(model_params=model_params)
+# model.fit(x[:, None], y, plotter=final_plotter)
 model.fit(x[:, None], y)
-
-
-m, std = model.predict(grid[:, None])
-# logging.info(f"Prediced mean is {m}, predicted standard deviation is {std}")
-plt.plot(x, y, "ro")
-plt.grid()
-plt.plot(grid, fvals, "k--")
-plt.plot(grid, m, "blue")
-plt.fill_between(grid, m + std, m - std, color="orange", alpha=0.8)
-plt.fill_between(grid, m + 2 * std, m - 2 * std, color="orange", alpha=0.6)
-plt.fill_between(grid, m + 3 * std, m - 3 * std, color="orange", alpha=0.4)
-plt.xlim(0, 1)
-plt.xlabel(r"Input $x$")
-plt.ylabel(r"Output $f(x)$")
-plt.show()

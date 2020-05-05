@@ -92,8 +92,7 @@ exp_params = {
     'model_logger': model_logger
 }
 
+print(f"Generating experiment: {exp_params['tb_log_dir'] + exp_params['tb_exp_name']}")
 ExpConfig.read_exp_params(exp_params)
 model = MCBatchNorm(model_params=model_params)
-
 model.fit(x[:, None], y, plotter=final_plotter)
-print(f"Generating experiment: {exp_params['tb_log_dir'] + exp_params['tb_exp_name']}")
