@@ -1,11 +1,12 @@
 # coding: utf-8
-
 import sys
 sys.path.append('/home/archit/master_project/pybnn')
 import numpy as np
 import matplotlib.pyplot as plt
 
+from pybnn.config import ExpConfig
 from pybnn.models import MCDropout
+from pybnn.models import logger as model_logger
 
 # plt.rc('text', usetex=True)
 
@@ -25,7 +26,7 @@ def tanh_p_sinc(x):
 def sinc_m_tanh(x):
     return np.sinc(x * 10 - 5) - np.tanh(x * 5)
 
-objective_func = sinc
+objective_func = sinc_m_tanh
 
 rng = np.random.RandomState(42)
 
@@ -35,7 +36,7 @@ BATCH_SIZE = 20
 x = rng.rand(TRAIN_SET_SIZE)
 y = objective_func(x)
 
-grid = np.linspace(0, 1, 100)
+grid = np.linspace(0, 1, 1000)
 fvals = objective_func(grid)
 
 plt.plot(grid, fvals, "k--")
@@ -63,34 +64,33 @@ def final_plotter(predict):
     ax.set_ylabel(r"Output $f(x)$")
     return fig
 
-mlp_params = {
-    "num_epochs": 500,
-    "learning_rate": 0.01,
-    "batch_size": BATCH_SIZE,
-    "n_units": [50, 50, 50],
-    "input_dims": 1,
-    "output_dims": 1,
-}
 
-exp_params = {
+
+model_params = {
+    "num_epochs": 500,
+    "batch_size": BATCH_SIZE,
+    "learning_rate": 0.001,
     "normalize_input": True,
     "normalize_output": True,
     "rng": None,
-    "debug": True,
-    "tb_logging": True,
-    "tb_log_dir": f"runs/mcdropout__{objective_func.__name__}/",
-    # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
-    "tb_exp_name": f"lr {mlp_params['learning_rate']} epochs {mlp_params['num_epochs']} "
-                   f"minba {mlp_params['batch_size']} hu {' '.join([str(x) for x in mlp_params['n_units']])} "
-                   f"trainsize {TRAIN_SET_SIZE} {np.random.randint(0, 1e6)}",
-}
-
-print(f"Generating experiment: {exp_params['tb_exp_name']}")
-
-model_params = {
+    "hidden_layer_sizes": [100, 100, 100],
+    "input_dims": 1,
+    "output_dims": 1,
     "pdrop": [0.2, 0.5, 0.5]
 }
 
-model = MCDropout(batch_size=BATCH_SIZE, mlp_params=mlp_params, **exp_params, **model_params)
+exp_params = {
+    "debug": False,
+    "tb_logging": True,
+    "tb_log_dir": f"runs/mcdropout_new__{objective_func.__name__}/",
+    # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
+    "tb_exp_name": f"lr {model_params['learning_rate']} epochs {model_params['num_epochs']} "
+                   f"minba {model_params['batch_size']} hu {' '.join([str(x) for x in model_params['hidden_layer_sizes']])} "
+                   f"trainsize {TRAIN_SET_SIZE} {np.random.randint(0, 1e6)}",
+    'model_logger': model_logger
+}
 
+print(f"Generating experiment: {exp_params['tb_log_dir'] + exp_params['tb_exp_name']}")
+ExpConfig.read_exp_params(exp_params)
+model = MCDropout(model_params=model_params)
 model.fit(x[:, None], y, plotter=final_plotter)
