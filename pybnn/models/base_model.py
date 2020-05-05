@@ -33,24 +33,33 @@ class BaseModel(object):
 
     @property
     def model_params(self):
+        """
+        namedtuple of all the model parameters. Can be set to another compatible namedtuple or dict in order to update
+        the respective parameters, or assigned None in order to reset parameters to default values. Passing an empty
+        dict causes no changes.
+        """
         return self.modelParamsContainer(**dict([(k, self.__getattribute__(k))
                                                  for k in self.__class__.modelParamsContainer._fields]))
 
     @model_params.setter
     def model_params(self, new_params):
         if isinstance(new_params, self.modelParamsContainer):
-            logger.debug("model_params setter called with model_params object. Updating model params.")
+            logger.debug("model_params setter called with model_params object %s. "
+                         "Updating model params." % str(new_params))
             [setattr(self, k, v) for k, v in new_params._asdict().items()]
         elif isinstance(new_params, dict):
-            logger.debug("model_params setter called with dict. Updating model params.")
             if new_params:
-                [setattr(self, k, v) if k in self._default_model_params._fields else
-                 logger.debug("Ignoring unknown attribute %s" % k) for k, v in new_params.items()]
+                logger.debug("model_params setter called with dict. Updating model params.")
+                self.model_params = self.modelParamsContainer(**new_params)
             else:
                 logger.debug("model_params setter called with empty dict. No updates.")
+        elif new_params is None:
+            logger.debug("model_params setter called with None. Restoring model_params to defaults.")
+            self.model_params = self.modelParamsContainer()
         else:
             raise TypeError("Invalid type %s, must be of type %s or dict." %
-                            (type(new_params), type(self.model_params)))
+                            (type(new_params), type(self.modelParamsContainer())))
+
 
     def __init__(self,
                  num_epochs=_default_model_params.num_epochs,
@@ -108,7 +117,7 @@ class BaseModel(object):
 
         # TODO: Update all sub-models to use rng properly
         logger.info("Initialized base model.")
-        logger.debug(f"Initialized base model parameters:\n{self.model_params}")
+        logger.debug("Initialized base model parameters:\n" % str(self.model_params))
 
     @property
     def rng(self):
@@ -192,7 +201,7 @@ class BaseModel(object):
         @functools.wraps(func)
         def func_wrapper(self, *args, **kwargs):
             if conf.tb_logging:
-                logger.debug(f"Wrapping call to function {func.__name__} in safe tensorboard usage code.")
+                logger.debug("Wrapping call to function %s in safe tensorboard usage code." % str(func.__name__))
                 self.tb_writer = conf.tb_writer()
                 res = func(self, *args, **kwargs)
                 self.tb_writer.close()
