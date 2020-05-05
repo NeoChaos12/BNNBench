@@ -55,7 +55,9 @@ class MLP(BaseModel):
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
         "input_dims": 1,    # Inferred during training from X.shape[1]
-        "output_dims": 1    # Currently, there is no support for any value except 1
+        "output_dims": 1,   # Currently, there is no support for any value except 1
+        "loss_func": torch.nn.functional.mse_loss,
+        "optimizer": optim.Adam,
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -74,7 +76,9 @@ class MLP(BaseModel):
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
                  input_dims=_default_model_params.input_dims,
-                 output_dims=_default_model_params.output_dims, **kwargs):
+                 output_dims=_default_model_params.output_dims,
+                 loss_func=_default_model_params.loss_func,
+                 optimizer=_default_model_params.optimizer, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
         be subclassed from this class.
@@ -89,7 +93,14 @@ class MLP(BaseModel):
             The dimensionality of the inputs. Generally inferred from the data when the model is fit, and does not need
             to be specified at model creation time. Default is 1.
         output_dims: int
-            The dimensionality of the outputs. Currently only a value of 1 (default) is supported.
+            The dimensionality of the outputs. Currently, this cannot be inferred and must be provided before network
+            generation. Default is 1.
+        loss_func: callable
+            A callable object which accepts as input two arguments - output, target - and returns a PyTorch Tensor
+            which is used to calculate the loss. Default is torch.nn.functional.mse_loss.
+        optimizer: callable
+            A callable object which is used as the optimizer by PyTorch and should have the corresponding signature.
+            Default is torch.optim.Adam
         kwargs: dict
             Other model parameters for the Base Model.
         """
@@ -100,6 +111,8 @@ class MLP(BaseModel):
             self.hidden_layer_sizes = hidden_layer_sizes
             self.input_dims = input_dims
             self.output_dims = output_dims
+            self.loss_func = loss_func
+            self.optimizer = optimizer
             # Pass on the remaining keyword arguments to the super class to deal with.
             super(MLP, self).__init__(**kwargs)
         else:
@@ -162,7 +175,7 @@ class MLP(BaseModel):
         self.y = self.y[:, None]
 
         self._generate_network()
-        optimizer = optim.Adam(self.network.parameters(), lr=self.learning_rate)
+        optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
 
         if conf.tb_logging:
             # with conf.tb_writer() as writer:
@@ -185,7 +198,7 @@ class MLP(BaseModel):
                 optimizer.zero_grad()
                 output = self.network(inputs)
 
-                loss = torch.nn.functional.mse_loss(output, targets)
+                loss = self.loss_func(output, targets)
                 loss.backward()
                 optimizer.step()
 

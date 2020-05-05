@@ -77,6 +77,7 @@ exp_params = {
     "debug": True,
     "tb_logging": True,
     "tb_log_dir": f"runs/mlp_{objective_function.__name__}/",
+    # "tb_log_dir": f"runs/mlp_test/",
     # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
     "tb_exp_name": f"lr {model_params['learning_rate']} epochs {model_params['num_epochs']} "
                    f"minba {model_params['batch_size']} hu {' '.join([str(x) for x in model_params['hidden_layer_sizes']])} "
