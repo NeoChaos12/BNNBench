@@ -16,7 +16,6 @@ from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Pr
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.models.mlp import mlplayergen
 from pybnn.config import mlpParams
-from functools import partial
 from collections import OrderedDict
 
 TENSORBOARD_LOGGING = False

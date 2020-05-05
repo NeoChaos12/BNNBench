@@ -4,7 +4,8 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 import torch
 from pybnn.models import logger
 from collections import namedtuple
-
+from pybnn.config import ExpConfig as conf
+import functools
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
@@ -32,23 +33,19 @@ class BaseModel(object):
 
     @property
     def model_params(self):
-        return self.modelParamsContainer({[(k, self.__dict__[k])
-                                           for k in self.__class__.modelParamsContainer.fields]})
+        return self.modelParamsContainer(**dict([(k, self.__getattribute__(k))
+                                                 for k in self.__class__.modelParamsContainer._fields]))
 
     @model_params.setter
     def model_params(self, new_params):
-        if isinstance(new_params, self.model_params):
+        if isinstance(new_params, self.modelParamsContainer):
             logger.debug("model_params setter called with model_params object. Updating model params.")
             [setattr(self, k, v) for k, v in new_params._asdict().items()]
         elif isinstance(new_params, dict):
             logger.debug("model_params setter called with dict. Updating model params.")
             if new_params:
-                try:
-                    [setattr(self, k, new_params[k]) for k in self._default_model_params.fields]
-                except KeyError as e:
-                    logger.critical("Failed to update model parameters for %s - "
-                                    "unknown model parameter." % self.__class__)
-                    raise e
+                [setattr(self, k, v) if k in self._default_model_params._fields else
+                 logger.debug("Ignoring unknown attribute %s" % k) for k, v in new_params.items()]
             else:
                 logger.debug("model_params setter called with empty dict. No updates.")
         else:
@@ -61,7 +58,7 @@ class BaseModel(object):
                  learning_rate=_default_model_params.learning_rate,
                  normalize_input=_default_model_params.normalize_input,
                  normalize_output=_default_model_params.normalize_output,
-                 rng=None, **kwargs):
+                 rng=_default_model_params.rng, **kwargs):
         """
         Abstract base class for all models. Model parameters may be passed as either individual arguments or as a
         baseModelParams object to the keyword argument baseModelParams. If a baseModelParams object is specified, the
@@ -81,6 +78,9 @@ class BaseModel(object):
             Whether or not the outputs to the MLP should be normalized first before use for training. Default is True.
         rng: None or int or np.random.RandomState
             The random number generator to be used for all stochastic operations that rely on np.random.
+        kwargs: dict
+            A keyword argument 'model_params' can be passed to specify all necessary model parameters either as a dict
+            or a modelParamsContainer object. If this argument is specified, all other arguments are ignored.
         """
 
         self.X = None
@@ -107,6 +107,8 @@ class BaseModel(object):
                         '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
 
         # TODO: Update all sub-models to use rng properly
+        logger.info("Initialized base model.")
+        logger.debug(f"Initialized base model parameters:\n{self.model_params}")
 
     @property
     def rng(self):
@@ -180,6 +182,22 @@ class BaseModel(object):
             Predictive variance of the test data points
         """
         pass
+
+
+    def _tensorboard_user(func):
+        """
+        Use this decorator in functions that need to use tensboard in order to make the writer safely available as an
+        attribute 'tb_writer' of the object that the function belongs to.
+        """
+        @functools.wraps(func)
+        def func_wrapper(self, *args, **kwargs):
+            if conf.tb_logging:
+                logger.debug(f"Wrapping call to function {func.__name__} in safe tensorboard usage code.")
+                self.tb_writer = conf.tb_writer()
+                res = func(self, *args, **kwargs)
+                self.tb_writer.close()
+                return res
+        return func_wrapper
 
     def _check_shapes_train(func):
         def func_wrapper(self, X, y, *args, **kwargs):

@@ -1,5 +1,7 @@
 from collections import namedtuple
 from functools import partial
+from torch.utils.tensorboard import SummaryWriter
+import logging
 
 _mlpParamsDefaultDict = {
     "input_dims": 1,
@@ -22,8 +24,37 @@ expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults
 
 class ExpConfig:
     tb_writer: partial
-    tb_logging: bool
+    debug = False
+    tb_logging = False
     tag_train_loss = "Loss/Train"
     tag_train_fig = "Results/Train"
 
-    pass
+
+    @classmethod
+    def read_exp_params(cls, exp_params):
+        try:
+            if exp_params.pop('debug'):
+                cls.enable_debug_mode(exp_params['model_logger'])
+        except KeyError:
+            cls.debug = False
+
+        try:
+            if exp_params.pop('tb_logging'):
+                cls.enable_tb(logdir=exp_params['tb_log_dir'], expname=exp_params['tb_exp_name'])
+        except KeyError:
+            cls.tb_logging = False
+
+
+    @classmethod
+    def enable_tb(cls, logdir=None, expname=None):
+        cls.tb_logging = True
+        cls.log_plots = True
+        cls.tb_log_dir = logdir
+        cls.tb_exp_name = expname
+        cls.tb_writer = partial(SummaryWriter, log_dir=logdir + expname)
+
+
+    @classmethod
+    def enable_debug_mode(cls, model_logger):
+        cls.debug = True
+        model_logger.setLevel(logging.DEBUG)

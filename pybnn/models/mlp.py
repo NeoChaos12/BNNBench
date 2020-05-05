@@ -51,11 +51,11 @@ class MLP(BaseModel):
     Simple Multi-Layer Perceptron model. Demonstrates usage of BaseModel as well as the FC Layer generator above.
     """
 
-    # Add any new parameters needed by this model here
+    # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
-        "input_dims": 1,
-        "output_dims": 1
+        "input_dims": 1,    # Inferred during training from X.shape[1]
+        "output_dims": 1    # Currently, there is no support for any value except 1
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -75,6 +75,24 @@ class MLP(BaseModel):
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
                  input_dims=_default_model_params.input_dims,
                  output_dims=_default_model_params.output_dims, **kwargs):
+        """
+        Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
+        be subclassed from this class.
+
+        Parameters
+        ----------
+        hidden_layer_sizes: list
+            The size of each hidden layer in the MLP. Each object in the iterable is read as the size of the
+            corresponding MLP hidden layer, starting from the hidden layer right next to the input. Default is
+            [50, 50, 50].
+        input_dims: int
+            The dimensionality of the inputs. Generally inferred from the data when the model is fit, and does not need
+            to be specified at model creation time. Default is 1.
+        output_dims: int
+            The dimensionality of the outputs. Currently only a value of 1 (default) is supported.
+        kwargs: dict
+            Other model parameters for the Base Model.
+        """
         try:
             model_params = kwargs.pop('model_params')
         except (KeyError, AttributeError):
@@ -86,27 +104,40 @@ class MLP(BaseModel):
             super(MLP, self).__init__(**kwargs)
         else:
             # Read model parameters from configuration object
-            # noinspection PyProtectedMember
             self.model_params = model_params
 
         if kwargs:
             logger.info("Ignoring unused keyword arguments:\n%s" %
                         '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
 
+        logger.info("Initialized MLP model.")
+        logger.debug(f"Initialized MLP Model parameters {self.model_params}")
 
 
     def _generate_network(self):
+        logger.info("Generating network.")
         layer_gen = mlplayergen(
             layer_size=self.hidden_layer_sizes,
             input_dims=self.input_dims,
-            output_dims=self.output_dims,
+            output_dims=None,   # Don't generate the output layer yet
             bias=True
         )
 
-        self.network = nn.Sequential(OrderedDict([(f"FC_{layer_idx}", fclayer)
-                                                  for layer_idx, fclayer in enumerate(layer_gen, start=1)]))
+        layers = []
+
+        for layer_idx, fclayer in enumerate(layer_gen, start=1):
+            layers.append((f"FC{layer_idx}", fclayer))
+            logger.debug(f"Generated FC Layer {layers[-1][0]}: {fclayer.in_features} x {fclayer.out_features}")
+            layers.append((f"Tanh{layer_idx}", nn.Tanh()))
+            logger.debug(f"Generated Tanh layer {layers[-1][0]}")
+
+        layers.append(("Output", nn.Linear(self.hidden_layer_sizes[-1], self.output_dims)))
+
+        self.network = nn.Sequential(OrderedDict(layers))
+        logger.info("Finished generating network.")
 
 
+    @BaseModel._tensorboard_user
     def fit(self, X, y, **kwargs):
         r"""
         Fit the model to the given dataset (X, Y).
@@ -124,22 +155,26 @@ class MLP(BaseModel):
         self.X = X
         self.y = y
 
+        self.input_dims = X.shape[1]
+
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
         self.y = self.y[:, None]
 
-        optimizer = optim.Adam(self.network.parameters(),
-                               lr=self.mlp_params["learning_rate"])
+        self._generate_network()
+        optimizer = optim.Adam(self.network.parameters(), lr=self.learning_rate)
 
         if conf.tb_logging:
-            with self.tb_writer() as writer:
-                writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
+            # with conf.tb_writer() as writer:
+            #     writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
+            #                                               dtype=torch.float, requires_grad=False))
+            self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
                                                           dtype=torch.float, requires_grad=False))
 
         # Start training
         self.network.train()
-        lc = np.zeros([self.mlp_params["num_epochs"]])
-        for epoch in range(self.mlp_params["num_epochs"]):
+        lc = np.zeros([self.num_epochs])
+        for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
 
@@ -163,23 +198,26 @@ class MLP(BaseModel):
             total_time = curtime - start_time
 
             if conf.tb_logging:
-                with conf.tb_writer() as writer:
-                    writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
+                # with conf.tb_writer() as writer:
+                #     logger.debug(f"Adding loss {lc[epoch]} at step {epoch+1}")
+                #     writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
+                self.tb_writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
 
             if epoch % 100 == 99:
-                logger.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
-                logger.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
-                logger.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
+                logger.info("Epoch {} of {}".format(epoch + 1, self.num_epochs))
+                logger.info("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
+                logger.info("Training loss:\t\t{:.5g}\n".format(train_err / train_batches))
 
-                if self.log_plots:
+                if conf.log_plots:
                     try:
                         plotter = kwargs["plotter"]
                         logger.debug("Saving performance plot at training epoch %d" % (epoch + 1))
-                        with conf.tb_writer() as writer:
-                            writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict), global_step=epoch+1)
+                        # with conf.tb_writer() as writer:
+                        #     writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict), global_step=epoch+1)
+                        self.tb_writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict), global_step=epoch+1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
-                        self.log_plots = False
+                        conf.log_plots = False
 
         return
 
