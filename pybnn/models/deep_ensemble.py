@@ -4,15 +4,12 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
+from pybnn.config import ExpConfig as conf
 from pybnn.models import logger
-from pybnn.models.base_model import BaseModel
-from pybnn.models.mlp import mlplayergen, MLP
+from pybnn.models.mlp import MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from collections import OrderedDict, namedtuple
-from torch.utils.tensorboard import SummaryWriter
-from functools import partial
+from collections import namedtuple
 
 class DeepEnsemble(MLP):
     """
@@ -70,29 +67,6 @@ class DeepEnsemble(MLP):
         logger.debug(f"Intialized Deep Ensemble model parameters:\n{self.model_params}")
 
 
-    # def _init_learners(self):
-        # for learner in range(1, self.nlearners + 1):
-            # input_dims = self.input_dims
-            # output_dims = self.output_dims
-            # n_units = self.n_units
-            #
-            # layers = []
-            # layer_gen = mlplayergen(
-            #     layer_size=n_units,
-            #     input_dims=input_dims,
-            #     output_dims=None    # Don't generate the output layer
-            # )
-            #
-            # for layer_idx, layer in enumerate(layer_gen, start=1):
-            #     layers.append((f"FC_{learner}_{layer_idx}", layer))
-            #     layers.append((f"Tanh_{learner}_{layer_idx}", nn.Tanh()))
-            #
-            # layers.append((f"Output_{learner}", nn.Linear(n_units[-1], output_dims)))
-            #
-            # mlp = nn.Sequential(OrderedDict(layers))
-            # self.learners.append(mlp)
-
-
     @property
     def super_model_params(self):
         """
@@ -103,7 +77,6 @@ class DeepEnsemble(MLP):
         return super(self.__class__, self).modelParamsContainer(**param_dict)
 
 
-    @BaseModel._tensorboard_user
     def fit(self, X, y, **kwargs):
         r"""
         Fit the model to the given dataset.
@@ -115,6 +88,9 @@ class DeepEnsemble(MLP):
             Set of sampled inputs.
         y: array-like
             Set of observed outputs.
+        kwargs: dict
+            Keyword-only arguments for performing various extra tasks. This includes 'plotter' for plotting the outputs
+            of individual learners after set intervals of training.
         """
 
 
@@ -132,12 +108,19 @@ class DeepEnsemble(MLP):
         logger.debug("Generating learners using configuration:\n%s" % str(mlp_params))
         self.learners = [MLP(model_params=mlp_params) for _ in range(self.nlearners)]
 
+        if conf.tb_logging:
+            model_exp_name = conf.tb_exp_name
+
         # Iterate over base learners and train them
         for idx, learner in enumerate(self.learners, start=1):
             logger.info("Training learner %d." % idx)
-            # self._fit_network(self.learners[learner])
-            learner.fit(X, y)
-            logger.info("Finished training learner %d\n%s\n" % (idx, {'*' * 20}))
+            learner_exp_name = model_exp_name + f"_learner{idx}"
+            learner.fit(X, y, tb_logging=conf.tb_logging, tb_logdir=conf.tb_log_dir, tb_expname=learner_exp_name,
+                        **kwargs)
+            logger.info("Finished training learner %d\n%s\n" % (idx, '*' * 20))
+
+        if model_exp_name:
+            conf.enable_tb(logdir=conf.tb_log_dir, expname=model_exp_name)
 
         total_time = time.time() - start_time
         logger.info("Finished fitting model. Total time: %.3fs" % total_time)

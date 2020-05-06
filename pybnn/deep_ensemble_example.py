@@ -46,6 +46,20 @@ plt.xlim(0, 1)
 
 # plt.show()
 
+def learner_plotter(predict):
+    fig, ax = plt.subplots(1, 1, squeeze=True)
+
+    m = predict(grid[:, None])
+
+    ax.plot(x, y, "ro")
+    ax.grid()
+    ax.plot(grid, fvals, "k--")
+    ax.plot(grid, m, "blue")
+    ax.set_xlim(0, 1)
+    ax.set_xlabel(r"Input $x$")
+    ax.set_ylabel(r"Output $f(x)$")
+    return fig
+
 
 def final_plotter(predict):
     fig, ax = plt.subplots(1, 1, squeeze=True)
@@ -80,9 +94,9 @@ model_params = {
 }
 
 exp_params = {
-    "debug": False,
+    "debug": True,
     "tb_logging": True,
-    "tb_log_dir": f"runs/deep_ensemble__{objective_func.__name__}/",
+    "tb_log_dir": f"runs/deep_ensemble_new__{objective_func.__name__}/",
     # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
     "tb_exp_name": f"lr {model_params['learning_rate']} epochs {model_params['num_epochs']} "
                    f"minba {model_params['batch_size']} hu {' '.join([str(x) for x in model_params['hidden_layer_sizes']])} "
@@ -92,5 +106,5 @@ exp_params = {
 
 ExpConfig.read_exp_params(exp_params)
 model = DeepEnsemble(model_params=model_params)
-# model.fit(x[:, None], y, plotter=final_plotter)
-model.fit(x[:, None], y)
+model.fit(x[:, None], y, plotter=learner_plotter) # TODO: Fix plotting of learners' outputs, implement plotting of model output
+# model.fit(x[:, None], y)
