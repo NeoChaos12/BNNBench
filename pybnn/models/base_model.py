@@ -31,6 +31,7 @@ class BaseModel(object):
     modelParamsContainer = __modelParams
     _default_model_params = modelParamsContainer() # Must be re-defined as-is by each child!!
 
+
     @property
     def model_params(self):
         """
@@ -40,6 +41,7 @@ class BaseModel(object):
         """
         return self.modelParamsContainer(**dict([(k, self.__getattribute__(k))
                                                  for k in self.__class__.modelParamsContainer._fields]))
+
 
     @model_params.setter
     def model_params(self, new_params):
@@ -119,9 +121,11 @@ class BaseModel(object):
         logger.info("Initialized base model.")
         logger.debug("Initialized base model parameters:\n" % str(self.model_params))
 
+
     @property
     def rng(self):
         return self.__rng
+
 
     @rng.setter
     def rng(self, new_rng):
@@ -141,6 +145,7 @@ class BaseModel(object):
         """
         pass
 
+
     @abc.abstractmethod
     def fit(self, X, y):
         """
@@ -155,6 +160,7 @@ class BaseModel(object):
             The corresponding target values of the input data points.
         """
         pass
+
 
     def update(self, X, y):
         """
@@ -172,6 +178,7 @@ class BaseModel(object):
         X = np.append(self.X, X, axis=0)
         y = np.append(self.y, y, axis=0)
         self.fit(X, y)
+
 
     @abc.abstractmethod
     def predict(self, X_test):
@@ -200,6 +207,23 @@ class BaseModel(object):
         """
         @functools.wraps(func)
         def func_wrapper(self, *args, **kwargs):
+            # Allow TB configuration parameters to be passed as keyword-only arguments to the wrapped function
+            # TODO: Upgrade ExpConf to also use the namedtuple API, thus allowing its reuse here.
+            try:
+                # Consume TB config arguments
+                flag = kwargs.pop('tb_logging')
+                logdir = kwargs.pop('tb_logdir')
+                expname = kwargs.pop('tb_expname')
+                if flag:
+                    logger.debug("Enabling Tensorboard logging with logdir %s and expname %s" % (logdir, expname))
+                    conf.enable_tb(logdir=logdir, expname=expname)
+                else:
+                    logger.debug("Disabling Tensorboard logging.")
+                    conf.disable_tb()
+
+            except KeyError:
+                logger.debug("Tensorboard configuration incomplete or absent. Not altering Tensorboard configuration.")
+
             if conf.tb_logging:
                 logger.debug("Wrapping call to function %s in safe tensorboard usage code." % str(func.__name__))
                 self.tb_writer = conf.tb_writer()
@@ -207,6 +231,7 @@ class BaseModel(object):
                 self.tb_writer.close()
                 return res
         return func_wrapper
+
 
     def _check_shapes_train(func):
         def func_wrapper(self, X, y, *args, **kwargs):
@@ -217,12 +242,14 @@ class BaseModel(object):
 
         return func_wrapper
 
+
     def _check_shapes_predict(func):
         def func_wrapper(self, X, *args, **kwargs):
             assert len(X.shape) == 2
             return func(self, X, *args, **kwargs)
 
         return func_wrapper
+
 
     def get_json_data(self):
         """
@@ -237,6 +264,7 @@ class BaseModel(object):
                      'hyperparameters': ""}
         return json_data
 
+
     def normalize_data(self):
         """
         Check the flags normalize_inputs and normalize_outputs, and normalize the respective data accordingly.
@@ -249,6 +277,7 @@ class BaseModel(object):
         # Normalize ouputs
         if self.normalize_output:
             self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(self.y)
+
 
     def iterate_minibatches(self, inputs, targets, batchsize=None, shuffle=False, as_tensor=False):
         """
@@ -275,6 +304,7 @@ class BaseModel(object):
                 yield torch.Tensor(inputs[excerpt]), torch.Tensor(targets[excerpt])
             else:
                 yield inputs[excerpt], targets[excerpt]
+
 
     def get_incumbent(self):
         """

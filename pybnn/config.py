@@ -55,6 +55,15 @@ class ExpConfig:
 
 
     @classmethod
+    def disable_tb(cls):
+        cls.tb_logging = False
+        cls.log_plots = False
+        cls.tb_log_dir = ""
+        cls.tb_exp_name = ""
+        cls.tb_writer = None
+
+
+    @classmethod
     def enable_debug_mode(cls, model_logger):
         cls.debug = True
         model_logger.setLevel(logging.DEBUG)
