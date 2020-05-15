@@ -95,15 +95,16 @@ class MCBatchNorm(MLP):
         )
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
-            layers.append((f"FC_{layer_idx}", fclayer))
+            layers.append((f"FC{layer_idx}", fclayer))
             self.batchnorm_layers.append(bnlayer(num_features=fclayer.out_features))
-            layers.append((f"BatchNorm_{layer_idx}", self.batchnorm_layers[-1]))
-            layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
+            layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
+            layers.append((f"Tanh{layer_idx}", nn.Tanh()))
 
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
 
         logger.info("Generated network for MC-BatchNorm.")
+        # print(f"Modules in MCBatchNorm are {[name for name, _ in self.network.named_children()]}")
 
 
     def predict(self, X_test, nsamples=1000):

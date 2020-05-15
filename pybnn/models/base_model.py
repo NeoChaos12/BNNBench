@@ -1,4 +1,5 @@
 import abc
+import os.path
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 import torch
@@ -230,7 +231,34 @@ class BaseModel(object):
                 res = func(self, *args, **kwargs)
                 self.tb_writer.close()
                 return res
+            else:
+                return func(self, *args, **kwargs)
         return func_wrapper
+
+
+    def _check_model_path(func):
+        """
+        Check if the model_path parameter is a valid path or not. If it is, pass the absolute version of this path to
+        the wrapped function as keyword argument 'path'. Otherwise, pass the absolute path to the current directory.
+        The check is skipped if a 'path' keyword argument was passed.
+        """
+        @functools.wraps(func)
+        def wrapper(self, **kwargs):
+            if 'path' in kwargs:
+                return func(self, **kwargs)
+
+            path = self.model_path
+            if not os.path.isabs(path):
+                path = os.path.abspath(path)
+
+            if not os.path.exists(path):
+                logger.warn("Could not verify given model path: %s\nUsing default path: %s" %
+                            (str(path), str(os.path.abspath(os.path.curdir))))
+                path = os.path.abspath(os.path.curdir)
+
+            path = os.path.join(path, self.model_name)
+            return func(self, path=path, **kwargs)
+        return wrapper
 
 
     def _check_shapes_train(func):

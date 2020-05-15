@@ -19,10 +19,17 @@ plt.rcParams['text.latex.preamble'] = [r"\usepackage{amsmath}"]
 def sinc(x):
     return np.sinc(x * 10 - 5)
 
+
+def sin(x):
+    return np.sin(x * 50)
+
 def tanh_p_sinc(x):
     return np.tanh(x * 5) + np.sinc(x * 10 - 5)
 
-objective_function = sinc
+def xsinx(x):
+    return - 10 * x * np.sin(10 * x)
+
+objective_function = sin
 
 rng = np.random.RandomState(42)
 
@@ -59,26 +66,30 @@ def final_plotter(predict):
 
 
 model_params = {
-    "num_epochs": 500,
+    "num_epochs": 200,
     "batch_size": BATCH_SIZE,
     "learning_rate": 0.001,
     "normalize_input": True,
     "normalize_output": True,
     "rng": None,
-    "hidden_layer_sizes": [32, 64, 128],
+    "hidden_layer_sizes": [128, 64, 32],
     "input_dims": 1,
     "output_dims": 1,
+    "model_path": "./experiments/saved_models",
+    "model_name": "mlp1"
 }
 
 exp_params = {
     "debug": True,
     "tb_logging": True,
-    "tb_log_dir": f"runs/mlp_{objective_function.__name__}/",
+    # "tb_log_dir": f"runs/mlp_logweights_{objective_function.__name__}/",
+    "tb_log_dir": f"experiments/runs/mlp_savemodel/",
     # "tb_log_dir": f"runs/mlp_test/",
     # "tb_exp_name": "lr 0.1 epochs 1000 minba 64 hu 50 trainsize 100" + str(datetime.datetime.today()),
     "tb_exp_name": f"lr {model_params['learning_rate']} epochs {model_params['num_epochs']} "
                    f"minba {model_params['batch_size']} hu {' '.join([str(x) for x in model_params['hidden_layer_sizes']])} "
                    f"trainsize {TRAIN_SET_SIZE} {np.random.randint(0, 1e6)}",
+    "save_model": True,
     "model_logger": model_logger
 }
 
@@ -88,3 +99,4 @@ model = MLP(model_params=model_params)
 model.fit(x[:, None], y, plotter=final_plotter)
 print(f"Model parameters are:\n{model.model_params}")
 fig = final_plotter(predict=model.predict)
+plt.show()

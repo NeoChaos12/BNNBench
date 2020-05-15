@@ -1,4 +1,5 @@
 import time
+import os.path
 import torch
 import torch.nn as nn
 from pybnn.models import logger
@@ -8,6 +9,7 @@ from collections import OrderedDict, namedtuple
 import torch.optim as optim
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+
 
 def mlplayergen(layer_size, input_dims=1, output_dims=None, nlayers=None, bias=True):
     """
@@ -54,10 +56,12 @@ class MLP(BaseModel):
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
-        "input_dims": 1,    # Inferred during training from X.shape[1]
-        "output_dims": 1,   # Currently, there is no support for any value except 1
+        "input_dims": 1,  # Inferred during training from X.shape[1]
+        "output_dims": 1,  # Currently, there is no support for any value except 1
         "loss_func": torch.nn.functional.mse_loss,
         "optimizer": optim.Adam,
+        "model_path": os.path.abspath(os.path.curdir),
+        "model_name": "mlp_model"
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -73,12 +77,15 @@ class MLP(BaseModel):
     # Create a record of all default parameter values used to run this model, including the Base Model parameters
     _default_model_params = modelParamsContainer()
 
+
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
                  input_dims=_default_model_params.input_dims,
                  output_dims=_default_model_params.output_dims,
                  loss_func=_default_model_params.loss_func,
-                 optimizer=_default_model_params.optimizer, **kwargs):
+                 optimizer=_default_model_params.optimizer,
+                 model_path=_default_model_params.model_path,
+                 model_name=_default_model_params.model_name, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
         be subclassed from this class.
@@ -113,6 +120,8 @@ class MLP(BaseModel):
             self.output_dims = output_dims
             self.loss_func = loss_func
             self.optimizer = optimizer
+            self.model_path = model_path
+            self.model_name = model_name
             # Pass on the remaining keyword arguments to the super class to deal with.
             super(MLP, self).__init__(**kwargs)
         else:
@@ -124,7 +133,7 @@ class MLP(BaseModel):
                         '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
 
         logger.info("Initialized MLP model.")
-        logger.debug(f"Initialized MLP Model parameters {self.model_params}")
+        logger.debug("Initialized MLP Model parameters %s" % str(self.model_params))
 
 
     def _generate_network(self):
@@ -132,7 +141,7 @@ class MLP(BaseModel):
         layer_gen = mlplayergen(
             layer_size=self.hidden_layer_sizes,
             input_dims=self.input_dims,
-            output_dims=None,   # Don't generate the output layer yet
+            output_dims=None,  # Don't generate the output layer yet
             bias=True
         )
 
@@ -148,7 +157,6 @@ class MLP(BaseModel):
 
         self.network = nn.Sequential(OrderedDict(layers))
         logger.info("Finished generating network.")
-
 
     @BaseModel._tensorboard_user
     def fit(self, X, y, **kwargs):
@@ -175,6 +183,7 @@ class MLP(BaseModel):
         self.y = self.y[:, None]
 
         self._generate_network()
+
         optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
 
         if conf.tb_logging:
@@ -182,7 +191,16 @@ class MLP(BaseModel):
             #     writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
             #                                               dtype=torch.float, requires_grad=False))
             self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
-                                                          dtype=torch.float, requires_grad=False))
+                                                              dtype=torch.float, requires_grad=False))
+
+        # TODO: Standardize
+        if conf.tb_logging:
+            weights = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
+            weights.append(("Output", []))
+            biases = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
+            biases.append(("Output", []))
+
+
 
         # Start training
         self.network.train()
@@ -214,7 +232,22 @@ class MLP(BaseModel):
                 # with conf.tb_writer() as writer:
                 #     logger.debug(f"Adding loss {lc[epoch]} at step {epoch+1}")
                 #     writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
-                self.tb_writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
+                self.tb_writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch + 1)
+
+                #TODO: Standardize
+                for ctr in range(len(self.hidden_layer_sizes)):
+                    layer = self.network.__getattr__(f"FC{ctr+1}")
+                    lweight = layer.weight.cpu().detach().numpy().flatten()
+                    lbias = layer.bias.cpu().detach().numpy().flatten()
+                    weights[ctr][1].append(lweight)
+                    biases[ctr][1].append(lbias)
+
+                layer = self.network.__getattr__("Output")
+                lweight = layer.weight.cpu().detach().numpy().flatten()
+                lbias = layer.bias.cpu().detach().numpy().flatten()
+                weights[-1][1].append(lweight)
+                biases[-1][1].append(lbias)
+
 
             if epoch % 100 == 99:
                 logger.info("Epoch {} of {}".format(epoch + 1, self.num_epochs))
@@ -225,12 +258,22 @@ class MLP(BaseModel):
                     try:
                         plotter = kwargs["plotter"]
                         logger.debug("Saving performance plot at training epoch %d" % (epoch + 1))
-                        # with conf.tb_writer() as writer:
-                        #     writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict), global_step=epoch+1)
-                        self.tb_writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict), global_step=epoch+1)
+                        self.tb_writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict),
+                                                  global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
                         conf.log_plots = False
+
+        if conf.tb_logging:
+            if conf.log_plots:
+                logger.info("Plotting weight graphs.")
+                fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1), title="Layer weights")
+                self.tb_writer.add_figure(tag="Layer weights", figure=fig)
+                fig = self.__plot_layer_weights(weights=biases, epochs=range(1, self.num_epochs + 1), title="Layer biases")
+                self.tb_writer.add_figure(tag="Layer biases", figure=fig)
+
+        if conf.save_model:
+            self.save_network()
 
         return
 
@@ -270,3 +313,32 @@ class MLP(BaseModel):
             return zero_mean_unit_var_denormalization(Yt_hat, mean=self.y_mean, std=self.y_std)
         else:
             return Yt_hat
+
+
+    def __plot_layer_weights(self, weights, epochs, title="weights"):
+        import matplotlib.pyplot as plt
+        num_layers = len(self.hidden_layer_sizes) + 1
+        fig, axes = plt.subplots(nrows=num_layers, ncols=1, sharex=True, sharey=False, squeeze=True)
+        fig.suptitle(title)
+        for idx, data in enumerate(zip(axes, weights)):
+            ax, d = data
+            name, values = d
+            ax.plot(epochs, values)
+            ax.set_title(f"Layer {name}")
+
+        return fig
+
+
+    @BaseModel._check_model_path
+    def save_network(self, **kwargs):
+        path = kwargs['path']
+        logger.info("Saving model to %s" % str(path))
+        torch.save(self.network.state_dict(), path)
+
+
+    @BaseModel._check_model_path
+    def load_network(self, **kwargs):
+        self._generate_network()
+        path = kwargs['path']
+        logger.info("Loading model from %s" % str(path))
+        self.network.load_state_dict(torch.load(path, map_location='cpu'))

@@ -24,10 +24,15 @@ expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults
 
 class ExpConfig:
     tb_writer: partial
+    save_model = False
+    tb_writer = None
     debug = False
     tb_logging = False
     tag_train_loss = "Loss/Train"
     tag_train_fig = "Results/Train"
+    log_plots = False
+    tb_log_dir = ''
+    tb_exp_name = ''
 
 
     @classmethod
@@ -43,6 +48,8 @@ class ExpConfig:
                 cls.enable_tb(logdir=exp_params['tb_log_dir'], expname=exp_params['tb_exp_name'])
         except KeyError:
             cls.tb_logging = False
+
+        cls.save_model = exp_params.pop('save_model', False)
 
 
     @classmethod
