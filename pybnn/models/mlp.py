@@ -158,10 +158,11 @@ class MLP(BaseModel):
         self.network = nn.Sequential(OrderedDict(layers))
         logger.info("Finished generating network.")
 
-    @BaseModel._tensorboard_user
-    def fit(self, X, y, **kwargs):
+
+    def preprocess_training_data(self, X, y):
         r"""
-        Fit the model to the given dataset (X, Y).
+        Prepares the given dataset of inputs X and labels y to be used for training. This involves inferring the
+        required dimensionality of the inputs for the NN.
 
         Parameters
         ----------
@@ -171,8 +172,6 @@ class MLP(BaseModel):
         y: array-like
             Set of observed outputs.
         """
-
-        start_time = time.time()
         self.X = X
         self.y = y
 
@@ -181,15 +180,22 @@ class MLP(BaseModel):
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
         self.y = self.y[:, None]
+        return
+
+
+    @BaseModel._tensorboard_user
+    def fit(self, **kwargs):
+        r"""
+        Fit the model to the previously pre-processed training dataset.
+        """
+
+        start_time = time.time()
 
         self._generate_network()
 
         optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
 
         if conf.tb_logging:
-            # with conf.tb_writer() as writer:
-            #     writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
-            #                                               dtype=torch.float, requires_grad=False))
             self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
                                                               dtype=torch.float, requires_grad=False))
 
@@ -199,8 +205,6 @@ class MLP(BaseModel):
             weights.append(("Output", []))
             biases = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
             biases.append(("Output", []))
-
-
 
         # Start training
         self.network.train()
@@ -292,9 +296,6 @@ class MLP(BaseModel):
         ----------
         np.array(N,)
             predictive mean
-        np.array(N,)
-            predictive variance
-
         """
 
         # Normalize inputs
@@ -342,3 +343,4 @@ class MLP(BaseModel):
         path = kwargs['path']
         logger.info("Loading model from %s" % str(path))
         self.network.load_state_dict(torch.load(path, map_location='cpu'))
+        logger.info("Successfully loaded model %s." % self.model_name)

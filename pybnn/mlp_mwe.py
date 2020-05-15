@@ -21,7 +21,7 @@ def sinc(x):
 
 
 def sin(x):
-    return np.sin(x * 50)
+    return np.sin(x * 5)
 
 def tanh_p_sinc(x):
     return np.tanh(x * 5) + np.sinc(x * 10 - 5)
@@ -29,7 +29,7 @@ def tanh_p_sinc(x):
 def xsinx(x):
     return - 10 * x * np.sin(10 * x)
 
-objective_function = sin
+objective_function = xsinx
 
 rng = np.random.RandomState(42)
 
@@ -96,7 +96,10 @@ exp_params = {
 conf.read_exp_params(exp_params)
 model = MLP(model_params=model_params)
 
-model.fit(x[:, None], y, plotter=final_plotter)
+model.preprocess_training_data(x[:, None], y)
+# model.fit(plotter=final_plotter)
+
+model.load_network()
 print(f"Model parameters are:\n{model.model_params}")
 fig = final_plotter(predict=model.predict)
 plt.show()
