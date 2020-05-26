@@ -88,12 +88,13 @@ np.save(file=os.path.join(savedir, 'trainset'), arr=np.stack((trainx, trainy), a
 np.save(file=os.path.join(savedir, 'testset'), arr=np.stack((testx, testy), axis=1), allow_pickle=True)
 np.save(file=os.path.join(savedir, 'test_predictions'), arr=np.stack((testx, predicted_y), axis=1), allow_pickle=True)
 
+utils.make_exp_params_json_compatible(exp_params)
 jdict = {
     "objective_function": str(OBJECTIVE_FUNC),
     "dataset_size": str(DATASET_SIZE),
     "testset_fraction": str(TEST_FRACTION),
-    "model_parameters": str(model_params),
-    "experiment_parameters": str(exp_params)
+    "model_parameters": model_params,
+    "experiment_parameters": exp_params
 }
 
 with open(os.path.join(savedir, 'config.json'), 'w') as fp:

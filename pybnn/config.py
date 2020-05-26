@@ -37,7 +37,7 @@ class ExpConfig:
     @classmethod
     def read_exp_params(cls, exp_params):
         try:
-            if exp_params.pop('debug'):
+            if exp_params.get('debug'):
                 # cls.enable_debug_mode(exp_params['model_logger'])
                 cls.debug = True
                 exp_params['model_logger'].setLevel(logging.DEBUG)
@@ -48,13 +48,13 @@ class ExpConfig:
             cls.debug = False
 
         try:
-            if exp_params.pop('tb_logging'):
+            if exp_params.get('tb_logging'):
                 # cls.enable_tb(logdir=exp_params['tb_log_dir'], expname=exp_params['tb_exp_name'])
                 cls.enable_tb(logdir=exp_params['tb_log_dir'])
         except KeyError:
             cls.tb_logging = False
 
-        cls.save_model = exp_params.pop('save_model', False)
+        cls.save_model = exp_params.get('save_model', False)
 
 
     @classmethod

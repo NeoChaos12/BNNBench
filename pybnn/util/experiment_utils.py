@@ -45,6 +45,10 @@ def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None):
     return fig
 
 
+def make_exp_params_json_compatible(exp_params):
+    exp_params.pop('model_logger')
+
+
 if __name__ == '__main__':
     print("Random name of length 32 is : ", random_string())
     print("Random name of length 128 is : ", random_string(length=128))
