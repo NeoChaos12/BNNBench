@@ -16,7 +16,7 @@ _expParamsDefaultDict = {
     "debug": True,
     "tb_logging": True,
     "tb_log_dir": f"runs/default/",
-    "tb_exp_name": f"experiment",
+    # "tb_exp_name": f"experiment",
 }
 
 expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults=_expParamsDefaultDict.values())
@@ -31,7 +31,7 @@ class ExpConfig:
     tag_train_loss = "Loss/Train"
     tag_train_fig = "Results/Train"
     tb_log_dir = ''
-    tb_exp_name = ''
+    # tb_exp_name = ''
 
 
     @classmethod
@@ -49,7 +49,8 @@ class ExpConfig:
 
         try:
             if exp_params.pop('tb_logging'):
-                cls.enable_tb(logdir=exp_params['tb_log_dir'], expname=exp_params['tb_exp_name'])
+                # cls.enable_tb(logdir=exp_params['tb_log_dir'], expname=exp_params['tb_exp_name'])
+                cls.enable_tb(logdir=exp_params['tb_log_dir'])
         except KeyError:
             cls.tb_logging = False
 
@@ -57,12 +58,14 @@ class ExpConfig:
 
 
     @classmethod
-    def enable_tb(cls, logdir=None, expname=None):
+    def enable_tb(cls, logdir=None):
+    # def enable_tb(cls, logdir=None, expname=None):
         cls.tb_logging = True
         cls.log_plots = True
         cls.tb_log_dir = logdir
-        cls.tb_exp_name = expname
-        cls.tb_writer = partial(SummaryWriter, log_dir=logdir + expname)
+        # cls.tb_exp_name = expname
+        # cls.tb_writer = partial(SummaryWriter, log_dir=logdir + expname)
+        cls.tb_writer = partial(SummaryWriter, log_dir=logdir)
 
 
     @classmethod
@@ -70,7 +73,7 @@ class ExpConfig:
         cls.tb_logging = False
         cls.log_plots = False
         cls.tb_log_dir = ""
-        cls.tb_exp_name = ""
+        # cls.tb_exp_name = ""
         cls.tb_writer = None
 
 

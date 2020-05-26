@@ -214,10 +214,12 @@ class BaseModel(object):
                 # Consume TB config arguments
                 flag = kwargs.pop('tb_logging')
                 logdir = kwargs.pop('tb_logdir')
-                expname = kwargs.pop('tb_expname')
+                # expname = kwargs.pop('tb_expname')
                 if flag:
-                    logger.debug("Enabling Tensorboard logging with logdir %s and expname %s" % (logdir, expname))
-                    conf.enable_tb(logdir=logdir, expname=expname)
+                    # logger.debug("Enabling Tensorboard logging with logdir %s and expname %s" % (logdir, expname))
+                    logger.debug("Enabling Tensorboard logging with logdir %s" % logdir)
+                    # conf.enable_tb(logdir=logdir, expname=expname)
+                    conf.enable_tb(logdir=logdir)
                 else:
                     logger.debug("Disabling Tensorboard logging.")
                     conf.disable_tb()
@@ -249,7 +251,7 @@ class BaseModel(object):
 
             path = self.model_path
             if not os.path.isabs(path):
-                path = os.path.abspath(path)
+                path = os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
 
             if not os.path.exists(path):
                 logger.warn("Could not verify given model path: %s\nUsing default path: %s" %

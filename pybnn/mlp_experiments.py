@@ -30,8 +30,8 @@ model_params = {
     "hidden_layer_sizes": [128, 64, 32],
     "input_dims": 1,
     "output_dims": 1,
-    "model_path": "./experiments/mlp",
-    "model_name": utils.random_string(use_upper_case=True, use_numbers=True)
+    "model_path": "./experiments/mlp/{}".format(utils.random_string(use_upper_case=True, use_numbers=True)),
+    "model_name": "model"
 }
 
 exp_params = {
@@ -40,11 +40,11 @@ exp_params = {
     "save_model": False,
     "log_plots": False,
     "tb_log_dir": model_params["model_path"],
-    "tb_exp_name": model_params["model_name"],
+    # "tb_exp_name": model_params["model_name"],
     "model_logger": model_logger
 }
 
-savedir = utils.ensure_path_exists(os.path.join(model_params['model_path'], model_params['model_name']))
+savedir = utils.ensure_path_exists(model_params['model_path'])
 
 # ----------------------------------------------------------------------------------------------------------------------
 # ----------------------------------------------Generate toy dataset----------------------------------------------------
