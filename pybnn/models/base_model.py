@@ -1,5 +1,5 @@
 import abc
-import os.path
+import os
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 import torch
@@ -132,7 +132,7 @@ class BaseModel(object):
     def rng(self, new_rng):
         if new_rng is None:
             self.__rng = np.random.RandomState(np.random.randint(0, 1e6))
-        elif type(new_rng) is int:
+        elif isinstance(new_rng, (int, np.integer)):
             self.__rng = np.random.RandomState(new_rng)
         else:
             self.__rng = new_rng
