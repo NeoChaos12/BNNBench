@@ -1,1 +1,2 @@
 from .toy_1d import nonParameterisedObjectiveFunctions, parameterisedObjectiveFunctions
+from .sampler import SamplingMethods

@@ -23,14 +23,13 @@ expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults
 
 
 class ExpConfig:
-    tb_writer: partial
+    tb_writer: partial = None
     save_model = False
-    tb_writer = None
     debug = False
     tb_logging = False
+    log_plots = False
     tag_train_loss = "Loss/Train"
     tag_train_fig = "Results/Train"
-    log_plots = False
     tb_log_dir = ''
     tb_exp_name = ''
 
@@ -39,7 +38,12 @@ class ExpConfig:
     def read_exp_params(cls, exp_params):
         try:
             if exp_params.pop('debug'):
-                cls.enable_debug_mode(exp_params['model_logger'])
+                # cls.enable_debug_mode(exp_params['model_logger'])
+                cls.debug = True
+                exp_params['model_logger'].setLevel(logging.DEBUG)
+            else:
+                cls.debug = False
+                exp_params['model_logger'].setLevel(logging.INFO)
         except KeyError:
             cls.debug = False
 
