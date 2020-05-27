@@ -3,7 +3,22 @@ import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
-def random_string(length : int = 32, use_upper_case=False, use_numbers=False):
+fullpath = lambda path: os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
+
+
+def standard_pathcheck(path):
+    """Verifies if a given path is an absolute path or not. Returns a path that should be useable by just about any
+    function that requires an absolute, fully resolved path."""
+    if not os.path.isabs(path):
+        new_path = fullpath(path)
+        logger.debug("Given path %s has been resolved to %s" % (path, new_path))
+        return new_path
+    else:
+        logger.debug("Absolute path confirmed, returning unchanged path: %s" % path)
+        return path
+
+
+def random_string(length: int = 32, use_upper_case=False, use_numbers=False):
     """Generates a random name of the given length."""
     letters = string.ascii_lowercase
     if use_upper_case:
@@ -14,13 +29,12 @@ def random_string(length : int = 32, use_upper_case=False, use_numbers=False):
     return ''.join(random.choices(letters, k=length))
 
 
+
+
 def ensure_path_exists(path):
     """Given a path, tries to resolve symbolic links, redundancies and special symbols. If the path is found to already
     exist, returns the resolved path. If it doesn't exist, also creates the relevant directory structure."""
-    new_path = path
-    if not os.path.isabs(new_path):
-        new_path = os.path.realpath(os.path.expanduser(os.path.expandvars(new_path)))
-        logger.debug("Given path %s has been resolved to %s" %(path, new_path))
+    new_path = standard_pathcheck(path)
     if not os.path.exists(new_path):
         logger.info("Path doesn't exist. Creating relevant directories for path: %s" % new_path)
         os.makedirs(new_path, exist_ok=False)
@@ -53,4 +67,5 @@ if __name__ == '__main__':
     print("Random name of length 32 is : ", random_string())
     print("Random name of length 128 is : ", random_string(length=128))
     print("Random name of length 32 with upper case letters is: ", random_string(use_upper_case=True))
-    print("Random name of length 64 with all letters and numbers : ", random_string(use_upper_case=True, use_numbers=True))
+    print("Random name of length 64 with all letters and numbers : ",
+          random_string(use_upper_case=True, use_numbers=True))
