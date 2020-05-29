@@ -108,19 +108,19 @@ class DeepEnsemble(MLP):
         logger.debug("Generating learners using configuration:\n%s" % str(mlp_params))
         self.learners = [MLP(model_params=mlp_params) for _ in range(self.nlearners)]
 
-        if conf.tb_logging:
+        if conf.tblog:
             model_exp_name = conf.tb_exp_name
 
         # Iterate over base learners and train them
         for idx, learner in enumerate(self.learners, start=1):
             logger.info("Training learner %d." % idx)
             learner_exp_name = model_exp_name + f"_learner{idx}"
-            learner.fit(X, y, tb_logging=conf.tb_logging, tb_logdir=conf.tb_log_dir, tb_expname=learner_exp_name,
+            learner.fit(X, y, tb_logging=conf.tblog, tb_logdir=conf.tbdir, tb_expname=learner_exp_name,
                         **kwargs)
             logger.info("Finished training learner %d\n%s\n" % (idx, '*' * 20))
 
         if model_exp_name:
-            conf.enable_tb(logdir=conf.tb_log_dir, expname=model_exp_name)
+            conf.enable_tb(logdir=conf.tbdir, expname=model_exp_name)
 
         total_time = time.time() - start_time
         logger.info("Finished fitting model. Total time: %.3fs" % total_time)

@@ -6,7 +6,7 @@ from pybnn.util import experiment_utils as utils
 import torch
 from pybnn.models import logger
 from collections import namedtuple
-from pybnn.config import ExpConfig as conf
+from pybnn.config import globalConfig as conf
 import functools
 from typing import Callable
 
@@ -25,7 +25,7 @@ class BaseModel(object):
         "normalize_input": True,
         "normalize_output": True,
         "rng": np.random.RandomState(None).randint(0, 2 ** 31, size=None),
-        "model_path": utils.standard_pathcheck("./experiments/mlp/"),
+        "model_path": utils.standard_pathcheck("./experiments/default/"),
         "model_name": None
     }
     __modelParams = namedtuple("baseModelParams", __modelParamsDefaultDict.keys(),
@@ -65,6 +65,10 @@ class BaseModel(object):
         else:
             raise TypeError("Invalid type %s, must be of type %s or dict." %
                             (type(new_params), type(self.modelParamsContainer())))
+
+    @property
+    def modeldir(self):
+        return os.path.join(self.model_path, self.model_name)
 
     @property
     def model_name(self):
@@ -215,34 +219,15 @@ class BaseModel(object):
         """
         pass
 
-    def _tensorboard_user(func):
+    def _tensorboard_user(func: Callable):
         """
         Use this decorator in functions that need to use tensboard in order to make the writer safely available as an
         attribute 'tb_writer' of the object that the function belongs to.
         """
 
         @functools.wraps(func)
-        def func_wrapper(self, *args, **kwargs):
-            # Allow TB configuration parameters to be passed as keyword-only arguments to the wrapped function
-            # TODO: Upgrade ExpConf to also use the namedtuple API, thus allowing its reuse here.
-            try:
-                # Consume TB config arguments
-                flag = kwargs.pop('tb_logging')
-                logdir = kwargs.pop('tb_logdir')
-                # expname = kwargs.pop('tb_expname')
-                if flag:
-                    # logger.debug("Enabling Tensorboard logging with logdir %s and expname %s" % (logdir, expname))
-                    logger.debug("Enabling Tensorboard logging with logdir %s" % logdir)
-                    # conf.enable_tb(logdir=logdir, expname=expname)
-                    conf.enable_tb(logdir=logdir)
-                else:
-                    logger.debug("Disabling Tensorboard logging.")
-                    conf.disable_tb()
-
-            except KeyError:
-                logger.debug("Tensorboard configuration incomplete or absent. Not altering Tensorboard configuration.")
-
-            if conf.tb_logging:
+        def func_wrapper(self: BaseModel, *args, **kwargs):
+            if conf.tblog:
                 logger.debug("Wrapping call to function %s in safe tensorboard usage code." % str(func.__name__))
                 self.tb_writer = conf.tb_writer()
                 res = func(self, *args, **kwargs)
@@ -253,7 +238,7 @@ class BaseModel(object):
 
         return func_wrapper
 
-    def _check_shapes_train(func):
+    def _check_shapes_train(func: Callable):
         def func_wrapper(self, X, y, *args, **kwargs):
             assert X.shape[0] == y.shape[0]
             assert len(X.shape) == 2
@@ -262,7 +247,7 @@ class BaseModel(object):
 
         return func_wrapper
 
-    def _check_shapes_predict(func):
+    def _check_shapes_predict(func: Callable):
         def func_wrapper(self, X, *args, **kwargs):
             assert len(X.shape) == 2
             return func(self, X, *args, **kwargs)
@@ -354,11 +339,11 @@ class BaseModel(object):
         """
 
         @functools.wraps(func)
-        def wrapper(self, **kwargs):
+        def wrapper(self: BaseModel, **kwargs):
             if 'path' in kwargs:
                 return func(self, exists=None, **kwargs)
 
-            path = os.path.join(self.model_path, self.model_name)
+            path = self.modeldir
             if not os.path.isabs(path):
                 path = os.path.normpath(os.path.expanduser(os.path.expandvars(path)))
 

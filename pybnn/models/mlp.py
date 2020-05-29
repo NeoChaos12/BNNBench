@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from pybnn.models import logger
 from pybnn.models import BaseModel
-from pybnn.config import ExpConfig as conf
+from pybnn.config import globalConfig as conf
 from collections import OrderedDict, namedtuple
 import torch.optim as optim
 import numpy as np
@@ -187,12 +187,12 @@ class MLP(BaseModel):
 
         optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
 
-        if conf.tb_logging:
+        if conf.tblog:
             self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
                                                               dtype=torch.float, requires_grad=False))
 
         # TODO: Standardize
-        if conf.tb_logging:
+        if conf.tblog:
             weights = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
             weights.append(("Output", []))
             biases = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
@@ -224,11 +224,11 @@ class MLP(BaseModel):
             epoch_time = curtime - epoch_start_time
             total_time = curtime - start_time
 
-            if conf.tb_logging:
+            if conf.tblog:
                 # with conf.tb_writer() as writer:
                 #     logger.debug(f"Adding loss {lc[epoch]} at step {epoch+1}")
                 #     writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
-                self.tb_writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch + 1)
+                self.tb_writer.add_scalar(tag=conf.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
 
                 # TODO: Standardize
                 for ctr in range(len(self.hidden_layer_sizes)):
@@ -249,18 +249,18 @@ class MLP(BaseModel):
                 logger.info("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
                 logger.info("Training loss:\t\t{:.5g}\n".format(train_err / train_batches))
 
-                if conf.log_plots:
+                if conf.tbplot:
                     try:
                         plotter = kwargs["plotter"]
                         logger.debug("Saving performance plot at training epoch %d" % (epoch + 1))
-                        self.tb_writer.add_figure(tag=conf.tag_train_fig, figure=plotter(self.predict),
+                        self.tb_writer.add_figure(tag=conf.TAG_TRAIN_FIG, figure=plotter(self.predict),
                                                   global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
-                        conf.log_plots = False
+                        conf.tbplot = False
 
-        if conf.tb_logging:
-            if conf.log_plots:
+        if conf.tblog:
+            if conf.tbplot:
                 logger.info("Plotting weight graphs.")
                 fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1),
                                                 title="Layer weights")
