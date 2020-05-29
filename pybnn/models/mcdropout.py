@@ -82,9 +82,9 @@ class MCDropout(MLP):
         )
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
-            layers.append((f"FC_{layer_idx}", fclayer))
-            layers.append((f"Dropout_{layer_idx}", nn.Dropout(p=pdrop.__next__())))
-            layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
+            layers.append((f"FC{layer_idx}", fclayer))
+            layers.append((f"Dropout{layer_idx}", nn.Dropout(p=pdrop.__next__())))
+            layers.append((f"Tanh{layer_idx}", nn.Tanh()))
 
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
