@@ -8,6 +8,7 @@ from pybnn.models import logger
 from collections import namedtuple
 from pybnn.config import ExpConfig as conf
 import functools
+from typing import Callable
 
 
 class BaseModel(object):
@@ -252,32 +253,6 @@ class BaseModel(object):
 
         return func_wrapper
 
-    def _check_model_path(func):
-        """
-        Check if the model_path parameter is a valid path or not. If it is, pass the absolute version of this path to
-        the wrapped function as keyword argument 'path'. Otherwise, pass the absolute path to the current directory.
-        The check is skipped if a 'path' keyword argument was passed.
-        """
-
-        @functools.wraps(func)
-        def wrapper(self, **kwargs):
-            if 'path' in kwargs:
-                return func(self, **kwargs)
-
-            path = self.model_path
-            if not os.path.isabs(path):
-                path = os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
-
-            if not os.path.exists(path):
-                logger.warn("Could not verify given model path: %s\nUsing default path: %s" %
-                            (str(path), str(os.path.abspath(os.path.curdir))))
-                path = os.path.abspath(os.path.curdir)
-
-            path = os.path.join(path, self.model_name)
-            return func(self, path=path, **kwargs)
-
-        return wrapper
-
     def _check_shapes_train(func):
         def func_wrapper(self, X, y, *args, **kwargs):
             assert X.shape[0] == y.shape[0]
@@ -370,16 +345,27 @@ class BaseModel(object):
 
         return inc, inc_value
 
-    @BaseModel._check_model_path
-    def save_network(self, **kwargs):
-        path = kwargs['path']
-        logger.info("Saving model to %s" % str(path))
-        torch.save(self.network.state_dict(), path)
+    def _check_model_path(func: Callable):
+        """
+        Decorator. Check if the subdirectory named 'model_name' exists in the directory defined by 'model_path'. The
+        relevant path is constructed and passed along to the wrapped function along with a flag 'exists', indicating
+        the result of the check. The check is skipped if a 'path' keyword argument was passed, and the 'exists' flag is
+        set to None.
+        """
 
-    @BaseModel._check_model_path
-    def load_network(self, **kwargs):
-        self._generate_network()
-        path = kwargs['path']
-        logger.info("Loading model from %s" % str(path))
-        self.network.load_state_dict(torch.load(path, map_location='cpu'))
-        logger.info("Successfully loaded model %s." % self.model_name)
+        @functools.wraps(func)
+        def wrapper(self, **kwargs):
+            if 'path' in kwargs:
+                return func(self, exists=None, **kwargs)
+
+            path = os.path.join(self.model_path, self.model_name)
+            if not os.path.isabs(path):
+                path = os.path.normpath(os.path.expanduser(os.path.expandvars(path)))
+
+            if not os.path.exists(path):
+                logger.warn("Could not verify given path to model directory: %s" % str(path))
+                return func(self, path=path, exists=False, **kwargs)
+            else:
+                return func(self, path=path, exists=True, **kwargs)
+
+        return wrapper

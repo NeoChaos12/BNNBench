@@ -53,6 +53,8 @@ class MLP(BaseModel):
     Simple Multi-Layer Perceptron model. Demonstrates usage of BaseModel as well as the FC Layer generator above.
     """
 
+    MODEL_FILE_IDENTIFIER = "model"
+
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
@@ -74,7 +76,6 @@ class MLP(BaseModel):
 
     # Create a record of all default parameter values used to run this model, including the Base Model parameters
     _default_model_params = modelParamsContainer()
-
 
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
@@ -129,7 +130,6 @@ class MLP(BaseModel):
         logger.info("Initialized MLP model.")
         logger.debug("Initialized MLP Model parameters %s" % str(self.model_params))
 
-
     def _generate_network(self):
         logger.info("Generating network.")
         layer_gen = mlplayergen(
@@ -151,7 +151,6 @@ class MLP(BaseModel):
 
         self.network = nn.Sequential(OrderedDict(layers))
         logger.info("Finished generating network.")
-
 
     def preprocess_training_data(self, X, y):
         r"""
@@ -175,7 +174,6 @@ class MLP(BaseModel):
         self.normalize_data()
         self.y = self.y[:, None]
         return
-
 
     @BaseModel._tensorboard_user
     def fit(self, **kwargs):
@@ -232,9 +230,9 @@ class MLP(BaseModel):
                 #     writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
                 self.tb_writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch + 1)
 
-                #TODO: Standardize
+                # TODO: Standardize
                 for ctr in range(len(self.hidden_layer_sizes)):
-                    layer = self.network.__getattr__(f"FC{ctr+1}")
+                    layer = self.network.__getattr__(f"FC{ctr + 1}")
                     lweight = layer.weight.cpu().detach().numpy().flatten()
                     lbias = layer.bias.cpu().detach().numpy().flatten()
                     weights[ctr][1].append(lweight)
@@ -245,7 +243,6 @@ class MLP(BaseModel):
                 lbias = layer.bias.cpu().detach().numpy().flatten()
                 weights[-1][1].append(lweight)
                 biases[-1][1].append(lbias)
-
 
             if epoch % 100 == 99:
                 logger.info("Epoch {} of {}".format(epoch + 1, self.num_epochs))
@@ -265,16 +262,17 @@ class MLP(BaseModel):
         if conf.tb_logging:
             if conf.log_plots:
                 logger.info("Plotting weight graphs.")
-                fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1), title="Layer weights")
+                fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1),
+                                                title="Layer weights")
                 self.tb_writer.add_figure(tag="Layer weights", figure=fig)
-                fig = self.__plot_layer_weights(weights=biases, epochs=range(1, self.num_epochs + 1), title="Layer biases")
+                fig = self.__plot_layer_weights(weights=biases, epochs=range(1, self.num_epochs + 1),
+                                                title="Layer biases")
                 self.tb_writer.add_figure(tag="Layer biases", figure=fig)
 
         if conf.save_model:
             self.save_network()
 
         return
-
 
     def predict(self, X_test):
         r"""
@@ -309,7 +307,6 @@ class MLP(BaseModel):
         else:
             return Yt_hat
 
-
     def __plot_layer_weights(self, weights, epochs, title="weights"):
         import matplotlib.pyplot as plt
         num_layers = len(self.hidden_layer_sizes) + 1
@@ -322,3 +319,26 @@ class MLP(BaseModel):
             ax.set_title(f"Layer {name}")
 
         return fig
+
+    @BaseModel._check_model_path
+    def save_network(self, **kwargs):
+        path = kwargs['path']
+        exists = kwargs.get('path')
+        savepath = os.path.join(path, self.MODEL_FILE_IDENTIFIER)
+        logger.info("Saving model to %s" % str(path))
+        if not exists:
+            os.makedirs(path)
+        torch.save(self.network.state_dict(), savepath)
+
+    @BaseModel._check_model_path
+    def load_network(self, **kwargs):
+        self._generate_network()
+        path = kwargs['path']
+        exists = kwargs.get('exists')
+        loadpath = os.path.join(path, self.MODEL_FILE_IDENTIFIER)
+        if exists:
+            logger.info("Loading model from %s" % str(path))
+            self.network.load_state_dict(torch.load(loadpath, map_location='cpu'))
+            logger.info("Successfully loaded model %s." % self.model_name)
+        else:
+            raise RuntimeError("Invalid path to model directory. Could not load model.")
