@@ -60,8 +60,6 @@ class MLP(BaseModel):
         "output_dims": 1,  # Currently, there is no support for any value except 1
         "loss_func": torch.nn.functional.mse_loss,
         "optimizer": optim.Adam,
-        "model_path": os.path.abspath(os.path.curdir),
-        "model_name": "mlp_model"
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -83,9 +81,7 @@ class MLP(BaseModel):
                  input_dims=_default_model_params.input_dims,
                  output_dims=_default_model_params.output_dims,
                  loss_func=_default_model_params.loss_func,
-                 optimizer=_default_model_params.optimizer,
-                 model_path=_default_model_params.model_path,
-                 model_name=_default_model_params.model_name, **kwargs):
+                 optimizer=_default_model_params.optimizer, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
         be subclassed from this class.
@@ -120,8 +116,6 @@ class MLP(BaseModel):
             self.output_dims = output_dims
             self.loss_func = loss_func
             self.optimizer = optimizer
-            self.model_path = model_path
-            self.model_name = model_name
             # Pass on the remaining keyword arguments to the super class to deal with.
             super(MLP, self).__init__(**kwargs)
         else:
@@ -328,19 +322,3 @@ class MLP(BaseModel):
             ax.set_title(f"Layer {name}")
 
         return fig
-
-
-    @BaseModel._check_model_path
-    def save_network(self, **kwargs):
-        path = kwargs['path']
-        logger.info("Saving model to %s" % str(path))
-        torch.save(self.network.state_dict(), path)
-
-
-    @BaseModel._check_model_path
-    def load_network(self, **kwargs):
-        self._generate_network()
-        path = kwargs['path']
-        logger.info("Loading model from %s" % str(path))
-        self.network.load_state_dict(torch.load(path, map_location='cpu'))
-        logger.info("Successfully loaded model %s." % self.model_name)

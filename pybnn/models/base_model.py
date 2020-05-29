@@ -2,11 +2,13 @@ import abc
 import os
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.util import experiment_utils as utils
 import torch
 from pybnn.models import logger
 from collections import namedtuple
 from pybnn.config import ExpConfig as conf
 import functools
+
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
@@ -18,10 +20,12 @@ class BaseModel(object):
     __modelParamsDefaultDict = {
         "num_epochs": 500,
         "batch_size": 10,
-        "learning_rate": 0.01,
+        "learning_rate": 0.001,
         "normalize_input": True,
         "normalize_output": True,
-        "rng": None
+        "rng": np.random.RandomState(None).randint(0, 2 ** 31, size=None),
+        "model_path": utils.standard_pathcheck("./experiments/mlp/"),
+        "model_name": None
     }
     __modelParams = namedtuple("baseModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -30,8 +34,7 @@ class BaseModel(object):
 
     # Part of the API, the recommended way to setup a model - also add params from parents
     modelParamsContainer = __modelParams
-    _default_model_params = modelParamsContainer() # Must be re-defined as-is by each child!!
-
+    _default_model_params = modelParamsContainer()  # Must be re-defined as-is by each child!!
 
     @property
     def model_params(self):
@@ -42,7 +45,6 @@ class BaseModel(object):
         """
         return self.modelParamsContainer(**dict([(k, self.__getattribute__(k))
                                                  for k in self.__class__.modelParamsContainer._fields]))
-
 
     @model_params.setter
     def model_params(self, new_params):
@@ -63,6 +65,20 @@ class BaseModel(object):
             raise TypeError("Invalid type %s, must be of type %s or dict." %
                             (type(new_params), type(self.modelParamsContainer())))
 
+    @property
+    def model_name(self):
+        return self.__model_name
+
+    @model_name.setter
+    def model_name(self, name):
+        if name is None:
+            self.__model_name = utils.random_string(length=32, use_upper_case=True, use_numbers=True)
+            logger.debug("Model name set to None. Generated new random name %s." % self.model_name)
+        elif isinstance(name, str):
+            logger.debug("Changing model name to %s" % name)
+            self.__model_name = name
+        else:
+            raise TypeError("Cannot set model_name to type %s. Must be str or None." % type(name))
 
     def __init__(self,
                  num_epochs=_default_model_params.num_epochs,
@@ -70,7 +86,9 @@ class BaseModel(object):
                  learning_rate=_default_model_params.learning_rate,
                  normalize_input=_default_model_params.normalize_input,
                  normalize_output=_default_model_params.normalize_output,
-                 rng=_default_model_params.rng, **kwargs):
+                 rng=_default_model_params.rng,
+                 model_path=_default_model_params.model_path,
+                 model_name=_default_model_params.model_name, **kwargs):
         """
         Abstract base class for all models. Model parameters may be passed as either individual arguments or as a
         baseModelParams object to the keyword argument baseModelParams. If a baseModelParams object is specified, the
@@ -109,6 +127,8 @@ class BaseModel(object):
             self.normalize_input = normalize_input
             self.normalize_output = normalize_output
             self.rng = rng
+            self.model_path = model_path
+            self.model_name = model_name
         else:
             # Read model parameters from configuration object
             # noinspection PyProtectedMember
@@ -122,11 +142,9 @@ class BaseModel(object):
         logger.info("Initialized base model.")
         logger.debug("Initialized base model parameters:\n" % str(self.model_params))
 
-
     @property
     def rng(self):
         return self.__rng
-
 
     @rng.setter
     def rng(self, new_rng):
@@ -137,7 +155,6 @@ class BaseModel(object):
         else:
             self.__rng = new_rng
 
-
     @abc.abstractmethod
     def _generate_network(self):
         """
@@ -145,7 +162,6 @@ class BaseModel(object):
         initialized in __init__ and fit.
         """
         pass
-
 
     @abc.abstractmethod
     def fit(self, X, y):
@@ -161,7 +177,6 @@ class BaseModel(object):
             The corresponding target values of the input data points.
         """
         pass
-
 
     def update(self, X, y):
         """
@@ -179,7 +194,6 @@ class BaseModel(object):
         X = np.append(self.X, X, axis=0)
         y = np.append(self.y, y, axis=0)
         self.fit(X, y)
-
 
     @abc.abstractmethod
     def predict(self, X_test):
@@ -200,12 +214,12 @@ class BaseModel(object):
         """
         pass
 
-
     def _tensorboard_user(func):
         """
         Use this decorator in functions that need to use tensboard in order to make the writer safely available as an
         attribute 'tb_writer' of the object that the function belongs to.
         """
+
         @functools.wraps(func)
         def func_wrapper(self, *args, **kwargs):
             # Allow TB configuration parameters to be passed as keyword-only arguments to the wrapped function
@@ -235,8 +249,8 @@ class BaseModel(object):
                 return res
             else:
                 return func(self, *args, **kwargs)
-        return func_wrapper
 
+        return func_wrapper
 
     def _check_model_path(func):
         """
@@ -244,6 +258,7 @@ class BaseModel(object):
         the wrapped function as keyword argument 'path'. Otherwise, pass the absolute path to the current directory.
         The check is skipped if a 'path' keyword argument was passed.
         """
+
         @functools.wraps(func)
         def wrapper(self, **kwargs):
             if 'path' in kwargs:
@@ -260,8 +275,8 @@ class BaseModel(object):
 
             path = os.path.join(path, self.model_name)
             return func(self, path=path, **kwargs)
-        return wrapper
 
+        return wrapper
 
     def _check_shapes_train(func):
         def func_wrapper(self, X, y, *args, **kwargs):
@@ -272,14 +287,12 @@ class BaseModel(object):
 
         return func_wrapper
 
-
     def _check_shapes_predict(func):
         def func_wrapper(self, X, *args, **kwargs):
             assert len(X.shape) == 2
             return func(self, X, *args, **kwargs)
 
         return func_wrapper
-
 
     def get_json_data(self):
         """
@@ -294,7 +307,6 @@ class BaseModel(object):
                      'hyperparameters': ""}
         return json_data
 
-
     def normalize_data(self):
         """
         Check the flags normalize_inputs and normalize_outputs, and normalize the respective data accordingly.
@@ -307,7 +319,6 @@ class BaseModel(object):
         # Normalize ouputs
         if self.normalize_output:
             self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(self.y)
-
 
     def iterate_minibatches(self, inputs, targets, batchsize=None, shuffle=False, as_tensor=False):
         """
@@ -335,7 +346,6 @@ class BaseModel(object):
             else:
                 yield inputs[excerpt], targets[excerpt]
 
-
     def get_incumbent(self):
         """
         Returns the best observed point and its function value
@@ -359,3 +369,17 @@ class BaseModel(object):
             inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
 
         return inc, inc_value
+
+    @BaseModel._check_model_path
+    def save_network(self, **kwargs):
+        path = kwargs['path']
+        logger.info("Saving model to %s" % str(path))
+        torch.save(self.network.state_dict(), path)
+
+    @BaseModel._check_model_path
+    def load_network(self, **kwargs):
+        self._generate_network()
+        path = kwargs['path']
+        logger.info("Loading model from %s" % str(path))
+        self.network.load_state_dict(torch.load(path, map_location='cpu'))
+        logger.info("Successfully loaded model %s." % self.model_name)
