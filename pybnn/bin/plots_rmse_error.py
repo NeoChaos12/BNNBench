@@ -1,7 +1,8 @@
 #!/usr/bin/python
 import matplotlib.pyplot as plt
 import numpy as np
-import argparse, os
+import argparse
+import os
 
 import pybnn.util.experiment_utils as utils
 

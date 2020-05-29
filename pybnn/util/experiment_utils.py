@@ -29,8 +29,6 @@ def random_string(length: int = 32, use_upper_case=False, use_numbers=False):
     return ''.join(random.choices(letters, k=length))
 
 
-
-
 def ensure_path_exists(path):
     """Given a path, tries to resolve symbolic links, redundancies and special symbols. If the path is found to already
     exist, returns the resolved path. If it doesn't exist, also creates the relevant directory structure."""

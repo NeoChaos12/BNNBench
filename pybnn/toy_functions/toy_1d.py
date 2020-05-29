@@ -193,3 +193,17 @@ parameterisedObjectiveFunctions.sinc = ObjectiveFunction1D(
     func=sinc_func,
     name="Normalized Sinc"
 )
+
+
+def get_func_from_attrdict(func_name : str, attrdict : AttrDict) -> ObjectiveFunction1D:
+    """
+    Given a string func_name, attempts to find the corresponding entry from attrdict.
+
+    :param func_name
+    :param attrdict
+    :returns Objective Function
+    """
+
+    for key, val in attrdict.items():
+        if val.name == func_name:
+            return val

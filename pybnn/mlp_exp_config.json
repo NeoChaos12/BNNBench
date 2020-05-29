@@ -1,0 +1,25 @@
+{
+    "objective_function": "Infinity GO Problem 07",
+    "dataset_size": "100",
+    "testset_fraction": "0.2",
+    "model_parameters": {
+        "num_epochs": 300,
+        "batch_size": 32,
+        "learning_rate": 0.0005,
+        "normalize_input": true,
+        "normalize_output": true,
+        "hidden_layer_sizes": [
+            50,
+            50,
+            50
+        ],
+        "input_dims": 1,
+        "output_dims": 1
+    },
+    "experiment_parameters": {
+        "debug": false,
+        "tb_logging": true,
+        "save_model": false,
+        "log_plots": false
+    }
+}
