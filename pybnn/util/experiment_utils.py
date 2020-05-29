@@ -1,4 +1,9 @@
-import random, string, os, logging
+import logging
+import os
+import random
+import string
+import numpy as np
+
 import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
@@ -41,7 +46,8 @@ def ensure_path_exists(path):
     return new_path
 
 
-def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None):
+def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None, variances=True):
+    print("Plotting model performance.")
     fig, ax = plt.subplots(1, 1, squeeze=True)
 
     m = predict(grid[:, None])
@@ -50,11 +56,31 @@ def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None):
     ax.grid()
     if fvals is not None:
         ax.plot(grid, fvals, "k--")
-    ax.plot(grid, m, "blue")
-    ax.set_xlim(0, 1)
+
+    if variances:
+        ms = m[0]
+        v = m[1]
+        ax.plot(grid, ms, "blue")
+        ax.fill_between(grid, ms + np.sqrt(v), ms - np.sqrt(v), color="orange", alpha=0.8)
+        ax.fill_between(grid, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)
+        ax.fill_between(grid, ms + 3 * np.sqrt(v), ms - 3 * np.sqrt(v), color="orange", alpha=0.4)
+    else:
+        ax.plot(grid, m, "blue")
     ax.set_xlabel(r"Input $x$")
     ax.set_ylabel(r"Output $f(x)$")
+    print("Returning figure object.")
     return fig
+
+
+def make_model_params_json_compatible(params):
+    faulty_keys = ['loss_func', 'optimizer']
+    for key in faulty_keys:
+        try:
+            params[key] = params[key].__name__
+        except AttributeError:
+            logger.warning("Could not generate JSON output for model parameter %s with value %s, removing from dict" %
+                           (key, params[key]))
+            params.pop(key)
 
 
 def make_exp_params_json_compatible(exp_params):
@@ -62,8 +88,12 @@ def make_exp_params_json_compatible(exp_params):
 
 
 if __name__ == '__main__':
-    print("Random name of length 32 is : ", random_string())
-    print("Random name of length 128 is : ", random_string(length=128))
-    print("Random name of length 32 with upper case letters is: ", random_string(use_upper_case=True))
-    print("Random name of length 64 with all letters and numbers : ",
-          random_string(use_upper_case=True, use_numbers=True))
+    X = np.arange(100, 1000)
+    y = X ** 2
+    splits = generate_splits(
+        X,
+        y,
+        testfrac=0.2
+    )
+
+    print([s.shape for s in splits])

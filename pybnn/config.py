@@ -25,11 +25,11 @@ expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults
 
 class ExpConfig:
     save_model: bool
-    __debug: bool
+    __debug: bool = False
     tblog: bool
     tbplot: bool
     __tbdir: str
-    __model_logger: logging.Logger
+    __model_logger: logging.Logger = None
     # model_logger: logging.Logger
     TAG_TRAIN_LOSS = "Loss/Train"
     TAG_TRAIN_FIG = "Results/Train"
@@ -54,10 +54,13 @@ class ExpConfig:
     @model_logger.setter
     def model_logger(self, val):
         self.__model_logger = val
+        if val is None:
+            return
         if self.debug:
             self.__model_logger.setLevel(logging.DEBUG)
         else:
             self.__model_logger.setLevel(logging.INFO)
+
 
     @property
     def debug(self) -> bool:
@@ -91,6 +94,11 @@ class ExpConfig:
         return partial(SummaryWriter, log_dir=self.tbdir)
 
 
+    @tb_writer.deleter
+    def tb_writer(self):
+        self.tb_writer.close()
+
+
     @property
     def params(self) -> dict:
         return {key: getattr(self, key) for key in self._params._fields}
@@ -99,7 +107,7 @@ class ExpConfig:
     @params.setter
     def params(self, val):
         if isinstance(val, self._params):
-            [setattr(self, key, v) for key, v in val._asdict()]
+            [setattr(self, key, v) for key, v in val._asdict().items()]
         elif isinstance(val, dict):
             self.params = self._params(**val)
 

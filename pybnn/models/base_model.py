@@ -287,7 +287,8 @@ class BaseModel(object):
         value or the size of inputs, whichever is appropriate.
         """
         assert inputs.shape[0] == targets.shape[0], \
-            "The number of training points is not the same"
+            f"The number of training data points {inputs.shape[0]:d} is not the same as the number of training " \
+            f"target points/labels {targets.shape[0]:d}."
 
         # Check if we have enough points to create a minibatch, otherwise use all data points
         if batchsize is None:

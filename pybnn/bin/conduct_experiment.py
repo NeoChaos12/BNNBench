@@ -4,10 +4,10 @@ import sys
 sys.path.append('/home/archit/master_project/pybnn')
 import numpy as np
 import os
-from math import floor
 from functools import partial
 import json
 import argparse
+from sklearn.model_selection import train_test_split
 
 from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
 from pybnn.config import globalConfig as conf
@@ -63,21 +63,24 @@ config.mtype = MLP
 def handle_cli():
     print("Handling command line arguments.")
     # global config
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument('--model', type=str, default='mlp',
-                        help='Case-insensitive string indicating the type of model to be used for this experiment.'
+                        help='Case-insensitive string indicating the type of model to be used for this experiment. '
                              'Valid options are: ["mlp", "mcdropout", "mcbatchnorm", "ensemble", "dngo"]')
     parser.add_argument('--config', type=str, default=None,
                         help='Filename of JSON file containing experiment configuration. If not provided, default '
                              'configurations are used.')
-    parser.add_argument('--debug', type=bool, action='store_true', default=None,
+    parser.add_argument('--debug', action='store_true', default=None,
                         help='When given, enables debug mode logging.')
-    parser.add_argument('--tblog', type=bool, action='store_true', default=None,
+    parser.add_argument('--tblog', action='store_true', default=None,
                         help='When given, enables all tensorboard logging of model outputs.')
-    parser.add_argument('--save_model', type=bool, action='store_true', default=None,
+    parser.add_argument('--save_model', action='store_true', default=None,
                         help='When given, the trained model is saved to disk after training.')
-    parser.add_argument('--tbplot', type=bool, action='store_true', default=None,
+    parser.add_argument('--tbplot', action='store_true', default=None,
                         help='When given alongside --tblog, various plotting data is stored through tensorboard.')
+    parser.add_argument('--tbdir', type=str, default=None, required=False,
+                        help='Custom Tensorboard log directory. Overwrites default behaviour of using the same '
+                             'directory as for storing the model.')
 
     # parser.add_argument('--name', type=str, required=False, help='If provided, overrides the experiment name with
     # the given value. Experiment name is the leaf ' 'folder name in the directory structure, within which all output
@@ -138,56 +141,49 @@ def handle_cli():
         config.model_params = default_model_params
         config.exp_params = config.default_exp_params
 
+    print("Finished reading command line arguments.")
+
 
 def perform_experiment():
-    savedir = utils.ensure_path_exists(config.model_params['model_path'])
+    model = config.mtype(model_params=config.model_params)
+    if config.exp_params['tbdir'] is None:
+        config.exp_params['tbdir'] = model.modeldir
+    conf.params = config.exp_params
+
+    rng: np.random.RandomState = model.rng
+
     print("Saving new model to: %s" % config.model_params["model_path"])
-    # ------------------------------------------------------------------------------------------------------------------
+
     # --------------------------------------------Generate toy dataset--------------------------------------------------
-    # ------------------------------------------------------------------------------------------------------------------
-    X, y = sample_1d_func(config.OBJECTIVE_FUNC, nsamples=config.DATASET_SIZE, method=SamplingMethods.RANDOM)
-    indices = np.arange(config.DATASET_SIZE)
-    indices_test = np.random.choice(indices, size=floor(config.TEST_FRACTION * config.DATASET_SIZE), replace=False)
-    test_mask = np.full_like(a=indices, fill_value=False)
-    test_mask[indices_test] = True
 
-    trainx = X[~test_mask]
-    trainy = y[~test_mask]
+    X, y = sample_1d_func(config.OBJECTIVE_FUNC, rng=rng, nsamples=config.DATASET_SIZE, method=SamplingMethods.RANDOM)
+    Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=config.TEST_FRACTION, random_state=rng,
+                                                    shuffle=True)
 
-    testx = X[test_mask]
-    testy = y[test_mask]
-
-    # ------------------------------------------------------------------------------------------------------------------
     # -----------------------------------------------Set up plotting----------------------------------------------------
-    # ------------------------------------------------------------------------------------------------------------------
 
     domain = config.OBJECTIVE_FUNC.domain
     grid = np.linspace(domain[0], domain[1], max(1000, config.DATASET_SIZE * 10))
     fvals = config.OBJECTIVE_FUNC(grid)
 
-    tb_plotter = partial(utils.network_output_plotter_toy, grid=grid, fvals=fvals, trainx=trainx, trainy=trainy)
+    tb_plotter = partial(utils.network_output_plotter_toy, grid=grid, fvals=fvals, trainx=Xtrain, trainy=ytrain,
+                         variances=False if config.mtype is model_types.mlp else True)
 
-    # ------------------------------------------------------------------------------------------------------------------
     # -------------------------------------------------Let it roll------------------------------------------------------
-    # ------------------------------------------------------------------------------------------------------------------
 
-    model = config.mtype(model_params=config.model_params)
+    model.preprocess_training_data(Xtrain[:, None], ytrain)
+    model.fit(plotter=tb_plotter)
+    # model.fit()  # Don't save interim progress plots
 
-    if config.exp_params['tbdir'] is None:
-        config.exp_params['tbdir'] = model.modeldir
-    conf.params = config.exp_params
+    predicted_y = np.squeeze(model.predict(Xtest[:, None]))
 
-    model.preprocess_training_data(trainx[:, None], trainy)
-    # model.fit(plotter=tb_plotter)
-    model.fit()  # Don't save interim progress plots
-
-    predicted_y = np.squeeze(model.predict(testx[:, None]))
-    print(f"predicted_y.shape: {predicted_y.shape}\ntestx.shape:{testx.shape}")
-    np.save(file=os.path.join(savedir, 'trainset'), arr=np.stack((trainx, trainy), axis=1), allow_pickle=True)
-    np.save(file=os.path.join(savedir, 'testset'), arr=np.stack((testx, testy), axis=1), allow_pickle=True)
-    np.save(file=os.path.join(savedir, 'test_predictions'), arr=np.stack((testx, predicted_y), axis=1),
+    savedir = utils.ensure_path_exists(model.modeldir)
+    np.save(file=os.path.join(savedir, 'trainset'), arr=np.stack((Xtrain, ytrain), axis=1), allow_pickle=True)
+    np.save(file=os.path.join(savedir, 'testset'), arr=np.stack((Xtest, ytest), axis=1), allow_pickle=True)
+    np.save(file=os.path.join(savedir, 'test_predictions'), arr=np.stack((Xtest, predicted_y), axis=1),
             allow_pickle=True)
 
+    utils.make_model_params_json_compatible(config.model_params)
     utils.make_exp_params_json_compatible(config.exp_params)
     jdict = {
         json_config_keys.obj_func: str(config.OBJECTIVE_FUNC),
@@ -198,7 +194,12 @@ def perform_experiment():
     }
 
     with open(os.path.join(savedir, 'config.json'), 'w') as fp:
-        json.dump(jdict, fp, indent=4)
+        try:
+            json.dump(jdict, fp, indent=4)
+        except TypeError as e:
+            print("Could not write confugration file for config:\n%s" % jdict)
+
+    print("Finished experiment.")
 
 
 if __name__ == '__main__':

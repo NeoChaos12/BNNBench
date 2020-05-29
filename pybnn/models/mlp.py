@@ -225,9 +225,6 @@ class MLP(BaseModel):
             total_time = curtime - start_time
 
             if conf.tblog:
-                # with conf.tb_writer() as writer:
-                #     logger.debug(f"Adding loss {lc[epoch]} at step {epoch+1}")
-                #     writer.add_scalar(tag=conf.tag_train_loss, scalar_value=lc[epoch], global_step=epoch+1)
                 self.tb_writer.add_scalar(tag=conf.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
 
                 # TODO: Standardize

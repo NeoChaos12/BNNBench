@@ -14,12 +14,13 @@
             50
         ],
         "input_dims": 1,
-        "output_dims": 1
+        "output_dims": 1,
+        "model_path": "./experiments/test"
     },
     "experiment_parameters": {
         "debug": false,
-        "tb_logging": true,
-        "save_model": false,
-        "log_plots": false
+        "tblog": true,
+        "save_model": true,
+        "tbplot": true
     }
 }

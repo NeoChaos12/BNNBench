@@ -7,7 +7,7 @@ class SamplingMethods(object):
     RANDOM = 1
 
 
-def sample_1d_func(func: ObjectiveFunction1D, nsamples: int = 100,
+def sample_1d_func(func: ObjectiveFunction1D, rng: np.random.RandomState, nsamples: int = 100,
                    method: int = SamplingMethods.UNIFORM) -> tuple:
     """
     Generates a dataset by sampling through the given function. Intended to be used with 1D toy objective functions.
@@ -32,7 +32,7 @@ def sample_1d_func(func: ObjectiveFunction1D, nsamples: int = 100,
         return np.arange(*lims, step=(lims[1] - lims[0]) / n)
 
     def random(n, lims):
-        return np.random.random(n) * (lims[1] - lims[0]) + lims[0]
+        return rng.random(n) * (lims[1] - lims[0]) + lims[0]
 
 
     samplers = {
@@ -41,4 +41,4 @@ def sample_1d_func(func: ObjectiveFunction1D, nsamples: int = 100,
     }
 
     domain_samples = samplers[method](nsamples, func.domain)
-    return (domain_samples, func(domain_samples))
+    return domain_samples, func(domain_samples)
