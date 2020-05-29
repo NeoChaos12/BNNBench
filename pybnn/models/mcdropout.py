@@ -8,6 +8,7 @@ from pybnn.models.mlp import mlplayergen, MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict, namedtuple
 from itertools import repeat
+# TODO: Switch to globalConfig, if needed
 
 
 class MCDropout(MLP):

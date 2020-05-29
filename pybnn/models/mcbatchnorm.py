@@ -8,6 +8,7 @@ from pybnn.models.mlp import mlplayergen, MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from functools import partial
 from collections import OrderedDict, namedtuple
+# TODO: Switch to globalConfig, if needed
 
 
 class MCBatchNorm(MLP):

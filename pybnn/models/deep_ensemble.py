@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pybnn.config import ExpConfig as conf
+from pybnn.config import globalConfig as conf
 from pybnn.models import logger
 from pybnn.models.mlp import MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization

@@ -2,6 +2,7 @@ from collections import namedtuple
 from functools import partial
 from torch.utils.tensorboard import SummaryWriter
 import logging
+from pybnn.util import experiment_utils as utils
 
 _mlpParamsDefaultDict = {
     "input_dims": 1,
@@ -23,61 +24,90 @@ expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults
 
 
 class ExpConfig:
-    tb_writer: partial = None
-    save_model = False
-    debug = False
-    tb_logging = False
-    log_plots = False
-    tag_train_loss = "Loss/Train"
-    tag_train_fig = "Results/Train"
-    tb_log_dir = ''
-    # tb_exp_name = ''
+    save_model: bool
+    __debug: bool
+    tblog: bool
+    tbplot: bool
+    __tbdir: str
+    __model_logger: logging.Logger
+    # model_logger: logging.Logger
+    TAG_TRAIN_LOSS = "Loss/Train"
+    TAG_TRAIN_FIG = "Results/Train"
+
+    defaults = {
+        "save_model": False,
+        "debug": False,
+        "tblog": False,
+        "tbplot": False,
+        "tbdir": './experiments/tbdir',
+        "model_logger": None
+    }
+
+    _params = namedtuple("ExpParams", defaults.keys(), defaults=defaults.values())
 
 
-    @classmethod
-    def read_exp_params(cls, exp_params):
-        try:
-            if exp_params.get('debug'):
-                # cls.enable_debug_mode(exp_params['model_logger'])
-                cls.debug = True
-                exp_params['model_logger'].setLevel(logging.DEBUG)
-            else:
-                cls.debug = False
-                exp_params['model_logger'].setLevel(logging.INFO)
-        except KeyError:
-            cls.debug = False
-
-        try:
-            if exp_params.get('tb_logging'):
-                # cls.enable_tb(logdir=exp_params['tb_log_dir'], expname=exp_params['tb_exp_name'])
-                cls.enable_tb(logdir=exp_params['tb_log_dir'])
-        except KeyError:
-            cls.tb_logging = False
-
-        cls.save_model = exp_params.get('save_model', False)
+    @property
+    def model_logger(self) -> logging.Logger:
+        return self.__model_logger
 
 
-    @classmethod
-    def enable_tb(cls, logdir=None):
-    # def enable_tb(cls, logdir=None, expname=None):
-        cls.tb_logging = True
-        cls.log_plots = True
-        cls.tb_log_dir = logdir
-        # cls.tb_exp_name = expname
-        # cls.tb_writer = partial(SummaryWriter, log_dir=logdir + expname)
-        cls.tb_writer = partial(SummaryWriter, log_dir=logdir)
+    @model_logger.setter
+    def model_logger(self, val):
+        self.__model_logger = val
+        if self.debug:
+            self.__model_logger.setLevel(logging.DEBUG)
+        else:
+            self.__model_logger.setLevel(logging.INFO)
+
+    @property
+    def debug(self) -> bool:
+        return self.__debug
 
 
-    @classmethod
-    def disable_tb(cls):
-        cls.tb_logging = False
-        cls.log_plots = False
-        cls.tb_log_dir = ""
-        # cls.tb_exp_name = ""
-        cls.tb_writer = None
+    @debug.setter
+    def debug(self, val):
+        if val:
+            self.__debug = True
+            if self.model_logger is not None:
+                self.__model_logger.setLevel(logging.DEBUG)
+        else:
+            self.__debug = False
+            if self.model_logger is not None:
+                self.__model_logger.setLevel(logging.INFO)
 
 
-    @classmethod
-    def enable_debug_mode(cls, model_logger):
-        cls.debug = True
-        model_logger.setLevel(logging.DEBUG)
+    @property
+    def tbdir(self) -> str:
+        return self.__tbdir
+
+
+    @tbdir.setter
+    def tbdir(self, val):
+        self.__tbdir = utils.standard_pathcheck(val)
+
+
+    @property
+    def tb_writer(self) -> SummaryWriter:
+        return partial(SummaryWriter, log_dir=self.tbdir)
+
+
+    @property
+    def params(self) -> dict:
+        return {key: getattr(self, key) for key in self._params._fields}
+
+
+    @params.setter
+    def params(self, val):
+        if isinstance(val, self._params):
+            [setattr(self, key, v) for key, v in val._asdict()]
+        elif isinstance(val, dict):
+            self.params = self._params(**val)
+
+
+    def __init__(self, **kwargs):
+        for key, val in ExpConfig.defaults.items():
+            fval = val if key not in kwargs else kwargs[key]
+            setattr(self, key, fval)
+
+
+globalConfig = ExpConfig()
