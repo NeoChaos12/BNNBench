@@ -8,6 +8,8 @@ from pybnn.models.mlp import mlplayergen, MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict, namedtuple
 from itertools import repeat
+
+
 # TODO: Switch to globalConfig, if needed
 
 
@@ -34,7 +36,6 @@ class MCDropout(MLP):
     # Create a record of all default parameter values used to run this model, including the Base Model parameters
     _default_model_params = modelParamsContainer()
 
-
     def __init__(self, pdrop=_default_model_params.pdrop, **kwargs):
         r"""
         Bayesian Optimizer that uses a Multi-Layer Perceptron neural network with MC-Dropout.
@@ -59,7 +60,6 @@ class MCDropout(MLP):
         logger.info("Intialized MC-Dropout model.")
         logger.debug("Intialized MC-Dropout model parameters:\n%s" % str(self.model_params))
 
-
     def _generate_network(self):
         logger.debug("Generating NN for MC-Dropout using dropout probability %s" % str(self.pdrop))
 
@@ -73,12 +73,12 @@ class MCDropout(MLP):
             pdrop = iter(self.pdrop)
         except TypeError:
             # Assume that a single value of pdrop is to be used for all layers
-            pdrop = repeat(self.pdrop, len(self.hidden_layer_sizes)+1)
+            pdrop = repeat(self.pdrop, len(self.hidden_layer_sizes) + 1)
 
         layer_gen = mlplayergen(
             layer_size=n_units,
             input_dims=input_dims,
-            output_dims=None    # Don't generate the output layer yet
+            output_dims=None  # Don't generate the output layer yet
         )
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
@@ -86,9 +86,9 @@ class MCDropout(MLP):
             layers.append((f"FC{layer_idx}", fclayer))
             layers.append((f"Tanh{layer_idx}", nn.Tanh()))
 
+        layers.append((f"Dropout{len(self.hidden_layer_sizes) + 1}", nn.Dropout(p=pdrop.__next__())))
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
-
 
     def predict(self, X_test, nsamples=1000):
         r"""
