@@ -151,6 +151,7 @@ def perform_experiment():
     conf.params = config.exp_params
 
     rng: np.random.RandomState = model.rng
+    mean_only = True if config.mtype is model_types.mlp else False
 
     print("Saving new model to: %s" % config.model_params["model_path"])
 
@@ -167,7 +168,7 @@ def perform_experiment():
     fvals = config.OBJECTIVE_FUNC(grid)
 
     tb_plotter = partial(utils.network_output_plotter_toy, grid=grid, fvals=fvals, trainx=Xtrain, trainy=ytrain,
-                         variances=False if config.mtype is model_types.mlp else True)
+                         plot_variances=not mean_only)
 
     # -------------------------------------------------Let it roll------------------------------------------------------
 
@@ -176,12 +177,19 @@ def perform_experiment():
     # model.fit()  # Don't save interim progress plots
 
     predicted_y = np.squeeze(model.predict(Xtest[:, None]))
-
     savedir = utils.ensure_path_exists(model.modeldir)
+
+    if mean_only:
+        out = np.zeros((Xtest.shape[0], 2))
+        out[:, 1] = predicted_y
+    else:
+        out = np.zeros((Xtest.shape[0], 3))
+        out[:, 1:] = np.stack(predicted_y, axis=1)
+
+    out[:, 0] = Xtest
     np.save(file=os.path.join(savedir, 'trainset'), arr=np.stack((Xtrain, ytrain), axis=1), allow_pickle=True)
     np.save(file=os.path.join(savedir, 'testset'), arr=np.stack((Xtest, ytest), axis=1), allow_pickle=True)
-    np.save(file=os.path.join(savedir, 'test_predictions'), arr=np.stack((Xtest, predicted_y), axis=1),
-            allow_pickle=True)
+    np.save(file=os.path.join(savedir, 'test_predictions'), arr=out, allow_pickle=True)
 
     utils.make_model_params_json_compatible(config.model_params)
     utils.make_exp_params_json_compatible(config.exp_params)
@@ -197,7 +205,7 @@ def perform_experiment():
         try:
             json.dump(jdict, fp, indent=4)
         except TypeError as e:
-            print("Could not write confugration file for config:\n%s" % jdict)
+            print("Could not write configuration file for config:\n%s" % jdict)
 
     print("Finished experiment.")
 

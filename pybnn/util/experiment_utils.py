@@ -46,7 +46,7 @@ def ensure_path_exists(path):
     return new_path
 
 
-def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None, variances=True):
+def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None, plot_variances=True):
     print("Plotting model performance.")
     fig, ax = plt.subplots(1, 1, squeeze=True)
 
@@ -57,7 +57,7 @@ def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None, varian
     if fvals is not None:
         ax.plot(grid, fvals, "k--")
 
-    if variances:
+    if plot_variances:
         ms = m[0]
         v = m[1]
         ax.plot(grid, ms, "blue")
