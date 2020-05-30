@@ -1,14 +1,16 @@
 import abc
 import os
 import numpy as np
+
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.util import experiment_utils as utils
-import torch
 from pybnn.models import logger
-from collections import namedtuple
 from pybnn.config import globalConfig as conf
+from collections import namedtuple
+
 import functools
 from typing import Callable
+import torch
 
 
 class BaseModel(object):

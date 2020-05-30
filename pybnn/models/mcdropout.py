@@ -73,7 +73,7 @@ class MCDropout(MLP):
             pdrop = iter(self.pdrop)
         except TypeError:
             # Assume that a single value of pdrop is to be used for all layers
-            pdrop = repeat(self.pdrop, len(self.hidden_layer_sizes))
+            pdrop = repeat(self.pdrop, len(self.hidden_layer_sizes)+1)
 
         layer_gen = mlplayergen(
             layer_size=n_units,
@@ -82,8 +82,8 @@ class MCDropout(MLP):
         )
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
-            layers.append((f"FC{layer_idx}", fclayer))
             layers.append((f"Dropout{layer_idx}", nn.Dropout(p=pdrop.__next__())))
+            layers.append((f"FC{layer_idx}", fclayer))
             layers.append((f"Tanh{layer_idx}", nn.Tanh()))
 
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))

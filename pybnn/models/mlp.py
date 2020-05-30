@@ -9,6 +9,7 @@ from collections import OrderedDict, namedtuple
 import torch.optim as optim
 import numpy as np
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from torch.optim.lr_scheduler import StepLR as steplr
 
 
 def mlplayergen(layer_size, input_dims=1, output_dims=None, nlayers=None, bias=True):
@@ -185,7 +186,17 @@ class MLP(BaseModel):
 
         self._generate_network()
 
-        optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
+        if isinstance(self.learning_rate, float):
+            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
+            lr_scheduler = False
+        elif isinstance(self.learning_rate, dict):
+            # Assume a dictionary of arguments was passed for the learning rate scheduler
+            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate["init"])
+            scheduler = steplr(optimizer, *self.learning_rate['args'], **self.learning_rate['kwargs'])
+            lr_scheduler = True
+        else:
+            raise RuntimeError("Could not resolve learning rate of type %s:\n%s" %
+                               (type(self.learning_rate), str(self.learning_rate)))
 
         if conf.tblog:
             self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
@@ -215,6 +226,8 @@ class MLP(BaseModel):
                 loss = self.loss_func(output, targets)
                 loss.backward()
                 optimizer.step()
+                if lr_scheduler:
+                    scheduler.step()
 
                 train_err += loss
                 train_batches += 1
