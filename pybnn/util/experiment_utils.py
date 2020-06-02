@@ -5,10 +5,21 @@ import string
 import numpy as np
 
 import matplotlib.pyplot as plt
+from typing import Hashable, Any, AnyStr
+
+from pybnn.util import AttrDict
+from pybnn.util import dataloaders, dataloader_args
 
 logger = logging.getLogger(__name__)
 
 fullpath = lambda path: os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
+
+config_top_level_keys = AttrDict()
+config_top_level_keys.obj_func = "objective_function"
+config_top_level_keys.dataset_size = "dataset_size"
+config_top_level_keys.test_frac = "testset_fraction"
+config_top_level_keys.mparams = "model_parameters"
+config_top_level_keys.eparams = "experiment_parameters"
 
 
 def standard_pathcheck(path):
@@ -87,13 +98,73 @@ def make_exp_params_json_compatible(exp_params):
     exp_params.pop('model_logger')
 
 
-if __name__ == '__main__':
-    X = np.arange(100, 1000)
-    y = X ** 2
-    splits = generate_splits(
-        X,
-        y,
-        testfrac=0.2
-    )
+def dict_fetch(d: dict, key: Hashable, critical: bool = True, emessage: AnyStr = None, default: Any = None) -> Any:
+    """
+    Convenience method that wraps around a try-except block for safely fetching a dict key and handling KeyError
+    exceptions.
+    :param d: The dictionary to search within.
+    :param key: The key being sought.
+    :param critical: Indicates if this fetch operation is critical to program execution. If False, the KeyError is
+    suppressed, the default argument value is returned upon KeyError and a debug message is logged. Otherwise, a
+    critical message is logged and the KeyError is raised.
+    :param emessage: (Optional) A string containing a message which is logged as critical or debug depending on the
+    value of 'critical'.
+    :param default: (Optional) If 'critical' is False and a KeyError occurs, this value is returned.
+    :return: Value of dict[key] or default.
+    """
 
-    print([s.shape for s in splits])
+    try:
+        val = d[key]
+    except KeyError as e:
+        if critical:
+            logger.critical(emessage)
+            raise e
+        else:
+            logger.debug(emessage)
+            return default
+    else:
+        return val
+
+
+def parse_objective(config: dict, out: AttrDict):
+    """
+    Parses an input configuration of the objective for the model and sets the corresponding configuration useable by
+    an experiment.
+
+    :param config:
+    :param out:
+    :return:
+    """
+
+    otype = dict_fetch(config, "type", critical=True,
+                       emessage="The key 'type' was not found while parsing the configuration for the model objective.")
+
+    if otype == "dataset":
+        _ = dict_fetch(config, "name", critical=True, emessage="The key 'name' was not found while parsing the "
+                                                               "configuration for the model objective")
+        out.OBJECTIVE_FUNC = AttrDict(config)
+    elif otype == "toy_1d":
+        dname = dict_fetch(config, "name", critical=True, emessage="The key 'name' was not found while parsing the "
+                                                                   "configuration for the model objective")
+        from pybnn.toy_functions.toy_1d import get_func_from_attrdict, nonParameterisedObjectiveFunctions
+        out.OBJECTIVE_FUNC = get_func_from_attrdict(dname, nonParameterisedObjectiveFunctions)
+    else:
+        logger.critical("Could not recognize objective type %s" % otype)
+        raise RuntimeError("Unrecognized objective type %s, Configuration parsing for experiment failed." % otype)
+
+
+# TODO: Define standard AttrDict or namedtuple for dataset configurations
+def get_dataset(obj_config: AttrDict) -> (np.ndarray, np.ndarray):
+    """
+    Parses the objective configuration for a named dataset and returns the dataset as X, y arrays.
+    :param obj_config: The pre-processed configuration for defining an objective dataset.
+    :return: The required dataset as a 2-tuple of numpy arrays, (X, y), where X is the array of observed features and y
+    is the array of observed results/labels.
+    """
+
+    dname = obj_config.name.lower()
+    return dataloaders[dname](**dataloader_args[dname])
+
+
+if __name__ == '__main__':
+    pass

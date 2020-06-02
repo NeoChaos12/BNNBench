@@ -18,12 +18,14 @@ from pybnn.toy_functions.sampler import sample_1d_func
 from pybnn.util.attrDict import AttrDict
 import pybnn.util.experiment_utils as utils
 
-json_config_keys = AttrDict()
-json_config_keys.obj_func = "objective_function"
-json_config_keys.dataset_size = "dataset_size"
-json_config_keys.test_frac = "testset_fraction"
-json_config_keys.mparams = "model_parameters"
-json_config_keys.eparams = "experiment_parameters"
+json_config_keys = utils.config_top_level_keys
+
+# json_config_keys = AttrDict()
+# json_config_keys.obj_func = "objective_function"
+# json_config_keys.dataset_size = "dataset_size"
+# json_config_keys.test_frac = "testset_fraction"
+# json_config_keys.mparams = "model_parameters"
+# json_config_keys.eparams = "experiment_parameters"
 
 model_types = AttrDict()
 model_types.mlp = MLP
@@ -105,9 +107,12 @@ def handle_cli():
 
         if json_config_keys.obj_func in new_config:
             print("Attempting to fetch objective function %s" % new_config[json_config_keys.obj_func])
-            from pybnn.toy_functions.toy_1d import get_func_from_attrdict
-            config.OBJECTIVE_FUNC = get_func_from_attrdict(new_config[json_config_keys.obj_func],
-                                                           nonParameterisedObjectiveFunctions)
+            if isinstance(new_config[json_config_keys.obj_func], dict):
+                utils.parse_objective(config=new_config[json_config_keys.obj_func], out=config)
+            else:
+                from pybnn.toy_functions.toy_1d import get_func_from_attrdict
+                config.OBJECTIVE_FUNC = get_func_from_attrdict(new_config[json_config_keys.obj_func],
+                                                               nonParameterisedObjectiveFunctions)
             print("Fetched objective function.")
 
         if json_config_keys.dataset_size in new_config:
@@ -155,26 +160,36 @@ def perform_experiment():
 
     print("Saving new model to: %s" % config.model_params["model_path"])
 
-    # --------------------------------------------Generate toy dataset--------------------------------------------------
+    # -----------------------------------------------Generate data------------------------------------------------------
 
-    X, y = sample_1d_func(config.OBJECTIVE_FUNC, rng=rng, nsamples=config.DATASET_SIZE, method=SamplingMethods.RANDOM)
+    if isinstance(config.OBJECTIVE_FUNC, AttrDict):
+        X, y = utils.get_dataset(config.OBJECTIVE_FUNC)
+        plotting1d = False
+    else:
+        X, y = sample_1d_func(config.OBJECTIVE_FUNC, rng=rng, nsamples=config.DATASET_SIZE,
+                              method=SamplingMethods.RANDOM)
+        plotting1d = True
+
     Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=config.TEST_FRACTION, random_state=rng,
                                                     shuffle=True)
 
     # -----------------------------------------------Set up plotting----------------------------------------------------
 
-    domain = config.OBJECTIVE_FUNC.domain
-    grid = np.linspace(domain[0], domain[1], max(1000, config.DATASET_SIZE * 10))
-    fvals = config.OBJECTIVE_FUNC(grid)
+    if plotting1d:
+        domain = config.OBJECTIVE_FUNC.domain
+        grid = np.linspace(domain[0], domain[1], max(1000, config.DATASET_SIZE * 10))
+        fvals = config.OBJECTIVE_FUNC(grid)
 
-    tb_plotter = partial(utils.network_output_plotter_toy, grid=grid, fvals=fvals, trainx=Xtrain, trainy=ytrain,
-                         plot_variances=not mean_only)
+        tb_plotter = partial(utils.network_output_plotter_toy, grid=grid, fvals=fvals, trainx=Xtrain, trainy=ytrain,
+                             plot_variances=not mean_only)
 
     # -------------------------------------------------Let it roll------------------------------------------------------
 
     model.preprocess_training_data(Xtrain[:, None], ytrain)
-    model.fit(plotter=tb_plotter)
-    # model.fit()  # Don't save interim progress plots
+    if plotting1d:
+        model.fit(plotter=tb_plotter)
+    else:
+        model.fit()  # Don't save interim progress plots
 
     predicted_y = np.squeeze(model.predict(Xtest[:, None]))
     savedir = utils.ensure_path_exists(model.modeldir)
@@ -183,10 +198,12 @@ def perform_experiment():
         out = np.zeros((Xtest.shape[0], 2))
         out[:, 1] = predicted_y
     else:
-        out = np.zeros((Xtest.shape[0], 3))
-        out[:, 1:] = np.stack(predicted_y, axis=1)
+        out = np.zeros((Xtest.shape[0], 3))  # Assume the model predicted means and variances, returned as a tuple
+        out[:, 1:] = np.stack(predicted_y, axis=1)  # Treat both elements of the tuple as individual numpy arrays
 
     out[:, 0] = Xtest
+
+    print(f"Saving model performance results in {savedir}")
     np.save(file=os.path.join(savedir, 'trainset'), arr=np.stack((Xtrain, ytrain), axis=1), allow_pickle=True)
     np.save(file=os.path.join(savedir, 'testset'), arr=np.stack((Xtest, ytest), axis=1), allow_pickle=True)
     np.save(file=os.path.join(savedir, 'test_predictions'), arr=out, allow_pickle=True)
