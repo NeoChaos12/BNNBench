@@ -27,6 +27,9 @@ class ExpConfig:
     save_model: bool
     __debug: bool = False
     tblog: bool
+    logTrainLoss: bool
+    logInternals: bool
+    logTrainPerformance: bool
     tbplot: bool
     __tbdir: str
     __model_logger: logging.Logger = None
@@ -38,6 +41,9 @@ class ExpConfig:
         "save_model": False,
         "debug": False,
         "tblog": False,
+        "logTrainLoss": False,
+        "logInternals": False,
+        "logTrainPerformance": False,
         "tbplot": False,
         "tbdir": './experiments/tbdir',
         "model_logger": None

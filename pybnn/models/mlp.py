@@ -18,6 +18,7 @@ class MLP(BaseModel):
     """
 
     MODEL_FILE_IDENTIFIER = "model"
+    tb_writer: conf.tb_writer
 
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
@@ -172,7 +173,7 @@ class MLP(BaseModel):
                                                               dtype=torch.float, requires_grad=False))
 
         # TODO: Standardize
-        if conf.tblog:
+        if conf.tblog and conf.logInternals:
             weights = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
             weights.append(("Output", []))
             biases = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
@@ -207,28 +208,30 @@ class MLP(BaseModel):
             total_time = curtime - start_time
 
             if conf.tblog:
-                self.tb_writer.add_scalar(tag=conf.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
+                if conf.logTrainLoss:
+                    self.tb_writer.add_scalar(tag=conf.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
 
-                # TODO: Standardize
-                for ctr in range(len(self.hidden_layer_sizes)):
-                    layer = self.network.__getattr__(f"FC{ctr + 1}")
+                if conf.logInternals:
+                    # TODO: Standardize
+                    for ctr in range(len(self.hidden_layer_sizes)):
+                        layer = self.network.__getattr__(f"FC{ctr + 1}")
+                        lweight = layer.weight.cpu().detach().numpy().flatten()
+                        lbias = layer.bias.cpu().detach().numpy().flatten()
+                        weights[ctr][1].append(lweight)
+                        biases[ctr][1].append(lbias)
+
+                    layer = self.network.__getattr__("Output")
                     lweight = layer.weight.cpu().detach().numpy().flatten()
                     lbias = layer.bias.cpu().detach().numpy().flatten()
-                    weights[ctr][1].append(lweight)
-                    biases[ctr][1].append(lbias)
-
-                layer = self.network.__getattr__("Output")
-                lweight = layer.weight.cpu().detach().numpy().flatten()
-                lbias = layer.bias.cpu().detach().numpy().flatten()
-                weights[-1][1].append(lweight)
-                biases[-1][1].append(lbias)
+                    weights[-1][1].append(lweight)
+                    biases[-1][1].append(lbias)
 
             if epoch % 100 == 99:
                 logger.info("Epoch {} of {}".format(epoch + 1, self.num_epochs))
                 logger.info("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
                 logger.info("Training loss:\t\t{:.5g}\n".format(train_err / train_batches))
 
-                if conf.tbplot:
+                if conf.tblog and conf.logTrainPerformance:
                     try:
                         plotter = kwargs["plotter"]
                         logger.debug("Saving performance plot at training epoch %d" % (epoch + 1))
@@ -238,15 +241,14 @@ class MLP(BaseModel):
                         logger.debug("No plotter specified. Not saving plotting logs.")
                         conf.tbplot = False
 
-        if conf.tblog:
-            if conf.tbplot:
-                logger.info("Plotting weight graphs.")
-                fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1),
-                                                title="Layer weights")
-                self.tb_writer.add_figure(tag="Layer weights", figure=fig)
-                fig = self.__plot_layer_weights(weights=biases, epochs=range(1, self.num_epochs + 1),
-                                                title="Layer biases")
-                self.tb_writer.add_figure(tag="Layer biases", figure=fig)
+        if conf.tblog and conf.logInternals:
+            logger.info("Plotting weight graphs.")
+            fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1),
+                                            title="Layer weights")
+            self.tb_writer.add_figure(tag="Layer weights", figure=fig)
+            fig = self.__plot_layer_weights(weights=biases, epochs=range(1, self.num_epochs + 1),
+                                            title="Layer biases")
+            self.tb_writer.add_figure(tag="Layer biases", figure=fig)
 
         if conf.save_model:
             self.save_network()
