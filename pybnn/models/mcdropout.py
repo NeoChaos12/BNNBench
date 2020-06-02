@@ -130,9 +130,9 @@ class MCDropout(MLP):
                     self.network(X_).data.cpu().numpy(),
                     self.y_mean,
                     self.y_std
-                ) for _ in range(nsamples)]).squeeze()
+                ) for _ in range(nsamples)])
         else:
-            Yt_hat = np.array([self.network(X_).data.cpu().numpy() for _ in range(nsamples)]).squeeze()
+            Yt_hat = np.array([self.network(X_).data.cpu().numpy() for _ in range(nsamples)])
 
         logger.debug("Generated final outputs array of shape %s" % str(Yt_hat.shape))
 

@@ -164,11 +164,19 @@ def perform_experiment():
 
     if isinstance(config.OBJECTIVE_FUNC, AttrDict):
         X, y = utils.get_dataset(config.OBJECTIVE_FUNC)
+        print(f"Loaded dataset with feature set of shape {X.shape} and targets of shape {y.shape}")
         plotting1d = False
     else:
         X, y = sample_1d_func(config.OBJECTIVE_FUNC, rng=rng, nsamples=config.DATASET_SIZE,
                               method=SamplingMethods.RANDOM)
         plotting1d = True
+
+    # I give up. New rule: No more vectors.
+    if len(X.shape) == 1:
+        X = X[:, None]
+
+    if len(y.shape) == 1:
+        y = y[:, None]
 
     Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=config.TEST_FRACTION, random_state=rng,
                                                     shuffle=True)
@@ -185,27 +193,26 @@ def perform_experiment():
 
     # -------------------------------------------------Let it roll------------------------------------------------------
 
-    model.preprocess_training_data(Xtrain[:, None], ytrain)
+    model.preprocess_training_data(Xtrain, ytrain)
     if plotting1d:
         model.fit(plotter=tb_plotter)
     else:
         model.fit()  # Don't save interim progress plots
 
-    predicted_y = np.squeeze(model.predict(Xtest[:, None]))
+    predicted_y = model.predict(Xtest)
     savedir = utils.ensure_path_exists(model.modeldir)
 
     if mean_only:
-        out = np.zeros((Xtest.shape[0], 2))
-        out[:, 1] = predicted_y
+        # out = np.zeros((Xtest.shape[0], Xtest.shape[1] + 1))
+        out = np.concatenate((Xtest, predicted_y), axis=1)
     else:
-        out = np.zeros((Xtest.shape[0], 3))  # Assume the model predicted means and variances, returned as a tuple
-        out[:, 1:] = np.stack(predicted_y, axis=1)  # Treat both elements of the tuple as individual numpy arrays
-
-    out[:, 0] = Xtest
+        # Assume the model predicted means and variances, returned as a tuple
+        # Treat both elements of the tuple as individual numpy arrays
+        out = np.concatenate((Xtest, predicted_y[0], predicted_y[1]), axis=1)
 
     print(f"Saving model performance results in {savedir}")
-    np.save(file=os.path.join(savedir, 'trainset'), arr=np.stack((Xtrain, ytrain), axis=1), allow_pickle=True)
-    np.save(file=os.path.join(savedir, 'testset'), arr=np.stack((Xtest, ytest), axis=1), allow_pickle=True)
+    np.save(file=os.path.join(savedir, 'trainset'), arr=np.concatenate((Xtrain, ytrain), axis=1), allow_pickle=True)
+    np.save(file=os.path.join(savedir, 'testset'), arr=np.concatenate((Xtest, ytest), axis=1), allow_pickle=True)
     np.save(file=os.path.join(savedir, 'test_predictions'), arr=out, allow_pickle=True)
 
     utils.make_model_params_json_compatible(config.model_params)

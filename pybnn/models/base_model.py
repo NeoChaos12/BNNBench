@@ -276,11 +276,17 @@ class BaseModel(object):
 
         # Normalize inputs
         if self.normalize_input:
+            logger.debug("Normalizing X of shape %s." % str(self.X.shape))
             self.X, self.X_mean, self.X_std = zero_mean_unit_var_normalization(self.X)
+            logger.debug("Normalized X, mean and std have shapes %s, %s and %s" %
+                         (str(self.X.shape), self.X_mean.shape, self.X_std.shape))
 
         # Normalize ouputs
         if self.normalize_output:
+            logger.debug("Normalizing y of shape %s." % str(self.y.shape))
             self.y, self.y_mean, self.y_std = zero_mean_unit_var_normalization(self.y)
+            logger.debug("Normalized y, mean and std have shapes %s, %s and %s" %
+                         (str(self.y.shape), self.y_mean.shape, self.y_std.shape))
 
     def iterate_minibatches(self, inputs, targets, batchsize=None, shuffle=False, as_tensor=False):
         """

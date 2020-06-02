@@ -69,8 +69,8 @@ def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None, plot_v
         ax.plot(grid, fvals, "k--")
 
     if plot_variances:
-        ms = m[0]
-        v = m[1]
+        ms = np.squeeze(m[0])
+        v = np.squeeze(m[1])
         ax.plot(grid, ms, "blue")
         ax.fill_between(grid, ms + np.sqrt(v), ms - np.sqrt(v), color="orange", alpha=0.8)
         ax.fill_between(grid, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)

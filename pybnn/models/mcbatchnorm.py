@@ -164,9 +164,9 @@ class MCBatchNorm(MLP):
         if self.normalize_output:
             from functools import partial
             denorm = partial(zero_mean_unit_var_denormalization, mean=self.y_mean, std=self.y_std)
-            Yt_hat = np.array(list(map(denorm, Yt_hat))).squeeze()
+            Yt_hat = np.array(list(map(denorm, Yt_hat)))
         else:
-            Yt_hat = np.array(Yt_hat).squeeze()
+            Yt_hat = np.array(Yt_hat)
 
         logger.debug("Generated final outputs array of shape %s" % str(Yt_hat.shape))
 
