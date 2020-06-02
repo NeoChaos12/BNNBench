@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from pybnn.models import logger
-from pybnn.models.mlp import mlplayergen, MLP
+from pybnn.models.mlp import MLP
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from functools import partial
 from collections import OrderedDict, namedtuple
@@ -81,7 +81,7 @@ class MCBatchNorm(MLP):
         layers = []
         self.batchnorm_layers = []
 
-        layer_gen = mlplayergen(
+        layer_gen = MLP.mlplayergen(
             layer_size=n_units,
             input_dims=input_dims,
             output_dims=None  # Don't generate the output layer yet

@@ -12,43 +12,6 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 from torch.optim.lr_scheduler import StepLR as steplr
 
 
-def mlplayergen(layer_size, input_dims=1, output_dims=None, nlayers=None, bias=True):
-    """
-    Generates fully connected NN layers as pytorch.nn.Linear objects.
-
-    Parameters
-    ----------
-    layer_size: int or Iterable
-        Either a single int specifying the size of all hidden layers, or a list of sizes corresponding to the size of
-        each hidden layer.
-    input_dims: int
-        Number of dimensions in the input layer. Default is 1.
-    output_dims: int or None
-        Number of dimensions in the output layer. If None, the output layer is skipped.
-    nlayers: int or None
-        Number of hidden layers in the MLP. Required only when layer_size is a single integer, ignored
-        otherwise. Default is 1.
-    bias: bool
-        Whether or not to add a bias term to the layer weights. Default is True.
-    """
-    if type(layer_size) is int:
-        try:
-            from itertools import repeat
-            layer_size = repeat(layer_size, nlayers)
-        except TypeError:
-            logger.fatal("MLP generation failed. Cannot resolve layer_size of type %s with nlayers of type %s. When "
-                         "layer_size is int, nlayers must also be int." % (type(layer_size), type(nlayers)))
-
-    prec_layer = input_dims
-
-    for this_layer in layer_size:
-        yield nn.Linear(prec_layer, this_layer, bias)
-        prec_layer = this_layer
-
-    if output_dims:
-        yield nn.Linear(prec_layer, output_dims)
-
-
 class MLP(BaseModel):
     """
     Simple Multi-Layer Perceptron model. Demonstrates usage of BaseModel as well as the FC Layer generator above.
