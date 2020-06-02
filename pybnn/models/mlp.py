@@ -59,7 +59,7 @@ class MLP(BaseModel):
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
-        "input_dims": 1,  # Inferred during training from X.shape[1]
+        # "input_dims": 1,  # Inferred during training from X.shape[1]
         "output_dims": 1,  # Currently, there is no support for any value except 1
         "loss_func": torch.nn.functional.mse_loss,
         "optimizer": optim.Adam,
@@ -78,9 +78,13 @@ class MLP(BaseModel):
     # Create a record of all default parameter values used to run this model, including the Base Model parameters
     _default_model_params = modelParamsContainer()
 
+    @property
+    def input_dims(self):
+        return self.X.shape[1]
+
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
-                 input_dims=_default_model_params.input_dims,
+                 # input_dims=_default_model_params.input_dims,
                  output_dims=_default_model_params.output_dims,
                  loss_func=_default_model_params.loss_func,
                  optimizer=_default_model_params.optimizer, **kwargs):
@@ -114,7 +118,7 @@ class MLP(BaseModel):
         except (KeyError, AttributeError):
             # Read this model's unique parameters from arguments
             self.hidden_layer_sizes = hidden_layer_sizes
-            self.input_dims = input_dims
+            # self.input_dims = input_dims
             self.output_dims = output_dims
             self.loss_func = loss_func
             self.optimizer = optimizer
@@ -169,7 +173,7 @@ class MLP(BaseModel):
         self.X = X
         self.y = y
 
-        self.input_dims = X.shape[1]
+        # self.input_dims = X.shape[1]
 
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
