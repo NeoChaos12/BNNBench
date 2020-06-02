@@ -173,8 +173,8 @@ class MLP(BaseModel):
 
         logger.debug("Performing pre-processing on feature set of shape %s and target set of shape %s." %
                      (X.shape, y.shape))
-        self.X = X
-        self.y = y
+        self.X = np.copy(X)
+        self.y = np.copy(y)
 
         # self.input_dims = X.shape[1]
         # Normalize inputs and outputs if the respective flags were set
