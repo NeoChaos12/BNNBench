@@ -143,7 +143,8 @@ class MLP(BaseModel):
         # self.input_dims = X.shape[1]
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
-        self.y = self.y[:, None]
+        if len(self.y.shape) == 1:
+            self.y = self.y[:, None]
         return
 
     @BaseModel._tensorboard_user
@@ -182,6 +183,8 @@ class MLP(BaseModel):
         # Start training
         self.network.train()
         lc = np.zeros([self.num_epochs])
+        logger.debug("Training over inputs and targets of shapes %s and %s, respectively." %
+                     (self.X.shape, self.y.shape))
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
