@@ -83,36 +83,42 @@ def network_output_plotter_toy(predict, trainx, trainy, grid, fvals=None, plot_v
     return fig
 
 
-def simple_plotter(pred, test=None, train=None, plot_variances=True):
+def simple_plotter(pred: np.ndarray = None, test: np.ndarray =None, train: np.ndarray =None, plot_variances=True):
     print("Plotting model performance.")
+
+    if pred is None and test is None and train is None:
+        raise RuntimeError("At least one of pred, test or train must be provided.")
+
     fig, ax = plt.subplots(1, 1, squeeze=True)
 
     ax.grid()
 
-    predx = pred[:, 0]
-    predy = pred[:, 1] if not plot_variances else pred[:, 1:]
-
     if train is not None:
         trainx = train[:, 0].squeeze()
         trainy = train[:, 1].squeeze()
-        ax.scatter(trainx, trainy, c="r", marker='o')
+        ax.scatter(trainx, trainy, c="r", marker='o', label="Training data")
 
     if test is not None:
         testx = test[:, 0].squeeze()
         testy = test[:, 1].squeeze()
-        ax.scatter(testx, testy, c="black", marker="x")
+        ax.scatter(testx, testy, c="black", marker="x", label="Test data")
 
-    if plot_variances:
-        ms = np.squeeze(predy[:, 0])
-        v = np.squeeze(predy[:, 1])
-        ax.scatter(predx, ms, c="blue")
-        ax.fill_between(predx, ms + np.sqrt(v), ms - np.sqrt(v), color="orange", alpha=0.8)
-        ax.fill_between(predx, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)
-        ax.fill_between(predx, ms + 3 * np.sqrt(v), ms - 3 * np.sqrt(v), color="orange", alpha=0.4)
-    else:
-        ax.plot(predx, predy, "blue")
+    if pred is not None:
+        predx = pred[:, 0]
+        if plot_variances:
+            predy = pred[:, 1:]
+            ms = np.squeeze(predy[:, 0])
+            v = np.squeeze(predy[:, 1])
+            ax.scatter(predx, ms, c="blue", label="Predicted Mean")
+            ax.fill_between(predx, ms + np.sqrt(v), ms - np.sqrt(v), color="orange", alpha=0.8)
+            ax.fill_between(predx, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)
+            ax.fill_between(predx, ms + 3 * np.sqrt(v), ms - 3 * np.sqrt(v), color="orange", alpha=0.4)
+        else:
+            predy = pred[:, 1]
+            ax.scatter(predx, predy, c="blue", label="Predicted Mean")
     ax.set_xlabel(r"Input $x$")
     ax.set_ylabel(r"Output $f(x)$")
+    ax.legend()
     print("Returning figure object.")
     return fig
 

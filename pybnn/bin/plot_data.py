@@ -10,20 +10,20 @@ from pybnn.util.experiment_utils import standard_pathcheck
 
 parser = argparse.ArgumentParser(add_help=True)
 parser.add_argument('-d', '--logdir', required=True, help="Location of the directory containing all data to be plotted.")
-parser.add_argument('--onlymeans', default=False, action='store_false', help="When given, assume no variance data is available.")
+parser.add_argument('--onlymeans', default=True, action='store_false', help="When given, assume no variance data is available.")
 args = parser.parse_args()
 
 basedir = standard_pathcheck(args.logdir)
 
 train = np.load(os.path.join(basedir, "trainset.npy"), allow_pickle=True)
-train.sort(axis=0)
+# train.sort(axis=0)
 print(train.shape)
 
 test = np.load(os.path.join(basedir, "testset.npy"), allow_pickle=True)
-test.sort(axis=0)
+# test.sort(axis=0)
 print(test.shape)
 pred = np.load(os.path.join(basedir, "test_predictions.npy"), allow_pickle=True)
-pred.sort(axis=0)
+# pred.sort(axis=0)
 print(pred.shape)
 
 fig = plotter(pred=pred, test=test, train=train, plot_variances=args.onlymeans)

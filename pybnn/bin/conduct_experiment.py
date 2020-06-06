@@ -83,6 +83,9 @@ def handle_cli():
     parser.add_argument('--tbdir', type=str, default=None, required=False,
                         help='Custom Tensorboard log directory. Overwrites default behaviour of using the same '
                              'directory as for storing the model.')
+    parser.add_argument('--plotdata', action='store_true', default=False, required=False,
+                            help='When given, generates a plot of the training/test data. Only supported for 1D '
+                                 'datasets.')
 
     # parser.add_argument('--name', type=str, required=False, help='If provided, overrides the experiment name with
     # the given value. Experiment name is the leaf ' 'folder name in the directory structure, within which all output
@@ -90,6 +93,8 @@ def handle_cli():
     # generated.')
 
     args = parser.parse_args()
+
+    config.plotdata = args.plotdata
 
     mtype = str.lower(args.model)
     if mtype not in model_types:
@@ -153,6 +158,7 @@ def perform_experiment():
     model = config.mtype(model_params=config.model_params)
     if config.exp_params['tbdir'] is None:
         config.exp_params['tbdir'] = model.modeldir
+        print(f"Tensorboard directory set to: {config.exp_params['tbdir']}")
     conf.params = config.exp_params
 
     rng: np.random.RandomState = model.rng
@@ -211,6 +217,22 @@ def perform_experiment():
         out = np.concatenate((Xtest, predicted_y[0], predicted_y[1]), axis=1)
 
     print(f"Saving model performance results in {savedir}")
+
+    if config.plotdata:
+        from pybnn.util.experiment_utils import simple_plotter
+        import matplotlib.pyplot as plt
+        testdata = np.concatenate((Xtrain, ytrain), axis=1)
+        traindata = np.concatenate((Xtest, ytest), axis=1)
+        print(f"Displaying:\nTraining data of shape {traindata.shape}\nTest data of shape {testdata.shape}\n"
+              f"Prediction data of shape {out.shape}")
+        fig = simple_plotter(
+            pred=out,
+            train=traindata,
+            test=testdata,
+            plot_variances=not mean_only
+        )
+        plt.show()
+
     np.save(file=os.path.join(savedir, 'trainset'), arr=np.concatenate((Xtrain, ytrain), axis=1), allow_pickle=True)
     np.save(file=os.path.join(savedir, 'testset'), arr=np.concatenate((Xtest, ytest), axis=1), allow_pickle=True)
     np.save(file=os.path.join(savedir, 'test_predictions'), arr=out, allow_pickle=True)
