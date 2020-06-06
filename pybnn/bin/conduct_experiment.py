@@ -83,7 +83,6 @@ def handle_cli():
     # parser.add_argument('--tbdir', type=str, default=None, required=False,
     #                     help='Custom Tensorboard log directory. Overwrites default behaviour of using the same '
     #                          'directory as for storing the model.')
-
     parser.add_argument('--plotdata', action='store_true', default=False, required=False,
                             help='When given, generates a plot of the training/test data. Only supported for 1D '
                                  'datasets.')
