@@ -105,8 +105,10 @@ def simple_plotter(pred: np.ndarray = None, test: np.ndarray =None, train: np.nd
 
     if pred is not None:
         predx = pred[:, 0]
+        sort_args = np.argsort(predx, axis=0)
+        predx = predx[sort_args]
         if plot_variances:
-            predy = pred[:, 1:]
+            predy = pred[sort_args, 1:]
             ms = np.squeeze(predy[:, 0])
             v = np.squeeze(predy[:, 1])
             ax.scatter(predx, ms, c="blue", label="Predicted Mean")
@@ -114,7 +116,7 @@ def simple_plotter(pred: np.ndarray = None, test: np.ndarray =None, train: np.nd
             ax.fill_between(predx, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)
             ax.fill_between(predx, ms + 3 * np.sqrt(v), ms - 3 * np.sqrt(v), color="orange", alpha=0.4)
         else:
-            predy = pred[:, 1]
+            predy = pred[sort_args, 1]
             ax.scatter(predx, predy, c="blue", label="Predicted Mean")
     ax.set_xlabel(r"Input $x$")
     ax.set_ylabel(r"Output $f(x)$")

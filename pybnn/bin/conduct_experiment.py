@@ -221,8 +221,8 @@ def perform_experiment():
     if config.plotdata:
         from pybnn.util.experiment_utils import simple_plotter
         import matplotlib.pyplot as plt
-        testdata = np.concatenate((Xtrain, ytrain), axis=1)
-        traindata = np.concatenate((Xtest, ytest), axis=1)
+        traindata = np.concatenate((Xtrain, ytrain), axis=1)
+        testdata = np.concatenate((Xtest, ytest), axis=1)
         print(f"Displaying:\nTraining data of shape {traindata.shape}\nTest data of shape {testdata.shape}\n"
               f"Prediction data of shape {out.shape}")
         fig = simple_plotter(
