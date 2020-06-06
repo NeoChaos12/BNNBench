@@ -43,16 +43,6 @@ config.OBJECTIVE_FUNC = nonParameterisedObjectiveFunctions.infinityGO7
 config.DATASET_SIZE = 100
 config.TEST_FRACTION = 0.2
 
-config.default_exp_params = {
-    "debug": False,
-    "tblog": True,
-    "save_model": False,
-    "tbplot": False,
-    "tbdir": None,
-    # "tb_exp_name": model_params["model_name"],
-    # "model_logger": model_logger
-}
-
 config.model_params = {}
 config.exp_params = {}
 config.mtype = MLP
@@ -72,17 +62,28 @@ def handle_cli():
     parser.add_argument('--config', type=str, default=None,
                         help='Filename of JSON file containing experiment configuration. If not provided, default '
                              'configurations are used.')
-    parser.add_argument('--debug', action='store_true', default=None,
-                        help='When given, enables debug mode logging.')
-    parser.add_argument('--tblog', action='store_true', default=None,
-                        help='When given, enables all tensorboard logging of model outputs.')
-    parser.add_argument('--save_model', action='store_true', default=None,
-                        help='When given, the trained model is saved to disk after training.')
-    parser.add_argument('--tbplot', action='store_true', default=None,
-                        help='When given alongside --tblog, various plotting data is stored through tensorboard.')
-    parser.add_argument('--tbdir', type=str, default=None, required=False,
-                        help='Custom Tensorboard log directory. Overwrites default behaviour of using the same '
-                             'directory as for storing the model.')
+
+    for argument, helptext in conf.cli_arguments.items():
+        argname = '--' + argument
+        defaultval = conf.defaults[argument]
+        if type(defaultval) is bool:
+            action = "store_false" if defaultval else "store_true"
+        elif isinstance(defaultval, str):
+            action = "store"
+
+        parser.add_argument(argname, default=None, action=action, help=helptext)
+    # parser.add_argument('--debug', action='store_true', default=None,
+    #                     help='When given, enables debug mode logging.')
+    # parser.add_argument('--tblog', action='store_true', default=None,
+    #                     help='When given, enables all tensorboard logging of model outputs.')
+    # parser.add_argument('--save_model', action='store_true', default=None,
+    #                     help='When given, the trained model is saved to disk after training.')
+    # parser.add_argument('--tbplot', action='store_true', default=None,
+    #                     help='When given alongside --tblog, various plotting data is stored through tensorboard.')
+    # parser.add_argument('--tbdir', type=str, default=None, required=False,
+    #                     help='Custom Tensorboard log directory. Overwrites default behaviour of using the same '
+    #                          'directory as for storing the model.')
+
     parser.add_argument('--plotdata', action='store_true', default=False, required=False,
                             help='When given, generates a plot of the training/test data. Only supported for 1D '
                                  'datasets.')
@@ -138,11 +139,14 @@ def handle_cli():
         if json_config_keys.eparams in new_config:
             print("Using experiment parameters provided by config file.")
             config_exp_params = new_config[json_config_keys.eparams]
-            for key, val in config.default_exp_params.items():
-                # Priorities: 1. CLI, 2. Config file, 3. Defaults
-                clival = getattr(args, key)
-                config.exp_params[key] = clival if clival is not None else val if key not in config_exp_params else \
-                    config_exp_params[key]
+            for key, val in conf.defaults.items():
+                if key in conf.cli_arguments:
+                    # Only handle those settings that can be modified using the CLI or JSON config file.
+                    # Priorities: 1. CLI, 2. Config file, 3. Defaults
+                    clival = getattr(args, key)
+                    config.exp_params[key] = clival if clival is not None else \
+                        config_exp_params[key] if key in config_exp_params else val
+
             config.exp_params['model_logger'] = model_logger  # Cannot be set through the CLI or Config file
             print("Final experiment parameters: %s" % config.exp_params)
 

@@ -30,7 +30,6 @@ class ExpConfig:
     logTrainLoss: bool
     logInternals: bool
     logTrainPerformance: bool
-    tbplot: bool
     __tbdir: str
     __model_logger: logging.Logger = None
     # model_logger: logging.Logger
@@ -44,9 +43,22 @@ class ExpConfig:
         "logTrainLoss": False,
         "logInternals": False,
         "logTrainPerformance": False,
-        "tbplot": False,
         "tbdir": './experiments/tbdir',
         "model_logger": None
+    }
+
+    # These are used to populate CLI Arguments. If a key is present in "defaults" but not provided here, it is assumed
+    # that this key cannot be set using the CLI, which is a perfectly valid use case.
+    cli_arguments = {
+        "save_model": "Save the trained model to a file on disk.",
+        "debug": "Enable debug mode output.",
+        "tblog": "Enable tensorboard logging.",
+        "logTrainLoss": "When tensorboard logging is enabled, enable logging training loss over epochs.",
+        "logInternals": "When tensorboard logging is enabled, enable periodic tracking of model internal state.",
+        "logTrainPerformance": "When tensorboard logging is enabled, enable periodic logging of model performance on"
+                               " test data.",
+        "tbdir": "Custom Tensorboard log directory. Overwrites default behaviour of using the same directory as for "
+                 "storing the model.",
     }
 
     _params = namedtuple("ExpParams", defaults.keys(), defaults=defaults.values())

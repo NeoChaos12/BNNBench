@@ -112,9 +112,10 @@ def simple_plotter(pred: np.ndarray = None, test: np.ndarray =None, train: np.nd
             ms = np.squeeze(predy[:, 0])
             v = np.squeeze(predy[:, 1])
             ax.scatter(predx, ms, c="blue", label="Predicted Mean")
-            ax.fill_between(predx, ms + np.sqrt(v), ms - np.sqrt(v), color="orange", alpha=0.8)
-            ax.fill_between(predx, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)
-            ax.fill_between(predx, ms + 3 * np.sqrt(v), ms - 3 * np.sqrt(v), color="orange", alpha=0.4)
+            ax.errorbar(predx, ms, yerr=v, fmt='none', ecolor="purple")
+            # ax.fill_between(predx, ms + np.sqrt(v), ms - np.sqrt(v), color="orange", alpha=0.8)
+            # ax.fill_between(predx, ms + 2 * np.sqrt(v), ms - 2 * np.sqrt(v), color="orange", alpha=0.6)
+            # ax.fill_between(predx, ms + 3 * np.sqrt(v), ms - 3 * np.sqrt(v), color="orange", alpha=0.4)
         else:
             predy = pred[sort_args, 1]
             ax.scatter(predx, predy, c="blue", label="Predicted Mean")
