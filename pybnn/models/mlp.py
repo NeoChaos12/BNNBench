@@ -213,6 +213,7 @@ class MLP(BaseModel):
 
                 if conf.logInternals:
                     # TODO: Standardize
+                    logger.debug("Generating logs of model internal state at epoch %d." % (epoch + 1))
                     for ctr in range(len(self.hidden_layer_sizes)):
                         layer = self.network.__getattr__(f"FC{ctr + 1}")
                         lweight = layer.weight.cpu().detach().numpy().flatten()
@@ -239,7 +240,6 @@ class MLP(BaseModel):
                                                   global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
-                        conf.tbplot = False
 
         if conf.tblog and conf.logInternals:
             logger.info("Plotting weight graphs.")

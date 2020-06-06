@@ -96,11 +96,13 @@ class MCBatchNorm(MLP):
         )
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
-            layers.append((f"FC{layer_idx}", fclayer))
-            self.batchnorm_layers.append(bnlayer(num_features=fclayer.out_features))
+            self.batchnorm_layers.append(bnlayer(num_features=fclayer.in_features))
             layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
+            layers.append((f"FC{layer_idx}", fclayer))
             layers.append((f"Tanh{layer_idx}", nn.Tanh()))
 
+        self.batchnorm_layers.append(bnlayer(num_features=n_units[-1]))
+        layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
 
