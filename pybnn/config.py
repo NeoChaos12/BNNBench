@@ -43,7 +43,7 @@ class ExpConfig:
         "logTrainLoss": False,
         "logInternals": False,
         "logTrainPerformance": False,
-        "tbdir": './experiments/tbdir',
+        "tbdir": '',
         "model_logger": None
     }
 
@@ -57,8 +57,8 @@ class ExpConfig:
         "logInternals": "When tensorboard logging is enabled, enable periodic tracking of model internal state.",
         "logTrainPerformance": "When tensorboard logging is enabled, enable periodic logging of model performance on"
                                " test data.",
-        "tbdir": "Custom Tensorboard log directory. Overwrites default behaviour of using the same directory as for "
-                 "storing the model.",
+        # "tbdir": "Custom Tensorboard log directory. Overwrites default behaviour of using the same directory as for "
+        #          "storing the model.",
     }
 
     _params = namedtuple("ExpParams", defaults.keys(), defaults=defaults.values())

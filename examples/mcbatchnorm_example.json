@@ -1,24 +1,28 @@
 {
-    "objective_function": "Infinity GO Problem 04",
-    "dataset_size": "100",
+    "objective_function": {
+      "type": "toy_1d",
+      "name": "Infinity GO Problem 04"
+    },
+    "dataset_size": "200",
     "testset_fraction": "0.2",
     "model_parameters": {
-        "num_epochs": 300,
+        "num_epochs": 500,
         "batch_size": 32,
         "learning_rate": {
-            "init": 0.001,
-            "args":[],
-            "kwargs":{
-                "step_size": 100,
-                "gamma": 0.1
-            }
+          "init": 0.05,
+          "args":[],
+          "kwargs":{
+            "step_size": 100,
+            "gamma": 0.1
+          }
         },
         "normalize_input": true,
         "normalize_output": true,
         "hidden_layer_sizes": [
-            5, 5, 5
+            50,
+            50,
+            50
         ],
-        "input_dims": 1,
         "output_dims": 1,
         "model_path": "~/master_project/pybnn/pybnn/experiments/test"
     },
@@ -27,7 +31,7 @@
         "tblog": true,
         "logTrainLoss": true,
         "logInternals": true,
-        "logTrainPerformance": true,
+        "logTrainPerformance": false,
         "save_model": false
     }
 }

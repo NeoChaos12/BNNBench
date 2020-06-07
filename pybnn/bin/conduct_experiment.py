@@ -159,7 +159,8 @@ def handle_cli():
 
 def perform_experiment():
     model = config.mtype(model_params=config.model_params)
-    if config.exp_params['tbdir'] is None:
+    # if config.exp_params['tbdir'] is None:
+    if config.exp_params.get('tbdir', None) in [None, '']:
         config.exp_params['tbdir'] = model.modeldir
         print(f"Tensorboard directory set to: {config.exp_params['tbdir']}")
     conf.params = config.exp_params

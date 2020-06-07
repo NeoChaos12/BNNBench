@@ -1,12 +1,15 @@
 {
-    "objective_function": "Infinity GO Problem 04",
-    "dataset_size": "100",
+    "objective_function": {
+      "type": "toy_1d",
+      "name": "Infinity GO Problem 04"
+    },
+    "dataset_size": "200",
     "testset_fraction": "0.2",
     "model_parameters": {
         "num_epochs": 300,
         "batch_size": 32,
         "learning_rate": {
-            "init": 0.001,
+            "init": 0.0001,
             "args":[],
             "kwargs":{
                 "step_size": 100,
@@ -16,11 +19,18 @@
         "normalize_input": true,
         "normalize_output": true,
         "hidden_layer_sizes": [
-            5, 5, 5
+            50,
+            50,
+            50
         ],
-        "input_dims": 1,
         "output_dims": 1,
-        "model_path": "~/master_project/pybnn/pybnn/experiments/test"
+        "model_path": "~/master_project/pybnn/pybnn/experiments/test",
+        "pdrop": [
+            0.2,
+            0.5,
+            0.5,
+            0.5
+        ]
     },
     "experiment_parameters": {
         "debug": true,
