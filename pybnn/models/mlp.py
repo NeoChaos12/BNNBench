@@ -112,9 +112,9 @@ class MLP(BaseModel):
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"FC{layer_idx}", fclayer))
-            logger.debug(f"Generated FC Layer {layers[-1][0]}: {fclayer.in_features} x {fclayer.out_features}")
+            # logger.debug(f"Generated FC Layer {layers[-1][0]}: {fclayer.in_features} x {fclayer.out_features}")
+            logger.debug("Generating Tanh layer for %s" % layers[-1][0])
             layers.append((f"Tanh{layer_idx}", nn.Tanh()))
-            logger.debug(f"Generated Tanh layer {layers[-1][0]}")
 
         layers.append(("Output", nn.Linear(self.hidden_layer_sizes[-1], self.output_dims)))
 
@@ -145,6 +145,7 @@ class MLP(BaseModel):
         self.normalize_data()
         if len(self.y.shape) == 1:
             self.y = self.y[:, None]
+        logger.debug("Normalized input X, y have shapes %s, %s" % (self.X.shape, self.y.shape))
         return
 
     @BaseModel._tensorboard_user
@@ -185,6 +186,7 @@ class MLP(BaseModel):
         lc = np.zeros([self.num_epochs])
         logger.debug("Training over inputs and targets of shapes %s and %s, respectively." %
                      (self.X.shape, self.y.shape))
+        one_time_flag = True
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
@@ -195,6 +197,10 @@ class MLP(BaseModel):
             for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
                 optimizer.zero_grad()
                 output = self.network(inputs)
+                if one_time_flag:
+                    logger.debug("Generated a minibatch of shapes: %s, %s\nReceived output of shape: %s" %
+                                 (inputs.shape, targets.shape, output.shape))
+                    one_time_flag = False
 
                 loss = self.loss_func(output, targets)
                 loss.backward()
@@ -358,8 +364,10 @@ class MLP(BaseModel):
         prec_layer = input_dims
 
         for this_layer in layer_size:
+            logger.debug("Generating a %d x %d FC layer." % (prec_layer, this_layer))
             yield nn.Linear(prec_layer, this_layer, bias)
             prec_layer = this_layer
 
         if output_dims:
+            logger.debug("Generating a %d x %d FC output layer." % (prec_layer, output_dims))
             yield nn.Linear(prec_layer, output_dims)

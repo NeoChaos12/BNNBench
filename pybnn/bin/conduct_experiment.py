@@ -190,7 +190,7 @@ def perform_experiment():
 
     Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, test_size=config.TEST_FRACTION, random_state=rng,
                                                     shuffle=True)
-
+    print(f"Shapes after splitting: X, y - {Xtrain.shape}, {ytrain.shape}")
     # -----------------------------------------------Set up plotting----------------------------------------------------
 
     if plotting1d:

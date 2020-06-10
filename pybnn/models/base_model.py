@@ -298,10 +298,11 @@ class BaseModel(object):
             f"The number of training data points {inputs.shape[0]:d} is not the same as the number of training " \
             f"target points/labels {targets.shape[0]:d}."
 
-        # Check if we have enough points to create a minibatch, otherwise use all data points
+        # If a batchsize is given (i.e. not None), skip the following and assume that this is the user's responsibility
         if batchsize is None:
-            if inputs.shape[0] <= self.batch_size:
-                batchsize = self.X.shape[0]
+            # Check if we have enough points to create a minibatch, otherwise use all data points
+            if inputs.shape[0] < self.batch_size:
+                batchsize = inputs.shape[0]
             else:
                 batchsize = self.batch_size
 
