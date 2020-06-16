@@ -16,7 +16,7 @@
         "normalize_input": true,
         "normalize_output": true,
         "hidden_layer_sizes": [
-            5, 5, 5
+            50, 50, 50
         ],
         "input_dims": 1,
         "output_dims": 1,

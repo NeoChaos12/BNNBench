@@ -1,15 +1,15 @@
 {
     "objective_function": {
-      "type": "toy_1d",
-      "name": "Infinity GO Problem 04"
+      "type": "dataset",
+      "name": "boston"
     },
     "dataset_size": "200",
     "testset_fraction": "0.2",
     "model_parameters": {
-        "num_epochs": 300,
+        "num_epochs": 1000,
         "batch_size": 32,
         "learning_rate": {
-            "init": 0.0001,
+            "init": 0.01,
             "args":[],
             "kwargs":{
                 "step_size": 100,

@@ -258,6 +258,9 @@ def perform_experiment():
             print("Could not write configuration file for config:\n%s" % jdict)
 
     print("Finished experiment.")
+    model.network.to('cuda')
+    from torchsummary import summary
+    summary(model.network, input_size=(model.batch_size, model.input_dims))
 
 
 if __name__ == '__main__':

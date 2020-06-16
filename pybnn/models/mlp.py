@@ -205,8 +205,6 @@ class MLP(BaseModel):
                 loss = self.loss_func(output, targets)
                 loss.backward()
                 optimizer.step()
-                if lr_scheduler:
-                    scheduler.step()
 
                 train_err += loss
                 train_batches += 1
@@ -248,6 +246,9 @@ class MLP(BaseModel):
                                                   global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
+
+            if lr_scheduler:
+                scheduler.step()
 
         if conf.tblog and conf.logInternals:
             logger.info("Plotting weight graphs.")
