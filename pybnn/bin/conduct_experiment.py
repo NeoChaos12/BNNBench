@@ -135,7 +135,8 @@ def handle_cli():
             config_model_params = new_config[json_config_keys.mparams]
             print("Using model parameters provided by config file.")
             for key, val in default_model_params.items():
-                config.model_params[key] = val if key not in config_model_params else config_model_params[key]
+                config.model_params[key] = val if config_model_params.get(key, None) is None else \
+                    config_model_params[key]
             print("Final model parameters: %s" % config.model_params)
 
         if json_config_keys.eparams in new_config:
@@ -146,8 +147,8 @@ def handle_cli():
                     # Only handle those settings that can be modified using the CLI or JSON config file.
                     # Priorities: 1. CLI, 2. Config file, 3. Defaults
                     clival = getattr(args, key)
-                    config.exp_params[key] = clival if clival is not None else \
-                        config_exp_params[key] if key in config_exp_params else val
+                    config.exp_params[key] = clival if clival is not None else val if \
+                        config_exp_params.get(key, None) is None else config_exp_params[key]
 
             config.exp_params['model_logger'] = model_logger  # Cannot be set through the CLI or Config file
             print("Final experiment parameters: %s" % config.exp_params)

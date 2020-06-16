@@ -18,9 +18,7 @@
         "hidden_layer_sizes": [
             50, 50, 50
         ],
-        "input_dims": 1,
-        "output_dims": 1,
-        "model_path": "~/master_project/pybnn/pybnn/experiments/test"
+        "model_path": null
     },
     "experiment_parameters": {
         "debug": true,

@@ -23,8 +23,10 @@
             50,
             50
         ],
-        "output_dims": 1,
-        "model_path": "~/master_project/pybnn/pybnn/experiments/test"
+        "learn_affines": true,
+        "running_stats": true,
+        "bn_momentum": 0.1,
+        "model_path": null
     },
     "experiment_parameters": {
         "debug": true,
