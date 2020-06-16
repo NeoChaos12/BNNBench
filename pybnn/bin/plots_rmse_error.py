@@ -4,7 +4,13 @@ import numpy as np
 import argparse
 import os
 
-import pybnn.util.experiment_utils as utils
+try:
+    import pybnn.util.experiment_utils as utils
+except:
+    import sys
+    sys.path.append(os.path.expandvars('$PYBNNPATH'))
+    import pybnn.util.experiment_utils as utils
+
 
 
 def get_commandline_args():

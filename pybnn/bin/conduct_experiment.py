@@ -1,13 +1,16 @@
 #!/usr/bin/python
-import sys
-
-sys.path.append('/home/archit/master_project/pybnn')
 import numpy as np
 import os
 from functools import partial
 import json
 import argparse
 from sklearn.model_selection import train_test_split
+
+try:
+    import pybnn
+except:
+    import sys
+    sys.path.append(os.path.expandvars('$PYBNNPATH'))
 
 from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
 from pybnn.config import globalConfig as conf
