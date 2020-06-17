@@ -16,10 +16,11 @@ except:
 
 def get_commandline_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-o', '--origin', type=str, default='../experiments/mlp/', help='Origin directory to be crawled '
-                                                                                        'for relevant data.')
-    parser.add_argument('--nll', type=bool, default=False, help='If given, calculates Negative Log Likelihood as well '
-                                                                'as RMSE')
+    parser.add_argument('-o', '--origin', type=str, default='../experiments/mlp/', help='Origin directory to be '
+                                                                                        'crawled for relevant data.')
+    parser.add_argument('--has_std', action='store_true', default=False,
+                        help='If given, assumes that the data contains standard deviation values in addition to mean '
+                             'values.')
     return parser.parse_args()
 
 
@@ -37,15 +38,14 @@ def get_data_from_dir(dir):
 
 
 def get_rmse(test, pred):
-    return np.sum((pred[:, 1] - test[:, 1]) ** 2) ** 0.5
+    return np.mean((pred - test) ** 2) ** 0.5
 
 
 def get_nll(test, pred):
-    std = test[:, 2].view(-1, 1)
+    std = pred[:, -1]
     std = np.log(1 + np.exp(std)) + 10e-6
-    mu = test[:, 1].view(-1, 1)
-    n = norm(loc=mu, scale=std)
-    loss = n.logstd(pred)
+    mu = pred[:, -2]
+    loss = norm.logpdf(test[:, -1], loc=mu, scale=std)
     # n = torch.distributions.normal.Normal(mu, std)
     # loss = n.log_prob(pred)
     return -np.mean(loss)
@@ -70,15 +70,20 @@ def main():
         assert testset.shape[0] == predictions.shape[0]
         assert np.allclose(testset[:, 0], predictions[:, 0])
         print(f"Found dataset with {predictions.shape[0]} items.")
-        rmse += get_rmse(testset, predictions)
-        if args.nll:
+        if args.has_std:
+            rmse += get_rmse(testset[:, -2], predictions[:, -2])
             nll += get_nll(testset, predictions)
+        else:
+            rmse += get_rmse(testset[:, -1], predictions[:, -1])
         N += 1
 
     rmse /= N
-    print(f"Over {N} datasets, an average RMSE of {rmse} was observed.")
+    nll /= N
+    print(f"Over {N} datasets, an average RMSE of {rmse} and an average NLL of {nll} was observed.")
 
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    domain = np.arange(-5, 5, 0.01)
+    samples = norm.rvs(loc=0, scale=1.0, size=domain.shape)
