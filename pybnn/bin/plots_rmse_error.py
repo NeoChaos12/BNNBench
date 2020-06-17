@@ -84,6 +84,4 @@ def main():
 
 
 if __name__ == '__main__':
-    # main()
-    domain = np.arange(-5, 5, 0.01)
-    samples = norm.rvs(loc=0, scale=1.0, size=domain.shape)
+    main()
