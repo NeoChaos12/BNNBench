@@ -4,9 +4,9 @@ sys.path.append('/home/archit/master_project/pybnn')
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-from pybnn.util.experiment_utils import simple_plotter as plotter
+from pybnn.util.universal_utils import simple_plotter as plotter
 import argparse
-from pybnn.util.experiment_utils import standard_pathcheck
+from pybnn.util.universal_utils import standard_pathcheck
 
 parser = argparse.ArgumentParser(add_help=True)
 parser.add_argument('-d', '--logdir', required=True, help="Location of the directory containing all data to be plotted.")

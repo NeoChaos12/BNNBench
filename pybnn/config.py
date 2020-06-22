@@ -2,7 +2,7 @@ from collections import namedtuple
 from functools import partial
 from torch.utils.tensorboard import SummaryWriter
 import logging
-from pybnn.util import experiment_utils as utils
+from pybnn.util import universal_utils as utils
 
 _mlpParamsDefaultDict = {
     "input_dims": 1,

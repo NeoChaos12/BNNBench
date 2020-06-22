@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from typing import Hashable, Any, AnyStr
 
 from pybnn.util import AttrDict
-from pybnn.util import dataloaders, dataloader_args
 
 logger = logging.getLogger(__name__)
 
@@ -194,19 +193,6 @@ def parse_objective(config: dict, out: AttrDict):
     else:
         logger.critical("Could not recognize objective type %s" % otype)
         raise RuntimeError("Unrecognized objective type %s, Configuration parsing for experiment failed." % otype)
-
-
-# TODO: Define standard AttrDict or namedtuple for dataset configurations
-def get_dataset(obj_config: AttrDict) -> (np.ndarray, np.ndarray):
-    """
-    Parses the objective configuration for a named dataset and returns the dataset as X, y arrays.
-    :param obj_config: The pre-processed configuration for defining an objective dataset.
-    :return: The required dataset as a 2-tuple of numpy arrays, (X, y), where X is the array of observed features and y
-    is the array of observed results/labels.
-    """
-
-    dname = obj_config.name.lower()
-    return dataloaders[dname](**dataloader_args[dname])
 
 
 if __name__ == '__main__':

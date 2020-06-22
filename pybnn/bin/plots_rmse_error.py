@@ -6,11 +6,11 @@ import os
 from scipy.stats import norm
 
 try:
-    import pybnn.util.experiment_utils as utils
+    import pybnn.util.universal_utils as utils
 except:
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
-    import pybnn.util.experiment_utils as utils
+    import pybnn.util.universal_utils as utils
 
 
 
@@ -42,8 +42,8 @@ def get_rmse(test, pred):
 
 
 def get_nll(test, pred):
-    std = pred[:, -1]
-    std = np.log(1 + np.exp(std)) + 10e-6
+    std = np.clip(pred[:, -1])
+    # std = np.log(std)
     mu = pred[:, -2]
     loss = norm.logpdf(test[:, -1], loc=mu, scale=std)
     # n = torch.distributions.normal.Normal(mu, std)

@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/home/archit/master_project/pybnn')
-from pybnn.util.experiment_utils import simple_plotter as plotter
+from pybnn.util.universal_utils import simple_plotter as plotter
 from sklearn.model_selection import train_test_split
 from pybnn.toy_functions.toy_1d import nonParameterisedObjectiveFunctions as ofuncs
 import numpy as np

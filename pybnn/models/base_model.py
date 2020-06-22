@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from pybnn.util import experiment_utils as utils
+from pybnn.util import universal_utils as utils
 from pybnn.models import logger
 from pybnn.config import globalConfig as conf
 from collections import namedtuple

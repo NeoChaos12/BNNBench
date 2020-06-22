@@ -6,6 +6,8 @@ import json
 import argparse
 from sklearn.model_selection import train_test_split
 
+import pybnn.util.data_utils
+
 try:
     import pybnn
 except:
@@ -19,7 +21,7 @@ from pybnn.toy_functions import parameterisedObjectiveFunctions, nonParameterise
 from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
 from pybnn.toy_functions.sampler import sample_1d_func
 from pybnn.util.attrDict import AttrDict
-import pybnn.util.experiment_utils as utils
+import pybnn.util.universal_utils as utils
 
 json_config_keys = utils.config_top_level_keys
 
@@ -181,7 +183,7 @@ def perform_experiment():
     # -----------------------------------------------Generate data------------------------------------------------------
 
     if isinstance(config.OBJECTIVE_FUNC, AttrDict):
-        X, y = utils.get_dataset(config.OBJECTIVE_FUNC)
+        X, y = pybnn.util.data_utils.get_dataset(config.OBJECTIVE_FUNC)
         print(f"Loaded dataset with feature set of shape {X.shape} and targets of shape {y.shape}")
         plotting1d = False
     else:
@@ -231,7 +233,7 @@ def perform_experiment():
     print(f"Saving model performance results in {savedir}")
 
     if config.plotdata:
-        from pybnn.util.experiment_utils import simple_plotter
+        from pybnn.util.universal_utils import simple_plotter
         import matplotlib.pyplot as plt
         traindata = np.concatenate((Xtrain, ytrain), axis=1)
         testdata = np.concatenate((Xtest, ytest), axis=1)
