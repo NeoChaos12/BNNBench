@@ -7,9 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Hashable, Any, AnyStr
 
-from pybnn.util import AttrDict
-
-logger = logging.getLogger(__name__)
+from pybnn.util import AttrDict, logger
 
 fullpath = lambda path: os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
 
