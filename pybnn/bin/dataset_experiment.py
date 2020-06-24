@@ -1,10 +1,8 @@
 #!/usr/bin/python
 import numpy as np
 import os
-from functools import partial
 import json
 import argparse
-from sklearn.model_selection import train_test_split
 
 try:
     import pybnn
@@ -17,13 +15,10 @@ import pybnn.utils.data_utils
 from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
 from pybnn.config import globalConfig
 from pybnn import logger as pybnn_logger
-from pybnn.toy_functions import parameterisedObjectiveFunctions, nonParameterisedObjectiveFunctions, SamplingMethods
-from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
-from pybnn.toy_functions.sampler import sample_1d_func
 from pybnn.utils.attrDict import AttrDict
 import pybnn.utils.universal_utils as utils
 
-json_config_keys = utils.config_top_level_keys
+TOP_LEVEL_CONFIG_KEYS = utils.config_top_level_keys
 
 model_types = AttrDict()
 model_types.mlp = MLP
@@ -94,34 +89,35 @@ def handle_cli():
         pybnn_logger.info("--config flag detected.")
         config_file_path = utils.standard_pathcheck(args.config)
         with open(config_file_path, 'r') as fp:
-            new_config = json.load(fp)
+            json_config = json.load(fp)
 
-        if json_config_keys.obj_func in new_config:
-            pybnn_logger.debug("Attempting to fetch objective function %s" % new_config[json_config_keys.obj_func])
-            if isinstance(new_config[json_config_keys.obj_func], dict):
-                utils.parse_objective(config=new_config[json_config_keys.obj_func], out=config)
+        if TOP_LEVEL_CONFIG_KEYS.obj_func in json_config:
+            pybnn_logger.debug("Attempting to fetch objective function %s" %
+                               json_config[TOP_LEVEL_CONFIG_KEYS.obj_func])
+            if isinstance(json_config[TOP_LEVEL_CONFIG_KEYS.obj_func], dict):
+                utils.parse_objective(config=json_config[TOP_LEVEL_CONFIG_KEYS.obj_func], out=config)
             else:
                 raise RuntimeError("This script is intended for use with datasets only and thus requires the dataset "
                                    "to be specified as a dict in the JSON config file.")
             pybnn_logger.info("Fetched objective.")
 
-        if json_config_keys.mparams in new_config:
-            config_model_params = new_config[json_config_keys.mparams]
+        if TOP_LEVEL_CONFIG_KEYS.mparams in json_config:
+            json_model_params = json_config[TOP_LEVEL_CONFIG_KEYS.mparams]
             pybnn_logger.info("Using model parameters provided by config file.")
             for key, val in default_model_params.items():
-                config.model_params[key] = val if config_model_params.get(key, None) is None else \
-                    config_model_params[key]
+                config.model_params[key] = val if json_model_params.get(key, None) is None else \
+                    json_model_params[key]
             pybnn_logger.info("Final model parameters: %s" % config.model_params)
 
-        if json_config_keys.eparams in new_config:
+        if TOP_LEVEL_CONFIG_KEYS.eparams in json_config:
             pybnn_logger.info("Using experiment parameters provided by config file.")
-            config_exp_params = new_config[json_config_keys.eparams]
+            json_exp_params = json_config[TOP_LEVEL_CONFIG_KEYS.eparams]
 
             for key in globalConfig.cli_arguments:
                 # Only handle those settings that can be modified using the CLI or JSON config file.
                 # Priorities: 1. CLI, 2. Config file, 3. Defaults
                 clival = getattr(args, key)
-                jsonval = config_exp_params.get(key, None)
+                jsonval = json_exp_params.get(key, None)
                 if clival not in [None, '']:
                     setattr(config.exp_params, key, clival)
                 elif jsonval not in [None, '']:
@@ -145,7 +141,7 @@ def perform_experiment():
         raise RuntimeError("This script does not support the old-style interface for specifying 1D toy functions.")
 
     pybnn_logger.debug("Finished generating dataset splits.")
-    for Xtrain, Xtest, ytrain, ytest in data_splits:
+    for Xtrain, ytrain, Xtest, ytest in data_splits:
         Xtrain = Xtrain[:, None] if len(Xtrain.shape) == 1 else Xtrain
         ytrain = ytrain[:, None] if len(ytrain.shape) == 1 else ytrain
         Xtest = Xtest[:, None] if len(Xtest.shape) == 1 else Xtest
@@ -157,9 +153,9 @@ def perform_experiment():
 
         model = config.mtype(model_params=config.model_params)
         # if config.exp_params['tbdir'] is None:
-        if config.exp_params.get('tbdir', None) in [None, '']:
-            config.exp_params['tbdir'] = model.modeldir
-            pybnn_logger.info("Tensorboard directory set to: %s" % (config.exp_params['tbdir']))
+        if config.exp_params.tbdir in [None, '']:
+            config.exp_params.tbdir = model.modeldir
+            pybnn_logger.info("Tensorboard directory set to: %s" % (config.exp_params.tbdir))
         globalConfig.params = config.exp_params
 
         rng: np.random.RandomState = model.rng
@@ -213,10 +209,10 @@ def perform_experiment():
         # TODO: Remove this function
         # utils.make_exp_params_json_compatible(config.exp_params)
         jdict = {
-            json_config_keys.obj_func: str(config.OBJECTIVE_FUNC),
-            json_config_keys.test_frac: config.TEST_FRACTION,
-            json_config_keys.mparams: config.model_params,
-            json_config_keys.eparams: config.exp_params.to_cli()
+            TOP_LEVEL_CONFIG_KEYS.obj_func: str(config.OBJECTIVE_FUNC),
+            TOP_LEVEL_CONFIG_KEYS.test_frac: config.TEST_FRACTION,
+            TOP_LEVEL_CONFIG_KEYS.mparams: config.model_params,
+            TOP_LEVEL_CONFIG_KEYS.eparams: config.exp_params.to_cli()
         }
 
         with open(os.path.join(savedir, 'config.json'), 'w') as fp:
