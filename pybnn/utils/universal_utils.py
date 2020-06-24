@@ -13,8 +13,9 @@ fullpath = lambda path: os.path.realpath(os.path.expanduser(os.path.expandvars(p
 
 config_top_level_keys = AttrDict()
 config_top_level_keys.obj_func = "objective_function"
-config_top_level_keys.dataset_size = "dataset_size"
-config_top_level_keys.test_frac = "testset_fraction"
+config_top_level_keys.dataset_size = "dataset_size" # Toy datasets only
+config_top_level_keys.test_frac = "testset_fraction"    # Toy datasets only
+config_top_level_keys.splits = "splits"    # Real datasets only
 config_top_level_keys.mparams = "model_parameters"
 config_top_level_keys.eparams = "experiment_parameters"
 

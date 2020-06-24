@@ -13,15 +13,15 @@ except:
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
 
-import pybnn.util.data_utils
+import pybnn.utils.data_utils
 from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
 from pybnn.config import globalConfig as conf
 from pybnn import logger as pybnn_logger
 from pybnn.toy_functions import parameterisedObjectiveFunctions, nonParameterisedObjectiveFunctions, SamplingMethods
 from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
 from pybnn.toy_functions.sampler import sample_1d_func
-from pybnn.util.attrDict import AttrDict
-import pybnn.util.universal_utils as utils
+from pybnn.utils.attrDict import AttrDict
+import pybnn.utils.universal_utils as utils
 
 json_config_keys = utils.config_top_level_keys
 
@@ -107,7 +107,12 @@ def handle_cli():
         if json_config_keys.obj_func in new_config:
             print("Attempting to fetch objective function %s" % new_config[json_config_keys.obj_func])
             if isinstance(new_config[json_config_keys.obj_func], dict):
-                utils.parse_objective(config=new_config[json_config_keys.obj_func], out=config)
+                raise RuntimeError("This script no longer supports datasets as objective functions and until further "
+                                   "notice, can only be used for toy functions specified using the old interface by "
+                                   "specifying the complete toy function name as defined in pybnn.toy_functions.toy_1d "
+                                   "as a string value for the top-level key %s in the JSON config file." %
+                                   json_config_keys.obj_func)
+                # utils.parse_objective(config=new_config[json_config_keys.obj_func], out=config)
             else:
                 from pybnn.toy_functions.toy_1d import get_func_from_attrdict
                 config.OBJECTIVE_FUNC = get_func_from_attrdict(new_config[json_config_keys.obj_func],
@@ -141,7 +146,6 @@ def handle_cli():
                     config.exp_params[key] = clival if clival is not None else val if \
                         config_exp_params.get(key, None) is None else config_exp_params[key]
 
-            config.exp_params['model_logger'] = pybnn_logger  # Cannot be set through the CLI or Config file
             print("Final experiment parameters: %s" % config.exp_params)
 
     else:
@@ -168,7 +172,7 @@ def perform_experiment():
     # -----------------------------------------------Generate data------------------------------------------------------
 
     if isinstance(config.OBJECTIVE_FUNC, AttrDict):
-        X, y = pybnn.util.data_utils.data_generator(config.OBJECTIVE_FUNC)
+        X, y = pybnn.utils.data_utils.data_generator(config.OBJECTIVE_FUNC)
         print(f"Loaded dataset with feature set of shape {X.shape} and targets of shape {y.shape}")
         plotting1d = False
     else:
@@ -218,7 +222,7 @@ def perform_experiment():
     print(f"Saving model performance results in {savedir}")
 
     if config.plotdata:
-        from pybnn.util.universal_utils import simple_plotter
+        from pybnn.utils.universal_utils import simple_plotter
         import matplotlib.pyplot as plt
         traindata = np.concatenate((Xtrain, ytrain), axis=1)
         testdata = np.concatenate((Xtest, ytest), axis=1)
