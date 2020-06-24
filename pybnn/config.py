@@ -2,7 +2,8 @@ from collections import namedtuple
 from functools import partial
 from torch.utils.tensorboard import SummaryWriter
 import logging
-from pybnn.util import universal_utils as utils
+from pybnn import loggers
+from pybnn.utils import universal_utils as utils
 
 _mlpParamsDefaultDict = {
     "input_dims": 1,
@@ -24,12 +25,16 @@ expParams = namedtuple("baseModelParams", _expParamsDefaultDict.keys(), defaults
 
 
 class ExpConfig:
+
+    # Configurable via CLI/JSON Config
     save_model: bool
     __debug: bool = False
     tblog: bool
     logTrainLoss: bool
     logInternals: bool
     logTrainPerformance: bool
+
+    # Strictly internal or accessible only programmatically
     __tbdir: str
     __model_logger: logging.Logger = None
     # model_logger: logging.Logger
@@ -65,36 +70,16 @@ class ExpConfig:
 
 
     @property
-    def model_logger(self) -> logging.Logger:
-        return self.__model_logger
-
-
-    @model_logger.setter
-    def model_logger(self, val):
-        self.__model_logger = val
-        if val is None:
-            return
-        if self.debug:
-            self.__model_logger.setLevel(logging.DEBUG)
-        else:
-            self.__model_logger.setLevel(logging.INFO)
-
-
-    @property
     def debug(self) -> bool:
         return self.__debug
 
 
     @debug.setter
     def debug(self, val):
-        if val:
-            self.__debug = True
-            if self.model_logger is not None:
-                self.__model_logger.setLevel(logging.DEBUG)
-        else:
-            self.__debug = False
-            if self.model_logger is not None:
-                self.__model_logger.setLevel(logging.INFO)
+        assert type(val) is bool
+        self.__debug = val
+        for logger in loggers.values():
+            logger.setLevel(logging.DEBUG if val else logging.INFO)
 
 
     @property
@@ -134,6 +119,17 @@ class ExpConfig:
         for key, val in ExpConfig.defaults.items():
             fval = val if key not in kwargs else kwargs[key]
             setattr(self, key, fval)
+
+
+    def to_cli(self) -> dict:
+        """
+        Returns a dict containing all CLI/JSON config relevant settings in a JSON compatible format.
+        """
+        ret = {}
+        for key in self.cli_arguments:
+            ret[key] = getattr(self, key)
+
+        return ret
 
 
 globalConfig = ExpConfig()
