@@ -15,8 +15,8 @@ from pybnn.models import logger as model_logger
 from pybnn.toy_functions import parameterisedObjectiveFunctions, nonParameterisedObjectiveFunctions, SamplingMethods
 from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
 from pybnn.toy_functions.sampler import sample_1d_func
-from pybnn.util.attrDict import AttrDict
-import pybnn.util.universal_utils as utils
+from pybnn.utils.attrDict import AttrDict
+import pybnn.utils.universal_utils as utils
 
 json_config_keys = AttrDict()
 json_config_keys.obj_func = "objective_function"

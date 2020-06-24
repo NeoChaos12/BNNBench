@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Hashable, Any, AnyStr
 
-from pybnn.util import AttrDict, logger
+from pybnn.utils import AttrDict, logger
 
 fullpath = lambda path: os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
 
@@ -184,6 +184,8 @@ def parse_objective(config: dict, out: AttrDict):
                                                                "configuration for the model objective")
         out.OBJECTIVE_FUNC = AttrDict(config)
     elif otype == "toy_1d":
+        logger.warn("This interface for specifying toy functions is not recommended and not under active development. "
+                    "It may not be fully supported anymore and result in errors.")
         dname = dict_fetch(config, "name", critical=True, emessage="The key 'name' was not found while parsing the "
                                                                    "configuration for the model objective")
         from pybnn.toy_functions.toy_1d import get_func_from_attrdict, nonParameterisedObjectiveFunctions

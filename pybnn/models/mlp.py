@@ -8,7 +8,7 @@ from pybnn.config import globalConfig as conf
 from collections import OrderedDict, namedtuple
 import torch.optim as optim
 import numpy as np
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from torch.optim.lr_scheduler import StepLR as steplr
 
 

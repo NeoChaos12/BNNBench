@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 
-from pybnn.util import normalization
+from pybnn.utils import normalization
 
 
 class TestNormalization(unittest.TestCase):

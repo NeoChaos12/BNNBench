@@ -13,7 +13,7 @@ from scipy import optimize
 from pybnn.models import logger
 from pybnn.models.base_model import BaseModel
 from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Prior
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.models.mlp import MLP
 from pybnn.config import mlpParams  # TODO: Get rid of this, switch to globalConfig notation if needed
 from collections import OrderedDict

@@ -12,9 +12,9 @@ from scipy.stats import norm
 from pybnn.models.base_model import BaseModel
 from pybnn.models.priors import weight_prior, log_variance_prior
 from pybnn.sampler import AdaptiveSGHMC, SGLD, SGHMC, PreconditionedSGLD
-from pybnn.util.infinite_dataloader import infinite_dataloader
-from pybnn.util.layers import AppendLayer
-from pybnn.util.normalization import zero_mean_unit_var_denormalization, zero_mean_unit_var_normalization
+from pybnn.utils.infinite_dataloader import infinite_dataloader
+from pybnn.utils.layers import AppendLayer
+from pybnn.utils.normalization import zero_mean_unit_var_denormalization, zero_mean_unit_var_normalization
 
 
 def get_default_network(input_dimensionality: int) -> torch.nn.Module:

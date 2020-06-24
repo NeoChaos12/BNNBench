@@ -2,8 +2,8 @@ import os
 import logging
 import numpy as np
 from sklearn.datasets import load_boston, fetch_openml
-from pybnn.util import AttrDict, logger
-from pybnn.util.universal_utils import standard_pathcheck
+from pybnn.utils import AttrDict, logger
+from pybnn.utils.universal_utils import standard_pathcheck
 
 DATASETS_ROOT = "$HOME/UCI_Datasets"
 DATADIR = "data"

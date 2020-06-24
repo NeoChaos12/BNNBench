@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from pybnn.models.bohamiann import Bohamiann
-from pybnn.util.layers import AppendLayer
+from pybnn.utils.layers import AppendLayer
 
 """
 def vapor_pressure(t, a, b, c):

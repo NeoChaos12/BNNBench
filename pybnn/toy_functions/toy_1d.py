@@ -1,5 +1,5 @@
 import numpy as np
-from pybnn.util import AttrDict
+from pybnn.utils import AttrDict
 
 r"""
 Sources:

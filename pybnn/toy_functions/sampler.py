@@ -1,5 +1,5 @@
 from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
-from pybnn.util import AttrDict
+from pybnn.utils import AttrDict
 import numpy as np
 
 class SamplingMethods(object):

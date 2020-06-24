@@ -9,7 +9,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from pybnn.models.base_model import BaseModel
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 from functools import partial
 

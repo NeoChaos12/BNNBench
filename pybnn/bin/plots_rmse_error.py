@@ -6,11 +6,11 @@ import os
 from scipy.stats import norm
 
 try:
-    import pybnn.util.universal_utils as utils
+    import pybnn.utils.universal_utils as utils
 except:
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
-    import pybnn.util.universal_utils as utils
+    import pybnn.utils.universal_utils as utils
 
 
 

@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from pybnn.models import logger
 from pybnn.models.mlp import MLP
-from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict, namedtuple
 from itertools import repeat
 
