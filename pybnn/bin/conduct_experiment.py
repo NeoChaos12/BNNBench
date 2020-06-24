@@ -6,7 +6,6 @@ import json
 import argparse
 from sklearn.model_selection import train_test_split
 
-import pybnn.util.data_utils
 
 try:
     import pybnn
@@ -14,9 +13,10 @@ except:
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
 
+import pybnn.util.data_utils
 from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
 from pybnn.config import globalConfig as conf
-from pybnn.models import logger as model_logger
+from pybnn import logger as pybnn_logger
 from pybnn.toy_functions import parameterisedObjectiveFunctions, nonParameterisedObjectiveFunctions, SamplingMethods
 from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
 from pybnn.toy_functions.sampler import sample_1d_func
@@ -141,7 +141,7 @@ def handle_cli():
                     config.exp_params[key] = clival if clival is not None else val if \
                         config_exp_params.get(key, None) is None else config_exp_params[key]
 
-            config.exp_params['model_logger'] = model_logger  # Cannot be set through the CLI or Config file
+            config.exp_params['model_logger'] = pybnn_logger  # Cannot be set through the CLI or Config file
             print("Final experiment parameters: %s" % config.exp_params)
 
     else:
