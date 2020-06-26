@@ -125,7 +125,12 @@ def simple_plotter(pred: np.ndarray = None, test: np.ndarray =None, train: np.nd
 
 
 def make_model_params_json_compatible(params):
-    faulty_keys = ['loss_func', 'optimizer']
+    excluded_keys = ['rng', 'loss_func', 'optimizer', 'loss_func', 'optimizer']
+    for key in excluded_keys:
+        if key in params:
+            params.pop(key)
+
+    faulty_keys = []
     for key in faulty_keys:
         try:
             params[key] = params[key].__name__

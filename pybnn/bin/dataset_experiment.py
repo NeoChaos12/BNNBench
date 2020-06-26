@@ -8,24 +8,16 @@ try:
     import pybnn
 except:
     import sys
-
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
 
 import pybnn.utils.data_utils
-from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
+from pybnn.models import model_types
 from pybnn.config import globalConfig
 from pybnn import logger as pybnn_logger
 from pybnn.utils.attrDict import AttrDict
 import pybnn.utils.universal_utils as utils
 
-TOP_LEVEL_CONFIG_KEYS = utils.config_top_level_keys
-
-model_types = AttrDict()
-model_types.mlp = MLP
-model_types.mcdropout = MCDropout
-model_types.mcbatchnorm = MCBatchNorm
-model_types.dngo = DNGO
-model_types.ensemble = DeepEnsemble
+config_top_level_keys = utils.config_top_level_keys
 
 # ----------------------------------------------------------------------------------------------------------------------
 # --------------------------------------Set up default experiment parameters--------------------------------------------
@@ -37,7 +29,7 @@ config.SPLITS = None
 
 config.model_params = {}
 config.exp_params = globalConfig
-config.mtype = MLP
+config.mtype = model_types.mlp
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -46,7 +38,6 @@ config.mtype = MLP
 
 def handle_cli():
     print("Handling command line arguments.")
-    # global config
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument('--model', type=str, default='mlp',
                         help='Case-insensitive string indicating the type of model to be used for this experiment. '
@@ -91,27 +82,27 @@ def handle_cli():
         with open(config_file_path, 'r') as fp:
             json_config = json.load(fp)
 
-        if TOP_LEVEL_CONFIG_KEYS.obj_func in json_config:
+        if config_top_level_keys.obj_func in json_config:
             pybnn_logger.debug("Attempting to fetch objective function %s" %
-                               json_config[TOP_LEVEL_CONFIG_KEYS.obj_func])
-            if isinstance(json_config[TOP_LEVEL_CONFIG_KEYS.obj_func], dict):
-                utils.parse_objective(config=json_config[TOP_LEVEL_CONFIG_KEYS.obj_func], out=config)
+                               json_config[config_top_level_keys.obj_func])
+            if isinstance(json_config[config_top_level_keys.obj_func], dict):
+                utils.parse_objective(config=json_config[config_top_level_keys.obj_func], out=config)
             else:
                 raise RuntimeError("This script is intended for use with datasets only and thus requires the dataset "
                                    "to be specified as a dict in the JSON config file.")
             pybnn_logger.info("Fetched objective.")
 
-        if TOP_LEVEL_CONFIG_KEYS.mparams in json_config:
-            json_model_params = json_config[TOP_LEVEL_CONFIG_KEYS.mparams]
+        if config_top_level_keys.mparams in json_config:
+            json_model_params = json_config[config_top_level_keys.mparams]
             pybnn_logger.info("Using model parameters provided by config file.")
             for key, val in default_model_params.items():
                 config.model_params[key] = val if json_model_params.get(key, None) is None else \
                     json_model_params[key]
             pybnn_logger.info("Final model parameters: %s" % config.model_params)
 
-        if TOP_LEVEL_CONFIG_KEYS.eparams in json_config:
+        if config_top_level_keys.eparams in json_config:
             pybnn_logger.info("Using experiment parameters provided by config file.")
-            json_exp_params = json_config[TOP_LEVEL_CONFIG_KEYS.eparams]
+            json_exp_params = json_config[config_top_level_keys.eparams]
 
             for key in globalConfig.cli_arguments:
                 # Only handle those settings that can be modified using the CLI or JSON config file.
@@ -141,7 +132,10 @@ def perform_experiment():
         raise RuntimeError("This script does not support the old-style interface for specifying 1D toy functions.")
 
     pybnn_logger.debug("Finished generating dataset splits.")
-    for Xtrain, ytrain, Xtest, ytest in data_splits:
+    for idx, (Xtrain, ytrain, Xtest, ytest) in enumerate(data_splits):
+
+        pybnn_logger.info("Now conducting experiment on test split %d." % idx)
+
         Xtrain = Xtrain[:, None] if len(Xtrain.shape) == 1 else Xtrain
         ytrain = ytrain[:, None] if len(ytrain.shape) == 1 else ytrain
         Xtest = Xtest[:, None] if len(Xtest.shape) == 1 else Xtest
@@ -209,10 +203,9 @@ def perform_experiment():
         # TODO: Remove this function
         # utils.make_exp_params_json_compatible(config.exp_params)
         jdict = {
-            TOP_LEVEL_CONFIG_KEYS.obj_func: str(config.OBJECTIVE_FUNC),
-            TOP_LEVEL_CONFIG_KEYS.test_frac: config.TEST_FRACTION,
-            TOP_LEVEL_CONFIG_KEYS.mparams: config.model_params,
-            TOP_LEVEL_CONFIG_KEYS.eparams: config.exp_params.to_cli()
+            config_top_level_keys.obj_func: str(config.OBJECTIVE_FUNC),
+            config_top_level_keys.mparams: config.model_params,
+            config_top_level_keys.eparams: config.exp_params.to_cli()
         }
 
         with open(os.path.join(savedir, 'config.json'), 'w') as fp:
@@ -227,6 +220,9 @@ def perform_experiment():
             model.network.to('cuda')
             from torchsummary import summary
             summary(model.network, input_size=(model.batch_size, model.input_dims))
+
+        del(model)
+        pybnn_logger.info("Finished conducting experiment on test split %d." % (idx))
 
 
 if __name__ == '__main__':
