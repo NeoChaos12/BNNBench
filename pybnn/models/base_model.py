@@ -78,7 +78,7 @@ class BaseModel(object):
 
     @model_name.setter
     def model_name(self, name):
-        if name is None:
+        if name in [None, '']:
             self.__model_name = utils.random_string(length=32, use_upper_case=True, use_numbers=True)
             logger.debug("Model name set to None. Generated new random name %s." % self.model_name)
         elif isinstance(name, str):
@@ -147,7 +147,6 @@ class BaseModel(object):
 
         # TODO: Update all sub-models to use rng properly
         logger.info("Initialized base model.")
-        logger.debug("Initialized base model parameters:\n" % str(self.model_params))
 
     @property
     def rng(self):

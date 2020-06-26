@@ -48,7 +48,6 @@ class MCDropout(MLP):
         kwargs: dict
             Other model parameters for MLP.
         """
-
         try:
             model_params = kwargs.pop('model_params')
         except (KeyError, AttributeError):

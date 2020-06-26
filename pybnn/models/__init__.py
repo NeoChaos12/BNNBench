@@ -16,3 +16,10 @@ from .mcbatchnorm import MCBatchNorm
 from .batchnorm import BatchNorm
 from .deep_ensemble import DeepEnsemble
 
+from pybnn.utils import AttrDict
+model_types = AttrDict()
+model_types.mlp = MLP
+model_types.mcdropout = MCDropout
+model_types.mcbatchnorm = MCBatchNorm
+model_types.dngo = DNGO
+model_types.ensemble = DeepEnsemble

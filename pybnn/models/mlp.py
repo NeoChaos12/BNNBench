@@ -19,12 +19,12 @@ class MLP(BaseModel):
 
     MODEL_FILE_IDENTIFIER = "model"
     tb_writer: conf.tb_writer
+    output_dims = 1  # Currently, there is no support for any value except 1
 
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
         # "input_dims": 1,  # Inferred during training from X.shape[1]
-        "output_dims": 1,  # Currently, there is no support for any value except 1
         "loss_func": torch.nn.functional.mse_loss,
         "optimizer": optim.Adam,
     }
@@ -48,8 +48,6 @@ class MLP(BaseModel):
 
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
-                 # input_dims=_default_model_params.input_dims,
-                 output_dims=_default_model_params.output_dims,
                  loss_func=_default_model_params.loss_func,
                  optimizer=_default_model_params.optimizer, **kwargs):
         """
@@ -62,12 +60,6 @@ class MLP(BaseModel):
             The size of each hidden layer in the MLP. Each object in the iterable is read as the size of the
             corresponding MLP hidden layer, starting from the hidden layer right next to the input. Default is
             [50, 50, 50].
-        input_dims: int
-            The dimensionality of the inputs. Generally inferred from the data when the model is fit, and does not need
-            to be specified at model creation time. Default is 1.
-        output_dims: int
-            The dimensionality of the outputs. Currently, this cannot be inferred and must be provided before network
-            generation. Default is 1.
         loss_func: callable
             A callable object which accepts as input two arguments - output, target - and returns a PyTorch Tensor
             which is used to calculate the loss. Default is torch.nn.functional.mse_loss.
@@ -82,8 +74,7 @@ class MLP(BaseModel):
         except (KeyError, AttributeError):
             # Read this model's unique parameters from arguments
             self.hidden_layer_sizes = hidden_layer_sizes
-            # self.input_dims = input_dims
-            self.output_dims = output_dims
+            # TODO: Implement configurable loss function and optimizer
             self.loss_func = loss_func
             self.optimizer = optimizer
             # Pass on the remaining keyword arguments to the super class to deal with.
