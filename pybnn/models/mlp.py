@@ -97,6 +97,12 @@ class MLP(BaseModel):
         logger.debug("Initialized MLP Model parameters %s" % str(self.model_params))
 
     def _generate_network(self):
+        """
+        First action performed by train_network. Generates a network to be trained. Can potentially be over-written by
+        any child class to modify this behaviour without affecting the rest of the functionality of the network
+        training procedure.
+        :return:
+        """
         logger.info("Generating network.")
         layer_gen = MLP.mlplayergen(
             layer_size=self.hidden_layer_sizes,
@@ -145,29 +151,43 @@ class MLP(BaseModel):
         logger.debug("Normalized input X, y have shapes %s, %s" % (self.X.shape, self.y.shape))
         return
 
-    # TODO: Think of a solution to allow MC-Dropout to use weight decay properly with layer parameters.
+    def _pre_training_procs(self):
+        """
+        Called by train_network immediately after network generation and before the training loop begins. Sets up the
+        optimizer and learning rate scheduler, if needed. Can potentially be over-written by any child class to
+        modify this behaviour without affecting the rest of the functionality of the network training procedure.
+
+        :return: Nothing.
+        """
+        logger.debug("Running MLP pre-training procedures.")
+        if isinstance(self.learning_rate, float):
+            self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+            self.lr_scheduler = False
+        elif isinstance(self.learning_rate, dict):
+            # Assume a dictionary of arguments was passed for the learning rate scheduler
+            self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate["init"],
+                                       weight_decay=self.weight_decay)
+            self.scheduler = steplr(self.optimizer, *self.learning_rate['args'], **self.learning_rate['kwargs'])
+            self.lr_scheduler = True
+        else:
+            raise RuntimeError("Could not resolve learning rate of type %s:\n%s" %
+                               (type(self.learning_rate), str(self.learning_rate)))
+        logger.debug("Pre-training procedures finished.")
+
     @BaseModel._tensorboard_user
     def train_network(self, **kwargs):
         r"""
-        Fit the model to the previously pre-processed training dataset.
+        Fit the model's network to the previously pre-processed training dataset. Tends to follow a set sequence of
+        procedures, some of which are wrapped up in function calls that may be modified by child classes by
+        over-writing the relevant functions without affecting the remainder of the functionality.
+
+        See also: _generate_network(), _pre_training_procs()
         """
 
         start_time = time.time()
 
         self._generate_network()
-
-        if isinstance(self.learning_rate, float):
-            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-            lr_scheduler = False
-        elif isinstance(self.learning_rate, dict):
-            # Assume a dictionary of arguments was passed for the learning rate scheduler
-            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate["init"],
-                                       weight_decay=self.weight_decay)
-            scheduler = steplr(optimizer, *self.learning_rate['args'], **self.learning_rate['kwargs'])
-            lr_scheduler = True
-        else:
-            raise RuntimeError("Could not resolve learning rate of type %s:\n%s" %
-                               (type(self.learning_rate), str(self.learning_rate)))
+        self._pre_training_procs()
 
         if conf.tblog:
             self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
@@ -185,7 +205,7 @@ class MLP(BaseModel):
         lc = np.zeros([self.num_epochs])
         logger.debug("Training over inputs and targets of shapes %s and %s, respectively." %
                      (self.X.shape, self.y.shape))
-        one_time_flag = True
+
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
@@ -194,16 +214,11 @@ class MLP(BaseModel):
             train_batches = 0
 
             for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 output = self.network(inputs)
-                if one_time_flag:
-                    logger.debug("Generated a minibatch of shapes: %s, %s\nReceived output of shape: %s" %
-                                 (inputs.shape, targets.shape, output.shape))
-                    one_time_flag = False
-
                 loss = self.loss_func(output, targets)
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
 
                 train_err += loss
                 train_batches += 1
@@ -246,8 +261,8 @@ class MLP(BaseModel):
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
 
-            if lr_scheduler:
-                scheduler.step()
+            if self.lr_scheduler:
+                self.scheduler.step()
 
         if conf.tblog and conf.logInternals:
             logger.info("Plotting weight graphs.")
@@ -278,8 +293,7 @@ class MLP(BaseModel):
 
     def predict(self, X_test):
         r"""
-        Returns the predictive mean and variance of the objective function at
-        the given test points.
+        Returns the predictive mean of the objective function at the given test points.
 
         Parameters
         ----------

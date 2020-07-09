@@ -2,7 +2,7 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-from itertools import repeat, chain
+from itertools import chain
 from typing import Iterable
 
 from pybnn.models import logger
@@ -10,7 +10,8 @@ from pybnn.models.mlp import MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict, namedtuple
 from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperparameter
-
+from torch.optim.lr_scheduler import StepLR as steplr
+from pybnn.config import globalConfig
 
 # TODO: Switch to globalConfig, if needed
 
@@ -21,7 +22,7 @@ class MCDropout(MLP):
     as well as variance as model output.
     """
     cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
-    cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=np.Inf))
+    cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=1.0))
 
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
@@ -82,6 +83,13 @@ class MCDropout(MLP):
         pdrop: float or Iterable of floats
             Either a single float value or a list of such values, describing the probability of dropout used by all or
             specific layers of the network respectively (including the input layer).
+        length_scale: float
+            The prior length scale.
+        precision: float
+            The model precision used for generating weight decay values and predictive variance.
+        dataset_size: int
+            The number of individual data points in the whole dataset, not necessarily the test/training set passed to
+            the model. (N in Yarin Gal's work)
         kwargs: dict
             Other model parameters for MLP.
         """
@@ -101,7 +109,6 @@ class MCDropout(MLP):
         logger.debug("Intialized MC-Dropout model parameters:\n%s" % str(self.model_params))
 
     def _generate_network(self):
-        from itertools import repeat, chain
         logger.debug("Generating NN for MC-Dropout using dropout probability %s" % str(self.pdrop))
 
         input_dims = self.input_dims
@@ -123,16 +130,47 @@ class MCDropout(MLP):
         )
 
         pdrop = iter(self.pdrop)
-
-        # TODO: Keep track of layer groups for weight decay.
+        self.weight_decay_param_groups = []
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
+            # A dropout layer demarcates one weight decay parameter group
             layers.append((f"Dropout{layer_idx}", nn.Dropout(p=pdrop.__next__())))
             layers.append((f"FC{layer_idx}", fclayer))
             layers.append((f"Tanh{layer_idx}", nn.Tanh()))
+            layer_params = [l.parameters() for l in layers[-3:]]
+            self.weight_decay_param_groups.append(chain(*layer_params))
 
         layers.append((f"Dropout{len(self.hidden_layer_sizes) + 1}", nn.Dropout(p=pdrop.__next__())))
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
+        self.weight_decay_param_groups.append(chain(*[l.parameters() for l in layer_params[-2:]]))
         self.network = nn.Sequential(OrderedDict(layers))
+
+    def _pre_training_procs(self):
+        """
+        Pre-training procedures for MC-Dropout. Initializes the optimizer and, if needed, the learning rate scheduler
+        such that a weight-decay parameter corresponding to each hidden layer's dropout probability is included.
+        :return: Nothing
+        """
+
+        logger.debug("Running MC-Dropout pre-training procedures.")
+        optim_groups = []
+        for param_group, decay in zip(self.weight_decay_param_groups, self.weight_decay):
+            optim_groups.append({
+                'params': param_group,
+                'weight_decay': decay
+            })
+
+        if isinstance(self.learning_rate, float):
+            self.optimizer = self.optimizer(optim_groups, lr=self.learning_rate)
+            self.lr_scheduler = False
+        elif isinstance(self.learning_rate, dict):
+            # Assume a dictionary of arguments was passed for the learning rate scheduler
+            self.optimizer = self.optimizer(optim_groups, lr=self.learning_rate["init"])
+            self.scheduler = steplr(self.optimizer, *self.learning_rate['args'], **self.learning_rate['kwargs'])
+            self.lr_scheduler = True
+        else:
+            raise RuntimeError("Could not resolve learning rate of type %s:\n%s" %
+                               (type(self.learning_rate), str(self.learning_rate)))
+        logger.debug("Pre-training procedures finished.")
 
     def fit(self, X, y, return_history=True):
         """
@@ -157,6 +195,10 @@ class MCDropout(MLP):
 
         optim = None
         history = []
+        old_save_flag = globalConfig.save_model
+        old_tblog_flag = globalConfig.tblog
+        globalConfig.save_model = False # No point in saving these interim models
+        globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
         for idx, conf in enumerate(confs):
             logger.debug("Training configuration #%d" % (idx + 1))
 
@@ -184,6 +226,8 @@ class MCDropout(MLP):
             history.append((tau, valid_loss))
 
         logger.info("Obtained optimal precision value %f, now training final model." % optim[0])
+        globalConfig.save_model = old_save_flag
+        globalConfig.tblog = old_tblog_flag
 
         self.precision = optim[0]
         self.preprocess_training_data(Xtrain, ytrain)
@@ -194,8 +238,7 @@ class MCDropout(MLP):
         valid_loss = self.loss_func(ypred, yval).data.cpu().numpy()
         logger.info("Final trained network has validation loss: %f" % valid_loss)
 
-        return (self.precision, valid_loss, history)
-
+        return self.precision, valid_loss, history
 
     def predict(self, X_test, nsamples=1000):
         r"""
@@ -244,7 +287,7 @@ class MCDropout(MLP):
         logger.debug("Generated final outputs array of shape %s" % str(Yt_hat.shape))
 
         mean = np.mean(Yt_hat, axis=0)
-        variance = np.var(Yt_hat, axis=0)
+        variance = np.var(Yt_hat, axis=0) + 1 / self.precision
 
         logger.debug("Generated final mean values of shape %s" % str(mean.shape))
         logger.debug("Generated final variance values of shape %s" % str(variance.shape))
