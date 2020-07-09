@@ -115,7 +115,7 @@ class MCMCCurveModelCombination(object):
         """
         self.fit_models = []
         for model in self.ml_curve_models:
-            if model.fit(x, y):
+            if model.train_network(x, y):
                 ylim = model.predict(self.xlim)
                 if not self.y_lim_sanity_check(ylim):
                     print("ML fit of model %s is out of bound range [0.0, "

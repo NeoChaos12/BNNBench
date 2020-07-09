@@ -1,7 +1,6 @@
 import os
 import logging
 import numpy as np
-from sklearn.datasets import load_boston, fetch_openml
 from pybnn.utils import AttrDict, logger
 from pybnn.utils.universal_utils import standard_pathcheck
 
@@ -31,7 +30,7 @@ def _generate_test_splits_from_local_dataset(name: str, root: str = DATASETS_ROO
     datadir = standard_pathcheck(os.path.join(root, name, DATADIR))
 
     if splits is None:
-        splits = (0, 19)
+        splits = (0, 20)
 
     logger.debug("Using splits: %s" % str(splits))
 
@@ -67,14 +66,6 @@ dataloader_args = {
     "wine": {"name": "wine-quality-red"},
     "yacht": {"name": "yacht"},
 }
-#
-# dataloaders = {
-#     "boston": _generate_test_splits_from_local_dataset,
-#     "concrete": _generate_test_splits_from_local_dataset,
-#     "energy": _generate_test_splits_from_local_dataset,
-#     "kin8nm": _generate_test_splits_from_local_dataset,
-#     "yacht": _generate_test_splits_from_local_dataset,
-# }
 
 
 # TODO: Define standard AttrDict or namedtuple for dataset configurations
@@ -87,5 +78,4 @@ def data_generator(obj_config: AttrDict) -> (np.ndarray, np.ndarray):
     """
 
     dname = obj_config.name.lower()
-    # return dataloaders[dname](**dataloader_args[dname])
     return _generate_test_splits_from_local_dataset(**dataloader_args[dname])

@@ -106,5 +106,5 @@ exp_params = {
 
 ExpConfig.read_exp_params(exp_params)
 model = DeepEnsemble(model_params=model_params)
-model.fit(x[:, None], y, plotter=learner_plotter) # TODO: Fix plotting of learners' outputs, implement plotting of model output
+model.train_network(x[:, None], y, plotter=learner_plotter) # TODO: Fix plotting of learners' outputs, implement plotting of model output
 # model.fit(x[:, None], y)

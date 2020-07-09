@@ -204,9 +204,9 @@ def perform_experiment():
 
     model.preprocess_training_data(Xtrain, ytrain)
     if plotting1d:
-        model.fit(plotter=tb_plotter)
+        model.train_network(plotter=tb_plotter)
     else:
-        model.fit()  # Don't save interim progress plots
+        model.train_network()  # Don't save interim progress plots
 
     predicted_y = model.predict(Xtest)
     savedir = utils.ensure_path_exists(model.modeldir)

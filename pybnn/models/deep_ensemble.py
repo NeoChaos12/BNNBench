@@ -77,7 +77,7 @@ class DeepEnsemble(MLP):
         return super(self.__class__, self).modelParamsContainer(**param_dict)
 
 
-    def fit(self, X, y, **kwargs):
+    def train_network(self, X, y, **kwargs):
         r"""
         Fit the model to the given dataset.
 
@@ -115,8 +115,8 @@ class DeepEnsemble(MLP):
         for idx, learner in enumerate(self.learners, start=1):
             logger.info("Training learner %d." % idx)
             learner_exp_name = model_exp_name + f"_learner{idx}"
-            learner.fit(X, y, tb_logging=conf.tblog, tb_logdir=conf.tbdir, tb_expname=learner_exp_name,
-                        **kwargs)
+            learner.train_network(X, y, tb_logging=conf.tblog, tb_logdir=conf.tbdir, tb_expname=learner_exp_name,
+                                  **kwargs)
             logger.info("Finished training learner %d\n%s\n" % (idx, '*' * 20))
 
         if model_exp_name:

@@ -114,6 +114,7 @@ def handle_cli():
                 elif jsonval not in [None, '']:
                     setattr(config.exp_params, key, jsonval)
 
+            # TODO: Fix. Use the params property to display this properly.
             pybnn_logger.info("Final experiment parameters: %s" % config.exp_params)
 
     else:
@@ -160,7 +161,7 @@ def perform_experiment():
         # -----------------------------------------------Let it roll----------------------------------------------------
 
         model.preprocess_training_data(Xtrain, ytrain)
-        model.fit()  # Don't save interim progress plots
+        model.train_network()  # Don't save interim progress plots
 
         predicted_y = model.predict(Xtest)
         savedir = utils.ensure_path_exists(model.modeldir)
@@ -221,8 +222,9 @@ def perform_experiment():
             from torchsummary import summary
             summary(model.network, input_size=(model.batch_size, model.input_dims))
 
-        del(model)
-        pybnn_logger.info("Finished conducting experiment on test split %d." % (idx))
+        del model
+        pybnn_logger.info("Finished conducting experiment on test split %d." % idx)
+    pybnn_logger.info("Finished conducting all experiments on the given dataset.")
 
 
 if __name__ == '__main__':

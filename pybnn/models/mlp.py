@@ -27,6 +27,7 @@ class MLP(BaseModel):
         # "input_dims": 1,  # Inferred during training from X.shape[1]
         "loss_func": torch.nn.functional.mse_loss,
         "optimizer": optim.Adam,
+        "num_confs": 30
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -49,7 +50,8 @@ class MLP(BaseModel):
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
                  loss_func=_default_model_params.loss_func,
-                 optimizer=_default_model_params.optimizer, **kwargs):
+                 optimizer=_default_model_params.optimizer,
+                 num_confs=_default_model_params.num_confs, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
         be subclassed from this class.
@@ -65,7 +67,10 @@ class MLP(BaseModel):
             which is used to calculate the loss. Default is torch.nn.functional.mse_loss.
         optimizer: callable
             A callable object which is used as the optimizer by PyTorch and should have the corresponding signature.
-            Default is torch.optim.Adam
+            Default is torch.optim.Adam.
+        weight_decay: float
+            The weight decay parameter value to be used for L2 regularization, ideally calculated using prior length
+            scale and optimal model precision, as described in Eq. 3.14 in Yarin Gal's PhD Thesis.
         kwargs: dict
             Other model parameters for the Base Model.
         """
@@ -77,6 +82,7 @@ class MLP(BaseModel):
             # TODO: Implement configurable loss function and optimizer
             self.loss_func = loss_func
             self.optimizer = optimizer
+            self.num_confs = num_confs
             # Pass on the remaining keyword arguments to the super class to deal with.
             super(MLP, self).__init__(**kwargs)
         else:
@@ -140,7 +146,7 @@ class MLP(BaseModel):
         return
 
     @BaseModel._tensorboard_user
-    def fit(self, **kwargs):
+    def train_network(self, **kwargs):
         r"""
         Fit the model to the previously pre-processed training dataset.
         """
@@ -150,11 +156,12 @@ class MLP(BaseModel):
         self._generate_network()
 
         if isinstance(self.learning_rate, float):
-            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate)
+            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
             lr_scheduler = False
         elif isinstance(self.learning_rate, dict):
             # Assume a dictionary of arguments was passed for the learning rate scheduler
-            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate["init"])
+            optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate["init"],
+                                       weight_decay=self.weight_decay)
             scheduler = steplr(optimizer, *self.learning_rate['args'], **self.learning_rate['kwargs'])
             lr_scheduler = True
         else:
@@ -254,6 +261,19 @@ class MLP(BaseModel):
             self.save_network()
 
         return
+
+    def fit(self, X, y):
+        """
+        Given a dataset of features X and regression targets y, performs all required procedures to train an standard
+        MLP on the dataset. Returns None.
+        :param X: Features.
+        :param y: Regression targets.
+        :return: None
+        """
+        self.preprocess_training_data(X, y)
+        self.train_network()
+
+        return None
 
     def predict(self, X_test):
         r"""
