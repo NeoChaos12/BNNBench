@@ -145,6 +145,7 @@ class MLP(BaseModel):
         logger.debug("Normalized input X, y have shapes %s, %s" % (self.X.shape, self.y.shape))
         return
 
+    # TODO: Think of a solution to allow MC-Dropout to use weight decay properly with layer parameters.
     @BaseModel._tensorboard_user
     def train_network(self, **kwargs):
         r"""

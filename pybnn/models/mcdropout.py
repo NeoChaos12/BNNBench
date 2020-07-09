@@ -26,7 +26,7 @@ class MCDropout(MLP):
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "pdrop": 0.5,
-        "weight_decay": 0.0,
+        # "weight_decay": 0.0,
         "length_scale": 1.0,
         "precision": 1.0,
         "dataset_size": 100
@@ -47,14 +47,13 @@ class MCDropout(MLP):
 
     @property
     def pdrop(self):
-        try:
-            # If pdrop is iterable, get an iterator over it
-            pdrop = iter(self._pdrop)
-        except TypeError:
-            # Assume that a single value of pdrop is to be used for all hidden layers except p0 (input layer),
-            # which is 0.0
-            pdrop = chain([0.0], repeat(self._pdrop, len(self.hidden_layer_sizes)))
-        return list(pdrop)
+        if isinstance(self._pdrop, Iterable):
+            # If the stored value is already an Iterable, directly generate a list from it.
+            return list(self._pdrop)
+        else:
+            # Otherwise assume it's a float value common for all hidden layers whereas the input layer has 0 dropout
+            # probability.
+            return [0.0] + [self._pdrop] * len(self.hidden_layer_sizes)
 
     @pdrop.setter
     def pdrop(self, pdrop):
@@ -64,9 +63,14 @@ class MCDropout(MLP):
             raise RuntimeError("Cannot set dropout probability to value of type %s. Must be either a single float or "
                                "iterable of floats.")
 
+    @property
+    def weight_decay(self):
+        # lscale ** 2 * (1 - pdrop) / (2 * N * precision
+        return [self.length_scale ** 2 * (1 - p) / (2 * self.dataset_size * self.precision) for p in self.pdrop]
+
     def __init__(self,
                  pdrop=_default_model_params.pdrop,
-                 weight_decay=_default_model_params.weight_decay,
+                 # weight_decay=_default_model_params.weight_decay,
                  length_scale=_default_model_params.length_scale,
                  precision=_default_model_params.precision,
                  dataset_size=_default_model_params.dataset_size, **kwargs):
@@ -85,7 +89,7 @@ class MCDropout(MLP):
             model_params = kwargs.pop('model_params')
         except (KeyError, AttributeError):
             self.pdrop = pdrop
-            self.weight_decay = weight_decay
+            # self.weight_decay = weight_decay
             self.length_scale = length_scale
             self.precision = precision
             self.dataset_size = dataset_size
@@ -120,6 +124,7 @@ class MCDropout(MLP):
 
         pdrop = iter(self.pdrop)
 
+        # TODO: Keep track of layer groups for weight decay.
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"Dropout{layer_idx}", nn.Dropout(p=pdrop.__next__())))
             layers.append((f"FC{layer_idx}", fclayer))
@@ -129,21 +134,20 @@ class MCDropout(MLP):
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
 
-    def fit(self, X, y):
+    def fit(self, X, y, return_history=True):
         """
-        Returns an MC-Dropout model object and corresponding precision value trained using the given dataset.
+        Fits this model to the given data and returns the corresponding optimum precision value.
         Generates a  validation set, generates num_confs random values for precision, and for each configuration,
         generates a weight decay value which in turn is used to train a network. The precision value with the minimum
         validation loss is returned.
 
         :param X: Features.
         :param y: Regression targets.
-        :return: tuple (optimal precision, validation loss, history)
+        :return: tuple (optimal precision, final validation loss, history)
         """
         from sklearn.model_selection import train_test_split
-        from itertools import repeat, chain
 
-        logger.debug("Calculating optimal precision value.")
+        logger.info("Fitting MC-Dropout model to the given data.")
 
         confs = self.cs.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
@@ -160,16 +164,10 @@ class MCDropout(MLP):
             tau = conf.get("precision")
             logger.debug("Sampled precision value %f" % tau)
 
-            new_model.weight_decay = [self.calculate_weight_decay(
-                lscale=self.length_scale,
-                pdrop=p,
-                N=self.dataset_size,
-                precision=tau
-            ) for p in self.pdrop]
-
+            new_model.precision = tau
             new_model.num_epochs = self.num_epochs / 10
-
             logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
+
             new_model.preprocess_training_data(Xtrain, ytrain)
             new_model.train_network()
             logger.debug("Finished training sample network.")
@@ -180,19 +178,23 @@ class MCDropout(MLP):
             logger.debug("Generated validation loss %f" % valid_loss)
 
             if optim is None or valid_loss < optim[1]:
-                logger.debug("Updating optimum precision value.")
                 optim = (tau, valid_loss)
+                logger.debug("Updated optimum precision value to %f with validation loss %f." % optim)
 
             history.append((tau, valid_loss))
 
+        logger.info("Obtained optimal precision value %f, now training final model." % optim[0])
 
+        self.precision = optim[0]
+        self.preprocess_training_data(Xtrain, ytrain)
+        self.train_network()
 
-        return (*optim, history)
+        self.network.eval()
+        ypred = self.network(Xval)
+        valid_loss = self.loss_func(ypred, yval).data.cpu().numpy()
+        logger.info("Final trained network has validation loss: %f" % valid_loss)
 
-
-    @classmethod
-    def calculate_weight_decay(cls, lscale, pdrop, N, precision):
-        return lscale ** 2 * (1 - pdrop) / (2 * N * precision)
+        return (self.precision, valid_loss, history)
 
 
     def predict(self, X_test, nsamples=1000):
