@@ -67,6 +67,8 @@ class MCDropout(MLP):
     @property
     def weight_decay(self):
         # lscale ** 2 * (1 - pdrop) / (2 * N * precision
+        logger.debug("Generating weight decay values for length scale %f, dropout probabilities %s and dataset size %d"
+                     % (self.length_scale, str(self.pdrop), self.dataset_size))
         return [self.length_scale ** 2 * (1 - p) / (2 * self.dataset_size * self.precision) for p in self.pdrop]
 
     def __init__(self,
@@ -116,13 +118,6 @@ class MCDropout(MLP):
         n_units = self.hidden_layer_sizes
         layers = []
 
-        # try:
-        #     # If pdrop is iterable, get an iterator over it
-        #     pdrop = iter(self.pdrop)
-        # except TypeError:
-        #     # Assume that a single value of pdrop is to be used for all layers except p0 (input layer), which is 0.0
-        #     pdrop = chain([0.0], repeat(self.pdrop, len(self.hidden_layer_sizes)))
-
         layer_gen = MLP.mlplayergen(
             layer_size=n_units,
             input_dims=input_dims,
@@ -132,16 +127,16 @@ class MCDropout(MLP):
         pdrop = iter(self.pdrop)
         self.weight_decay_param_groups = []
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
-            # A dropout layer demarcates one weight decay parameter group
             layers.append((f"Dropout{layer_idx}", nn.Dropout(p=pdrop.__next__())))
             layers.append((f"FC{layer_idx}", fclayer))
             layers.append((f"Tanh{layer_idx}", nn.Tanh()))
-            layer_params = [l.parameters() for l in layers[-3:]]
+            # The non-linearity layer demarcates one weight decay parameter group
+            layer_params = [l[1].parameters() for l in layers[-3:]]
             self.weight_decay_param_groups.append(chain(*layer_params))
 
         layers.append((f"Dropout{len(self.hidden_layer_sizes) + 1}", nn.Dropout(p=pdrop.__next__())))
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
-        self.weight_decay_param_groups.append(chain(*[l.parameters() for l in layer_params[-2:]]))
+        self.weight_decay_param_groups.append(chain(*[l[1].parameters() for l in layers[-2:]]))
         self.network = nn.Sequential(OrderedDict(layers))
 
     def _pre_training_procs(self):
@@ -202,12 +197,12 @@ class MCDropout(MLP):
         for idx, conf in enumerate(confs):
             logger.debug("Training configuration #%d" % (idx + 1))
 
-            new_model = MCDropout(self.model_params)
+            new_model = MCDropout(model_params=self.model_params)
             tau = conf.get("precision")
             logger.debug("Sampled precision value %f" % tau)
 
             new_model.precision = tau
-            new_model.num_epochs = self.num_epochs / 10
+            new_model.num_epochs = self.num_epochs // 10
             logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
 
             new_model.preprocess_training_data(Xtrain, ytrain)
@@ -215,8 +210,8 @@ class MCDropout(MLP):
             logger.debug("Finished training sample network.")
 
             new_model.network.eval()
-            ypred = new_model.network(Xval)
-            valid_loss = new_model.loss_func(ypred, yval).data.cpu().numpy()
+            ypred = new_model.network(torch.Tensor(Xval))
+            valid_loss = new_model.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
             logger.debug("Generated validation loss %f" % valid_loss)
 
             if optim is None or valid_loss < optim[1]:
@@ -234,8 +229,8 @@ class MCDropout(MLP):
         self.train_network()
 
         self.network.eval()
-        ypred = self.network(Xval)
-        valid_loss = self.loss_func(ypred, yval).data.cpu().numpy()
+        ypred = self.network(torch.Tensor(Xval))
+        valid_loss = self.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
         logger.info("Final trained network has validation loss: %f" % valid_loss)
 
         return self.precision, valid_loss, history

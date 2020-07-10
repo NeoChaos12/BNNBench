@@ -41,14 +41,12 @@ def get_rmse(test, pred):
     return np.mean((pred - test) ** 2) ** 0.5
 
 
-def get_nll(test, pred):
-    std = np.clip(pred[:, -1])
+def get_ll(test, pred):
+    std = np.clip(pred[:, -1], a_min=1e-15, a_max=None)
     # std = np.log(std)
     mu = pred[:, -2]
     loss = norm.logpdf(test[:, -1], loc=mu, scale=std)
-    # n = torch.distributions.normal.Normal(mu, std)
-    # loss = n.log_prob(pred)
-    return -np.mean(loss)
+    return np.mean(loss)
 
 
 def main():
@@ -60,7 +58,7 @@ def main():
     predictions = None
     N = 0
     rmse = 0.0
-    nll = 0.0
+    ll = 0.0
     for dir in subdirs:
         print(f"Scanning {dir.name}.")
         if dir.is_dir():
@@ -72,14 +70,14 @@ def main():
         print(f"Found dataset with {predictions.shape[0]} items.")
         if args.has_std:
             rmse += get_rmse(testset[:, -2], predictions[:, -2])
-            nll += get_nll(testset, predictions)
+            ll += get_ll(testset, predictions)
         else:
             rmse += get_rmse(testset[:, -1], predictions[:, -1])
         N += 1
 
     rmse /= N
-    nll /= N
-    print(f"Over {N} datasets, an average RMSE of {rmse} and an average NLL of {nll} was observed.")
+    ll /= N
+    print(f"Over {N} datasets, an average RMSE of {rmse} and an average LL of {ll} was observed.")
 
 
 

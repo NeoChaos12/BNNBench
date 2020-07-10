@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from pybnn.models import logger
 from pybnn.models import BaseModel
-from pybnn.config import globalConfig as conf
+from pybnn.config import globalConfig
 from collections import OrderedDict, namedtuple
 import torch.optim as optim
 import numpy as np
@@ -18,7 +18,7 @@ class MLP(BaseModel):
     """
 
     MODEL_FILE_IDENTIFIER = "model"
-    tb_writer: conf.tb_writer
+    tb_writer: globalConfig.tb_writer
     output_dims = 1  # Currently, there is no support for any value except 1
 
     # Add any new parameters needed exclusively by this model here
@@ -189,12 +189,12 @@ class MLP(BaseModel):
         self._generate_network()
         self._pre_training_procs()
 
-        if conf.tblog:
+        if globalConfig.tblog:
             self.tb_writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
                                                               dtype=torch.float, requires_grad=False))
 
         # TODO: Standardize
-        if conf.tblog and conf.logInternals:
+        if globalConfig.tblog and globalConfig.logInternals:
             weights = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
             weights.append(("Output", []))
             biases = [(f"FC{ctr}", []) for ctr in range(len(self.hidden_layer_sizes))]
@@ -228,11 +228,11 @@ class MLP(BaseModel):
             epoch_time = curtime - epoch_start_time
             total_time = curtime - start_time
 
-            if conf.tblog:
-                if conf.logTrainLoss:
-                    self.tb_writer.add_scalar(tag=conf.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
+            if globalConfig.tblog:
+                if globalConfig.logTrainLoss:
+                    self.tb_writer.add_scalar(tag=globalConfig.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
 
-                if conf.logInternals:
+                if globalConfig.logInternals:
                     # TODO: Standardize
                     for ctr in range(len(self.hidden_layer_sizes)):
                         layer = self.network.__getattr__(f"FC{ctr + 1}")
@@ -252,11 +252,11 @@ class MLP(BaseModel):
                 logger.info("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
                 logger.info("Training loss:\t\t{:.5g}\n".format(train_err / train_batches))
 
-                if conf.tblog and conf.logTrainPerformance:
+                if globalConfig.tblog and globalConfig.logTrainPerformance:
                     try:
                         plotter = kwargs["plotter"]
                         logger.debug("Saving performance plot at training epoch %d" % (epoch + 1))
-                        self.tb_writer.add_figure(tag=conf.TAG_TRAIN_FIG, figure=plotter(self.predict),
+                        self.tb_writer.add_figure(tag=globalConfig.TAG_TRAIN_FIG, figure=plotter(self.predict),
                                                   global_step=epoch + 1)
                     except KeyError:
                         logger.debug("No plotter specified. Not saving plotting logs.")
@@ -264,7 +264,7 @@ class MLP(BaseModel):
             if self.lr_scheduler:
                 self.scheduler.step()
 
-        if conf.tblog and conf.logInternals:
+        if globalConfig.tblog and globalConfig.logInternals:
             logger.info("Plotting weight graphs.")
             fig = self.__plot_layer_weights(weights=weights, epochs=range(1, self.num_epochs + 1),
                                             title="Layer weights")
@@ -273,7 +273,7 @@ class MLP(BaseModel):
                                             title="Layer biases")
             self.tb_writer.add_figure(tag="Layer biases", figure=fig)
 
-        if conf.save_model:
+        if globalConfig.save_model:
             self.save_network()
 
         return

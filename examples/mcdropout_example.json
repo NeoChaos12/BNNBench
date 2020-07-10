@@ -3,37 +3,24 @@
       "type": "dataset",
       "name": "boston"
     },
-    "dataset_size": "200",
-    "testset_fraction": "0.2",
     "model_parameters": {
-        "num_epochs": 1000,
+        "num_epochs": 400,
         "batch_size": 32,
-        "learning_rate": {
-            "init": 0.01,
-            "args":[],
-            "kwargs":{
-                "step_size": 100,
-                "gamma": 0.1
-            }
-        },
+        "learning_rate": 0.001,
         "normalize_input": true,
         "normalize_output": true,
         "hidden_layer_sizes": [
-            50,
-            50,
             50
         ],
         "pdrop": [
-            0.2,
-            0.5,
-            0.5,
-            0.5
+            0.05,
+            0.005
         ],
         "model_path": null
     },
     "experiment_parameters": {
         "debug": true,
-        "tblog": true,
+        "tblog": false,
         "logTrainLoss": true,
         "logInternals": true,
         "logTrainPerformance": true,

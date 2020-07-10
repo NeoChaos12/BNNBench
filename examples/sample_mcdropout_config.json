@@ -1,0 +1,37 @@
+{
+    "objective_function": {
+        "type": "dataset",
+        "name": "boston"
+    },
+    "model_parameters": {
+        "pdrop": [
+            0.0,
+            0.5,
+            0.5,
+            0.5
+        ],
+        "length_scale": 1.0,
+        "precision": 1.0,
+        "hidden_layer_sizes": [
+            50,
+            50,
+            50
+        ],
+        "num_confs": 30,
+        "num_epochs": 500,
+        "batch_size": 10,
+        "learning_rate": 0.001,
+        "normalize_input": true,
+        "normalize_output": true,
+        "model_path": "/home/archit/master_project/pybnn/experiments/default",
+        "model_name": null
+    },
+    "experiment_parameters": {
+        "save_model": false,
+        "debug": false,
+        "tblog": false,
+        "logTrainLoss": false,
+        "logInternals": false,
+        "logTrainPerformance": false
+    }
+}
