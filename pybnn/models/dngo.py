@@ -10,7 +10,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from scipy import optimize
 
-from pybnn.models import logger
 from pybnn.models.base_model import BaseModel
 from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
@@ -19,7 +18,7 @@ from pybnn.config import mlpParams  # TODO: Get rid of this, switch to globalCon
 from collections import OrderedDict
 
 TENSORBOARD_LOGGING = False
-
+logger = logging.getLogger(__name__)
 
 class DNGO(BaseModel):
 

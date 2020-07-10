@@ -1,8 +1,10 @@
 import os
 import logging
 import numpy as np
-from pybnn.utils import AttrDict, logger
+from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
+
+logger = logging.getLogger(__name__)
 
 DATASETS_ROOT = "$HOME/UCI_Datasets"
 DATADIR = "data"

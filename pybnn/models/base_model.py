@@ -4,7 +4,8 @@ import numpy as np
 
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.utils import universal_utils as utils
-from pybnn.models import logger
+import logging
+
 from pybnn.config import globalConfig as conf
 from collections import namedtuple
 
@@ -12,6 +13,7 @@ import functools
 from typing import Callable
 import torch
 
+logger = logging.getLogger(__name__)
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta

@@ -2,7 +2,8 @@ import time
 import os.path
 import torch
 import torch.nn as nn
-from pybnn.models import logger
+import logging
+
 from pybnn.models import BaseModel
 from pybnn.config import globalConfig
 from collections import OrderedDict, namedtuple
@@ -11,6 +12,7 @@ import numpy as np
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from torch.optim.lr_scheduler import StepLR as steplr
 
+logger = logging.getLogger(__name__)
 
 class MLP(BaseModel):
     """

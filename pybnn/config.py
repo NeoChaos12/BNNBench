@@ -2,7 +2,7 @@ from collections import namedtuple
 from functools import partial
 from torch.utils.tensorboard import SummaryWriter
 import logging
-from pybnn import loggers
+from pybnn import logger
 from pybnn.utils import universal_utils as utils
 
 _mlpParamsDefaultDict = {
@@ -78,8 +78,7 @@ class ExpConfig:
     def debug(self, val):
         assert type(val) is bool
         self.__debug = val
-        for logger in loggers.values():
-            logger.setLevel(logging.DEBUG if val else logging.INFO)
+        logger.setLevel(logging.DEBUG if val else logging.INFO)
 
 
     @property

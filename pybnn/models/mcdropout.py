@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from itertools import chain
 from typing import Iterable
+import logging
 
-from pybnn.models import logger
 from pybnn.models.mlp import MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import OrderedDict, namedtuple
@@ -13,16 +13,13 @@ from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperpara
 from torch.optim.lr_scheduler import StepLR as steplr
 from pybnn.config import globalConfig
 
-# TODO: Switch to globalConfig, if needed
-
+logger = logging.getLogger(__name__)
 
 class MCDropout(MLP):
     r"""
     Extends the MLP model by adding a Dropout layer after each fully connected layer, and generates the predictive mean
     as well as variance as model output.
     """
-    cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
-    cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=1.0))
 
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
@@ -182,7 +179,10 @@ class MCDropout(MLP):
 
         logger.info("Fitting MC-Dropout model to the given data.")
 
-        confs = self.cs.sample_configuration(self.num_confs)
+        cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=1.0))
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="learning_rate", lower=1e-6, upper=1e-1, log=True))
+        confs = cs.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
 
         Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
@@ -199,10 +199,12 @@ class MCDropout(MLP):
 
             new_model = MCDropout(model_params=self.model_params)
             tau = conf.get("precision")
-            logger.debug("Sampled precision value %f" % tau)
+            lr = conf.get("learning_rate")
+            logger.debug("Sampled precision value %f and learning rate %f" % (tau, lr))
 
             new_model.precision = tau
             new_model.num_epochs = self.num_epochs // 10
+            new_model.learning_rate = lr
             logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
 
             new_model.preprocess_training_data(Xtrain, ytrain)
@@ -214,17 +216,19 @@ class MCDropout(MLP):
             valid_loss = new_model.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
             logger.debug("Generated validation loss %f" % valid_loss)
 
-            if optim is None or valid_loss < optim[1]:
-                optim = (tau, valid_loss)
-                logger.debug("Updated optimum precision value to %f with validation loss %f." % optim)
+            if optim is None or valid_loss < optim[2]:
+                optim = (tau, lr, valid_loss)
+                logger.debug("Updated optimum precision value to %f and learning rate to %f  with validation loss %f." %
+                             optim)
 
-            history.append((tau, valid_loss))
+            history.append((tau, lr, valid_loss))
 
-        logger.info("Obtained optimal precision value %f, now training final model." % optim[0])
+        logger.info("Obtained optimal precision value %f and learning rate %f, now training final model." % optim[0:2])
         globalConfig.save_model = old_save_flag
         globalConfig.tblog = old_tblog_flag
 
         self.precision = optim[0]
+        self.learning_rate = optim[1]
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 

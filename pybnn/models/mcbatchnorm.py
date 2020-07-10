@@ -2,14 +2,15 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import logging
 
-from pybnn.models import logger
 from pybnn.models.mlp import MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from functools import partial
 from collections import OrderedDict, namedtuple
 # TODO: Switch to globalConfig, if needed
 
+logger = logging.getLogger(__name__)
 
 class MCBatchNorm(MLP):
     r"""

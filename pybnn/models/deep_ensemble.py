@@ -6,10 +6,11 @@ import torch
 import torch.nn as nn
 
 from pybnn.config import globalConfig as conf
-from pybnn.models import logger
 from pybnn.models.mlp import MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import namedtuple
+
+logger = logging.getLogger(__name__)
 
 class DeepEnsemble(MLP):
     """

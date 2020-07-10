@@ -23,7 +23,7 @@
     },
     "experiment_parameters": {
         "debug": true,
-        "tblog": false,
+        "tblog": true,
         "logTrainLoss": true,
         "logInternals": true,
         "logTrainPerformance": true,

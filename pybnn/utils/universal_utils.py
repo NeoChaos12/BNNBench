@@ -3,12 +3,14 @@ import os
 import random
 import string
 import numpy as np
+import logging
 
 import matplotlib.pyplot as plt
 from typing import Hashable, Any, AnyStr
 
-from pybnn.utils import AttrDict, logger
+from pybnn.utils import AttrDict
 
+logger = logging.getLogger(__name__)
 fullpath = lambda path: os.path.realpath(os.path.expanduser(os.path.expandvars(path)))
 
 config_top_level_keys = AttrDict()
