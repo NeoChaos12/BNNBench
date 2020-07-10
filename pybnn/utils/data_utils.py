@@ -78,4 +78,4 @@ def data_generator(obj_config: AttrDict) -> (np.ndarray, np.ndarray):
     """
 
     dname = obj_config.name.lower()
-    return _generate_test_splits_from_local_dataset(**dataloader_args[dname])
+    return _generate_test_splits_from_local_dataset(**dataloader_args[dname], splits=obj_config.splits)

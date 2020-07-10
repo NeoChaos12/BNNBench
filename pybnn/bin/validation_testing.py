@@ -27,7 +27,6 @@ config_top_level_keys = utils.config_top_level_keys
 config = AttrDict()
 
 config.OBJECTIVE_FUNC = None
-config.SPLITS = None
 
 config.model_params = {}
 config.exp_params = globalConfig
@@ -118,7 +117,6 @@ def handle_cli():
 
             # TODO: Fix. Use the params property to display this properly.
             pybnn_logger.info("Final experiment parameters: %s" % config.exp_params)
-
     else:
         pybnn_logger.info("No config file detected, using default parameters.")
         config.model_params = default_model_params
@@ -127,9 +125,8 @@ def handle_cli():
 
 
 def logl(test, pred):
-    std = np.clip(pred[:, -1], a_min=1e-15, a_max=None)
-    # std = np.log(std)
-    mu = pred[:, -2]
+    std = np.clip(pred[1], a_min=1e-15, a_max=None)
+    mu = pred[0]
     loss = norm.logpdf(test[:, -1], loc=mu, scale=std)
     return np.mean(loss)
 
@@ -187,7 +184,7 @@ def perform_experiment():
             # Treat both elements of the tuple as individual numpy arrays
             out = np.concatenate((Xtest, predicted_y[0], predicted_y[1]), axis=1)
 
-        rmse.append(np.sqrt(np.mean(np.power((predicted_y[:, 0] - ytest[:, 0]), 2))))
+        rmse.append(np.mean((predicted_y[0] - ytest[:, 0]) ** 2) ** 0.5)
         ll.append(logl(ytest, predicted_y))
 
         # ------------------------------------If needed, generate visualizations----------------------------------------
@@ -242,8 +239,8 @@ def perform_experiment():
         pybnn_logger.info("Finished conducting experiment on test split %d." % idx)
     pybnn_logger.info("Finished conducting all experiments on the given dataset.")
     pybnn_logger.info("Summary of results:\nRMSE:\t%s\nLog-Likelihood:\t%s\nAverage RMSE and std_error\tAverage "
-                      "Log-likelihood and std_error:\n%f\t%f\t%f\t%f".format(str(rmse), str(ll), np.mean(rmse),
-                                                                             np.std(rmse), np.std(ll)))
+                      "Log-likelihood and std_error:\n%f\t%f\t%f\t%f" % ((str(rmse), str(ll), np.mean(rmse),
+                                                                          np.std(rmse), np.mean(ll), np.std(ll))))
 
 
 if __name__ == '__main__':

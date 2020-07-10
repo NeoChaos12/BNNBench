@@ -188,6 +188,10 @@ def parse_objective(config: dict, out: AttrDict):
     if otype == "dataset":
         _ = dict_fetch(config, "name", critical=True, emessage="The key 'name' was not found while parsing the "
                                                                "configuration for the model objective")
+        splits = config.get("splits", None)
+        if splits is not None:
+            assert len(splits) == 2
+        config["splits"] = splits
         out.OBJECTIVE_FUNC = AttrDict(config)
     elif otype == "toy_1d":
         logger.warn("This interface for specifying toy functions is not recommended and not under active development. "

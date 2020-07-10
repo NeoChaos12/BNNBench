@@ -1,12 +1,15 @@
 {
     "objective_function": {
       "type": "dataset",
-      "name": "boston"
+      "name": "boston",
+      "splits": [0, 1]
     },
     "model_parameters": {
         "num_epochs": 400,
         "batch_size": 32,
         "learning_rate": 0.001,
+        "length_scale": 0.01,
+        "num_confs": 10,
         "normalize_input": true,
         "normalize_output": true,
         "hidden_layer_sizes": [
