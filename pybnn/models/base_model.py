@@ -139,9 +139,8 @@ class BaseModel(object):
             self.model_path = model_path
             self.model_name = model_name
         else:
-            # Read model parameters from configuration object
-            # noinspection PyProtectedMember
-            self.model_params = model_params
+            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
+                               "default values first and then directly set the model_params attribute.")
 
         if kwargs:
             logger.info("Ignoring unknown keyword arguments:\n%s" %
@@ -204,23 +203,11 @@ class BaseModel(object):
         self.fit(X, y)
 
     @abc.abstractmethod
-    def predict(self, X_test):
+    def predict(self, *args, **kwargs):
         """
-        Predicts for a given set of test data points the mean and variance of its target values
-
-        Parameters
-        ----------
-        X_test: np.ndarray (N, D)
-            N Test data points with input dimensions D
-
-        Returns
-        ----------
-        mean: ndarray (N,)
-            Predictive mean of the test data points
-        var: ndarray (N,)
-            Predictive variance of the test data points
+        Predicts the output of a model for some given inputs. To be defined by each model for itself.
         """
-        pass
+        raise NotImplementedError('The function "predict" must be implemented and called by a child class object.')
 
     def _tensorboard_user(func: Callable):
         """
@@ -359,7 +346,7 @@ class BaseModel(object):
                 path = os.path.normpath(os.path.expanduser(os.path.expandvars(path)))
 
             if not os.path.exists(path):
-                logger.warn("Could not verify given path to model directory: %s" % str(path))
+                logger.warning("Could not verify given path to model directory: %s" % str(path))
                 return func(self, path=path, exists=False, **kwargs)
             else:
                 return func(self, path=path, exists=True, **kwargs)

@@ -13,6 +13,8 @@ from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperpara
 from torch.optim.lr_scheduler import StepLR as steplr
 from pybnn.config import globalConfig
 
+from scipy.special import logsumexp
+
 logger = logging.getLogger(__name__)
 
 class MCDropout(MLP):
@@ -21,9 +23,12 @@ class MCDropout(MLP):
     as well as variance as model output.
     """
 
+    # Attributes that are not meant to be modifiable model parameters go here
+    _pdrop = 0.05
+
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
-        "pdrop": 0.5,
+        "pdrop": 0.05,
         # "weight_decay": 0.0,
         "length_scale": 1.0,
         "precision": 1.0,
@@ -51,7 +56,7 @@ class MCDropout(MLP):
         else:
             # Otherwise assume it's a float value common for all hidden layers whereas the input layer has 0 dropout
             # probability.
-            return [0.0] + [self._pdrop] * len(self.hidden_layer_sizes)
+            return [self._pdrop] * (len(self.hidden_layer_sizes) + 1)
 
     @pdrop.setter
     def pdrop(self, pdrop):
@@ -102,10 +107,10 @@ class MCDropout(MLP):
             self.dataset_size = dataset_size
             super(MCDropout, self).__init__(**kwargs)
         else:
-            self.model_params = model_params
+            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
+                               "default values first and then directly set the model_params attribute.")
 
         logger.info("Intialized MC-Dropout model.")
-        logger.debug("Intialized MC-Dropout model parameters:\n%s" % str(self.model_params))
 
     def _generate_network(self):
         logger.debug("Generating NN for MC-Dropout using dropout probability %s" % str(self.pdrop))
@@ -181,7 +186,7 @@ class MCDropout(MLP):
 
         cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
         cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=1.0))
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="learning_rate", lower=1e-6, upper=1e-1, log=True))
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-6, upper=1e-1, log=True))
         confs = cs.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
 
@@ -190,45 +195,45 @@ class MCDropout(MLP):
 
         optim = None
         history = []
-        old_save_flag = globalConfig.save_model
         old_tblog_flag = globalConfig.tblog
-        globalConfig.save_model = False # No point in saving these interim models
         globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
         for idx, conf in enumerate(confs):
             logger.debug("Training configuration #%d" % (idx + 1))
 
-            new_model = MCDropout(model_params=self.model_params)
+            new_model = MCDropout()
+            new_model.model_params = self.model_params
             tau = conf.get("precision")
-            lr = conf.get("learning_rate")
-            logger.debug("Sampled precision value %f and learning rate %f" % (tau, lr))
+            pdrop = conf.get("pdrop")
+            logger.debug("Sampled precision value %f and dropout probability %f" % (tau, pdrop))
 
             new_model.precision = tau
             new_model.num_epochs = self.num_epochs // 10
-            new_model.learning_rate = lr
+            new_model.pdrop = pdrop
             logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
 
             new_model.preprocess_training_data(Xtrain, ytrain)
             new_model.train_network()
             logger.debug("Finished training sample network.")
 
-            new_model.network.eval()
+            new_model.network.train()   # The dropout layers are stochastic only in training mode
             ypred = new_model.network(torch.Tensor(Xval))
             valid_loss = new_model.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
             logger.debug("Generated validation loss %f" % valid_loss)
 
-            if optim is None or valid_loss < optim[2]:
-                optim = (tau, lr, valid_loss)
+            res = (valid_loss, tau, pdrop)
+
+            if optim is None or valid_loss < optim[0]:
+                optim = res
                 logger.debug("Updated optimum precision value to %f and learning rate to %f  with validation loss %f." %
                              optim)
 
-            history.append((tau, lr, valid_loss))
+            history.append(res)
 
         logger.info("Obtained optimal precision value %f and learning rate %f, now training final model." % optim[0:2])
-        globalConfig.save_model = old_save_flag
         globalConfig.tblog = old_tblog_flag
 
-        self.precision = optim[0]
-        self.learning_rate = optim[1]
+        self.precision = optim[1]
+        self.pdrop = optim[2]
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 
@@ -237,27 +242,27 @@ class MCDropout(MLP):
         valid_loss = self.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
         logger.info("Final trained network has validation loss: %f" % valid_loss)
 
+        # TODO: Integrate saving model parameters file here?
+        if globalConfig.save_model:
+            self.save_network()
+
         return self.precision, valid_loss, history
 
-    def predict(self, X_test, nsamples=1000):
+    def predict_mc(self, X_test, nsamples=1000):
         r"""
-        Returns the predictive mean and variance of the objective function at
-        the given test points.
+        Performs nsamples stochastic passes over the trained model and returns the predictions.
 
         Parameters
         ----------
         X_test: np.ndarray (N, D)
             N input test points
         nsamples: int
-            Number of samples to generate for each test point
+            Number of stochastic forward passes to use for generating the MC-Dropout predictions.
 
         Returns
         ----------
-        np.array(N,)
-            predictive mean
-        np.array(N,)
-            predictive variance
-
+        np.array(nsamples, N)
+            Model predictions for each stochastic forward pass
         """
         # Normalize inputs
         if self.normalize_input:
@@ -269,7 +274,6 @@ class MCDropout(MLP):
 
         # Keep dropout on for MC-Dropout predictions
         # Sample a number of predictions for each given point
-        # Generate mean and variance for each given point from sampled predictions
 
         self.network.train()
 
@@ -285,10 +289,64 @@ class MCDropout(MLP):
 
         logger.debug("Generated final outputs array of shape %s" % str(Yt_hat.shape))
 
-        mean = np.mean(Yt_hat, axis=0)
-        variance = np.var(Yt_hat, axis=0) + 1 / self.precision
+        return Yt_hat
 
-        logger.debug("Generated final mean values of shape %s" % str(mean.shape))
-        logger.debug("Generated final variance values of shape %s" % str(variance.shape))
+    predict = predict_mc
 
-        return mean, variance
+    def predict_standard(self, X_test):
+        """
+        Generates a model prediction for the given input features X_test for the standard (non-MC) version of Dropout.
+        :param X_test: (N,d)
+            Array of input features
+        :return: (N,)
+            Array of predictions
+        """
+        # Normalize inputs
+        if self.normalize_input:
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
+
+        X_ = torch.Tensor(X_)
+
+        self.network.eval()
+        standard_pred = self.network(X_).data.cpu().numpy()
+
+        if self.normalize_output:
+            standard_pred = zero_mean_unit_var_denormalization(standard_pred, self.y_mean, self.y_std)
+
+        return standard_pred
+
+    def evaluate_gal(self, X_test, y_test, nsamples=1000):
+        """
+        Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE of the
+        standard dropout prediction and the RMSE and Log-Likelihood of the MC-Dropout prediction.
+        :param X_test: (N, d)
+            Array of input features.
+        :param y_test: (N, 1)
+            Array of expected output values.
+        :param nsamples: int
+            Number of stochastic forward passes to use for generating the MC-Dropout predictions.
+        :return: standard_rmse, mc_rmse, log_likelihood
+        """
+        standard_pred = self.predict_standard(X_test)
+        standard_rmse = np.mean((standard_pred - y_test) ** 2) ** 0.5
+
+        mc_pred = self.predict_mc(X_test=X_test, nsamples=nsamples)
+        mc_mean = np.mean(mc_pred, axis=0)
+        logger.debug("Generated final mean values of shape %s" % str(mc_mean.shape))
+        # logger.debug("Generated final variance values of shape %s" % str(variance.shape))
+
+        if not isinstance(y_test, np.ndarray):
+            y_test = np.array(y_test)
+
+        mc_rmse = np.mean((mc_mean.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+
+        if len(y_test.shape) == 1:
+            y_test = y_test[:, None]
+
+        ll = logsumexp(-0.5 * self.precision * (mc_pred - y_test) ** 2., axis=0) - np.log(nsamples) - 0.5 * \
+             np.log(2 * np.pi) + 0.5 * np.log(self.precision)
+        ll = np.mean(ll)
+
+        return standard_rmse, mc_rmse, ll

@@ -13,12 +13,11 @@ except:
 import pybnn.utils.data_utils
 from pybnn.models import model_types
 from pybnn.config import globalConfig
-from pybnn import logger as pybnn_logger
 from pybnn.utils.attrDict import AttrDict
 import pybnn.utils.universal_utils as utils
+import logging
 
-from scipy.stats import norm
-
+logger = logging.getLogger('pybnn')
 config_top_level_keys = utils.config_top_level_keys
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -78,31 +77,31 @@ def handle_cli():
     default_model_params = model_types[mtype]._default_model_params._asdict()
 
     if args.config is not None:
-        pybnn_logger.info("--config flag detected.")
+        logger.info("--config flag detected.")
         config_file_path = utils.standard_pathcheck(args.config)
         with open(config_file_path, 'r') as fp:
             json_config = json.load(fp)
 
         if config_top_level_keys.obj_func in json_config:
-            pybnn_logger.debug("Attempting to fetch objective function %s" %
-                               json_config[config_top_level_keys.obj_func])
+            logger.debug("Attempting to fetch objective function %s" %
+                         json_config[config_top_level_keys.obj_func])
             if isinstance(json_config[config_top_level_keys.obj_func], dict):
                 utils.parse_objective(config=json_config[config_top_level_keys.obj_func], out=config)
             else:
                 raise RuntimeError("This script is intended for use with datasets only and thus requires the dataset "
                                    "to be specified as a dict in the JSON config file.")
-            pybnn_logger.info("Fetched objective.")
+            logger.info("Fetched objective.")
 
         if config_top_level_keys.mparams in json_config:
             json_model_params = json_config[config_top_level_keys.mparams]
-            pybnn_logger.info("Using model parameters provided by config file.")
+            logger.info("Using model parameters provided by config file.")
             for key, val in default_model_params.items():
                 config.model_params[key] = val if json_model_params.get(key, None) is None else \
                     json_model_params[key]
-            pybnn_logger.info("Final model parameters: %s" % config.model_params)
+            logger.info("Final model parameters: %s" % config.model_params)
 
         if config_top_level_keys.eparams in json_config:
-            pybnn_logger.info("Using experiment parameters provided by config file.")
+            logger.info("Using experiment parameters provided by config file.")
             json_exp_params = json_config[config_top_level_keys.eparams]
 
             for key in globalConfig.cli_arguments:
@@ -116,19 +115,12 @@ def handle_cli():
                     setattr(config.exp_params, key, jsonval)
 
             # TODO: Fix. Use the params property to display this properly.
-            pybnn_logger.info("Final experiment parameters: %s" % config.exp_params)
+            logger.info("Final experiment parameters: %s" % config.exp_params)
     else:
-        pybnn_logger.info("No config file detected, using default parameters.")
+        logger.info("No config file detected, using default parameters.")
         config.model_params = default_model_params
 
-    pybnn_logger.info("Finished reading command line arguments.")
-
-
-def logl(test, pred):
-    std = np.clip(pred[1], a_min=1e-15, a_max=None)
-    mu = pred[0]
-    loss = norm.logpdf(test[:, -1], loc=mu, scale=std)
-    return np.mean(loss)
+    logger.info("Finished reading command line arguments.")
 
 
 def perform_experiment():
@@ -139,85 +131,54 @@ def perform_experiment():
     else:
         raise RuntimeError("This script does not support the old-style interface for specifying 1D toy functions.")
 
-    pybnn_logger.debug("Finished generating dataset splits.")
+    logger.debug("Finished generating dataset splits.")
 
-    rmse, ll = [], []
+    analytics = []
+    exp_results_file = ''
     for idx, (Xtrain, ytrain, Xtest, ytest) in enumerate(data_splits):
 
-        pybnn_logger.info("Now conducting experiment on test split %d." % idx)
+        logger.info("Now conducting experiment on test split %d." % idx)
 
         Xtrain = Xtrain[:, None] if len(Xtrain.shape) == 1 else Xtrain
         ytrain = ytrain[:, None] if len(ytrain.shape) == 1 else ytrain
         Xtest = Xtest[:, None] if len(Xtest.shape) == 1 else Xtest
         ytest = ytest[:, None] if len(ytest.shape) == 1 else ytest
-        pybnn_logger.debug("Loaded split with training X, y of shapes %s, %s and test X, y of shapes %s, %s" %
-                           (Xtrain.shape, ytrain.shape, Xtest.shape, ytest.shape))
+        logger.debug("Loaded split with training X, y of shapes %s, %s and test X, y of shapes %s, %s" %
+                     (Xtrain.shape, ytrain.shape, Xtest.shape, ytest.shape))
 
         config.model_params["dataset_size"] = Xtrain.shape[0] + Xtest.shape[0]
 
         # ---------------------------------------------Generate model---------------------------------------------------
 
-        model = config.mtype(model_params=config.model_params)
+        model = config.mtype(**config.model_params)
         # if config.exp_params['tbdir'] is None:
         if config.exp_params.tbdir in [None, '']:
             config.exp_params.tbdir = model.modeldir
-            pybnn_logger.info("Tensorboard directory set to: %s" % (config.exp_params.tbdir))
+            logger.info("Tensorboard directory set to: %s" % (config.exp_params.tbdir))
         globalConfig.params = config.exp_params
 
         rng: np.random.RandomState = model.rng
         mean_only = True if config.mtype is model_types.mlp else False
 
-        pybnn_logger.info("Saving new model to: %s" % config.model_params["model_path"])
+        logger.info("Saving new model to: %s" % config.model_params["model_path"])
 
         # -----------------------------------------------Let it roll----------------------------------------------------
 
         model.fit(Xtrain, ytrain)
 
-        predicted_y = model.predict(Xtest)
+        analytics.append(model.evaluate_gal(Xtest, ytest, nsamples=10000))
         savedir = utils.ensure_path_exists(model.modeldir)
 
-        if mean_only:
-            # out = np.zeros((Xtest.shape[0], Xtest.shape[1] + 1))
-            out = np.concatenate((Xtest, predicted_y), axis=1)
-        else:
-            # Assume the model predicted means and variances, returned as a tuple
-            # Treat both elements of the tuple as individual numpy arrays
-            out = np.concatenate((Xtest, predicted_y[0], predicted_y[1]), axis=1)
-
-        rmse.append(np.mean((predicted_y[0] - ytest[:, 0]) ** 2) ** 0.5)
-        ll.append(logl(ytest, predicted_y))
-
-        # ------------------------------------If needed, generate visualizations----------------------------------------
-
-        pybnn_logger.info("Saving model performance results in %s " % savedir)
-
-        if config.plotdata:
-            from pybnn.utils.universal_utils import simple_plotter
-            import matplotlib.pyplot as plt
-            traindata = np.concatenate((Xtrain, ytrain), axis=1)
-            testdata = np.concatenate((Xtest, ytest), axis=1)
-            pybnn_logger.info("Displaying:\nTraining data of shape %s \nTest data of shape %s\n"
-                              "Prediction data of shape %s" % (traindata.shape, testdata.shape, out.shape))
-            _ = simple_plotter(
-                pred=out,
-                train=traindata,
-                test=testdata,
-                plot_variances=not mean_only
-            )
-            plt.show()
-
         # -----------------------------------------------Save results---------------------------------------------------
-
-        np.save(file=os.path.join(savedir, 'trainset'), arr=np.concatenate((Xtrain, ytrain), axis=1), allow_pickle=True)
-        np.save(file=os.path.join(savedir, 'testset'), arr=np.concatenate((Xtest, ytest), axis=1), allow_pickle=True)
-        np.save(file=os.path.join(savedir, 'test_predictions'), arr=out, allow_pickle=True)
 
         utils.make_model_params_json_compatible(model.model_params._asdict())
 
         # TODO: Remove this function
         # utils.make_exp_params_json_compatible(config.exp_params)
+        model_objective = config.OBJECTIVE_FUNC
+        model_objective.splits = (idx, idx + 1)
         jdict = {
-            config_top_level_keys.obj_func: str(config.OBJECTIVE_FUNC),
+            config_top_level_keys.obj_func: str(model_objective),
             config_top_level_keys.mparams: config.model_params,
             config_top_level_keys.eparams: config.exp_params.to_cli()
         }
@@ -228,6 +189,9 @@ def perform_experiment():
             except TypeError as e:
                 print("Could not write configuration file for config:\n%s" % jdict)
 
+        if idx == 0:
+            exp_results_file = os.path.normpath(os.path.join(savedir, '..', 'exp_results'))
+
         print("Finished experiment.")
 
         if config.summarize:
@@ -236,11 +200,12 @@ def perform_experiment():
             summary(model.network, input_size=(model.batch_size, model.input_dims))
 
         del model
-        pybnn_logger.info("Finished conducting experiment on test split %d." % idx)
-    pybnn_logger.info("Finished conducting all experiments on the given dataset.")
-    pybnn_logger.info("Summary of results:\nRMSE:\t%s\nLog-Likelihood:\t%s\nAverage RMSE and std_error\tAverage "
-                      "Log-likelihood and std_error:\n%f\t%f\t%f\t%f" % ((str(rmse), str(ll), np.mean(rmse),
-                                                                          np.std(rmse), np.mean(ll), np.std(ll))))
+        logger.info("Finished conducting experiment on test split %d." % idx)
+
+    with open(exp_results_file, 'a') as fp:
+        json.dump(analytics, fp, indent=4)
+
+    logger.info("Finished conducting all experiments on the given dataset.")
 
 
 if __name__ == '__main__':

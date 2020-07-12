@@ -19,16 +19,17 @@ class MLP(BaseModel):
     Simple Multi-Layer Perceptron model. Demonstrates usage of BaseModel as well as the FC Layer generator above.
     """
 
+    # Attributes that are not meant to be modifiable model parameters go here
     MODEL_FILE_IDENTIFIER = "model"
     tb_writer: globalConfig.tb_writer
     output_dims = 1  # Currently, there is no support for any value except 1
 
-    # Add any new parameters needed exclusively by this model here
+    # Add any new configurable model parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
         # "input_dims": 1,  # Inferred during training from X.shape[1]
-        "loss_func": torch.nn.functional.mse_loss,
-        "optimizer": optim.Adam,
+        # "loss_func": torch.nn.functional.mse_loss,
+        # "optimizer": optim.Adam,
         "num_confs": 30
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
@@ -51,8 +52,8 @@ class MLP(BaseModel):
 
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
-                 loss_func=_default_model_params.loss_func,
-                 optimizer=_default_model_params.optimizer,
+                 # loss_func=_default_model_params.loss_func,
+                 # optimizer=_default_model_params.optimizer,
                  num_confs=_default_model_params.num_confs, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
@@ -82,21 +83,22 @@ class MLP(BaseModel):
             # Read this model's unique parameters from arguments
             self.hidden_layer_sizes = hidden_layer_sizes
             # TODO: Implement configurable loss function and optimizer
-            self.loss_func = loss_func
-            self.optimizer = optimizer
+            # self.loss_func = loss_func
+            # self.optimizer = optimizer
             self.num_confs = num_confs
             # Pass on the remaining keyword arguments to the super class to deal with.
             super(MLP, self).__init__(**kwargs)
         else:
-            # Read model parameters from configuration object
-            self.model_params = model_params
+            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
+                               "default values first and then directly set the model_params attribute.")
 
         if kwargs:
             logger.info("Ignoring unused keyword arguments:\n%s" %
                         '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
 
+        self.loss_func = torch.nn.functional.mse_loss
+        self.optimizer = optim.Adam
         logger.info("Initialized MLP model.")
-        logger.debug("Initialized MLP Model parameters %s" % str(self.model_params))
 
     def _generate_network(self):
         """
@@ -275,9 +277,6 @@ class MLP(BaseModel):
                                             title="Layer biases")
             self.tb_writer.add_figure(tag="Layer biases", figure=fig)
 
-        if globalConfig.save_model:
-            self.save_network()
-
         return
 
     def fit(self, X, y):
@@ -341,7 +340,7 @@ class MLP(BaseModel):
     @BaseModel._check_model_path
     def save_network(self, **kwargs):
         path = kwargs['path']
-        exists = kwargs.get('path')
+        exists = kwargs.get('exists')
         savepath = os.path.join(path, self.MODEL_FILE_IDENTIFIER)
         logger.info("Saving model to %s" % str(path))
         if not exists:
