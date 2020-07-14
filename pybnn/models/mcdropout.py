@@ -185,6 +185,7 @@ class MCDropout(MLP):
         logger.info("Fitting MC-Dropout model to the given data.")
 
         cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
+        # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
         cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=1.0))
         cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-6, upper=1e-1, log=True))
         confs = cs.sample_configuration(self.num_confs)

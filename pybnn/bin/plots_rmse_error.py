@@ -1,8 +1,9 @@
 #!/usr/bin/python
 import matplotlib.pyplot as plt
 import numpy as np
-import argparse
+import argparse, json
 import os
+from pathlib import Path
 from scipy.stats import norm
 
 try:
@@ -21,64 +22,36 @@ def get_commandline_args():
     parser.add_argument('--has_std', action='store_true', default=False,
                         help='If given, assumes that the data contains standard deviation values in addition to mean '
                              'values.')
+    parser.add_argument('--datasets', action='store', type=str, required=False, default=None,
+                        help='A file containing one dataset name per line. The origin directory will be crawled '
+                             'looking for folder with the same names as these datasets. If not given, all subfolders '
+                             'will be crawled.')
     return parser.parse_args()
-
-
-def get_data_from_dir(dir):
-    path = dir.path
-    testset = None
-    predictions = None
-    with open(os.path.join(path, 'testset.npy'), 'rb') as fp:
-        testset = np.load(fp, allow_pickle=True)
-
-    with open(os.path.join(path, 'test_predictions.npy'), 'rb') as fp:
-        predictions = np.load(fp, allow_pickle=True)
-
-    return testset, predictions
-
-
-def get_rmse(test, pred):
-    return np.mean((pred - test) ** 2) ** 0.5
-
-
-def get_ll(test, pred):
-    std = np.clip(pred[:, -1], a_min=1e-15, a_max=None)
-    # std = np.log(std)
-    mu = pred[:, -2]
-    loss = norm.logpdf(test[:, -1], loc=mu, scale=std)
-    return np.mean(loss)
-
 
 def main():
     args = get_commandline_args()
-    root_dir = utils.standard_pathcheck(args.origin)
+    root_dir = Path(utils.standard_pathcheck(args.origin))
     print(f"Scanning {root_dir} for datasets.")
+
+    datasets = args.datasets
+    if datasets is not None:
+        with open(Path(datasets)) as fp:
+            datasets = [l for l in fp]
+
+    print(f"Dataset\t\tAverage RMSE\tVariance\t\tAverage Log-likelihood\tVariance")
     subdirs = os.scandir(root_dir)
-    testset = None
-    predictions = None
-    N = 0
-    rmse = 0.0
-    ll = 0.0
     for dir in subdirs:
+        if datasets is not None and dir.name not in datasets:
+            continue
         print(f"Scanning {dir.name}.")
         if dir.is_dir():
-            testset, predictions = get_data_from_dir(dir)
+            with open(Path(dir.path) / "data" / "exp_results") as fp:
+                res_data = np.array(json.load(fp))
         else:
             continue
-        assert testset.shape[0] == predictions.shape[0]
-        assert np.allclose(testset[:, 0], predictions[:, 0])
-        print(f"Found dataset with {predictions.shape[0]} items.")
-        if args.has_std:
-            rmse += get_rmse(testset[:, -2], predictions[:, -2])
-            ll += get_ll(testset, predictions)
-        else:
-            rmse += get_rmse(testset[:, -1], predictions[:, -1])
-        N += 1
 
-    rmse /= N
-    ll /= N
-    print(f"Over {N} datasets, an average RMSE of {rmse} and an average LL of {ll} was observed.")
-
+        means, vars = np.mean(res_data, axis=0), np.var(res_data, axis=0)
+        print(f"{dir.name}\t\t{means[1]:0.3f}\t{vars[1]:0.3f}\t\t{means[2]:0.3f}\t\t{vars[2]:0.3f}")
 
 
 if __name__ == '__main__':
