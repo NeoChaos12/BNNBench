@@ -181,12 +181,18 @@ class MCDropout(MLP):
         :return: tuple (optimal precision, final validation loss, history)
         """
         from sklearn.model_selection import train_test_split
+        from math import log10, floor
 
         logger.info("Fitting MC-Dropout model to the given data.")
 
         cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=0.0, upper=1.0))
+
+        inv_std_y = np.std(y)   # Assume y is 1-D
+        tau_range_lower = int(floor(log10(inv_std_y * 0.5))) - 1
+        tau_range_upper = int(floor(log10(inv_std_y * 2))) + 1
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
+                                                         upper=10 ** tau_range_upper))
         cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-6, upper=1e-1, log=True))
         confs = cs.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
