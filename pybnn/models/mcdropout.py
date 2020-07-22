@@ -131,7 +131,8 @@ class MCDropout(MLP):
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"Dropout{layer_idx}", nn.Dropout(p=pdrop.__next__())))
             layers.append((f"FC{layer_idx}", fclayer))
-            layers.append((f"Tanh{layer_idx}", nn.Tanh()))
+            # layers.append((f"Tanh{layer_idx}", nn.Tanh()))
+            layers.append((f"ReLU{layer_idx}", nn.ReLU()))
             # The non-linearity layer demarcates one weight decay parameter group
             layer_params = [l[1].parameters() for l in layers[-3:]]
             self.weight_decay_param_groups.append(chain(*layer_params))
@@ -171,7 +172,8 @@ class MCDropout(MLP):
 
     def fit(self, X, y, return_history=True):
         """
-        Fits this model to the given data and returns the corresponding optimum precision value.
+        Fits this model to the given data and returns the corresponding optimum precision value, final validation loss
+        and hyperparameter fitting history.
         Generates a  validation set, generates num_confs random values for precision, and for each configuration,
         generates a weight decay value which in turn is used to train a network. The precision value with the minimum
         validation loss is returned.
@@ -231,12 +233,13 @@ class MCDropout(MLP):
 
             if optim is None or valid_loss < optim[0]:
                 optim = res
-                logger.debug("Updated optimum precision value to %f and learning rate to %f  with validation loss %f." %
+                logger.debug("Updated validation loss %f, optimum precision value %f and dropout probability to %f" %
                              optim)
 
             history.append(res)
 
-        logger.info("Obtained optimal precision value %f and learning rate %f, now training final model." % optim[0:2])
+        logger.info("Obtained optimal precision value %f and dropout probability %f, now training final model." %
+                    optim[1:])
         globalConfig.tblog = old_tblog_flag
 
         self.precision = optim[1]
