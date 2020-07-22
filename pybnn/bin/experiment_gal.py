@@ -171,7 +171,8 @@ def perform_experiment():
 
         # -----------------------------------------------Save results---------------------------------------------------
 
-        utils.make_model_params_json_compatible(model.model_params._asdict())
+        save_model_params = model.model_params._asdict()
+        utils.make_model_params_json_compatible(save_model_params)
 
         # TODO: Remove this function
         # utils.make_exp_params_json_compatible(config.exp_params)
@@ -179,7 +180,7 @@ def perform_experiment():
         model_objective.splits = (idx, idx + 1)
         jdict = {
             config_top_level_keys.obj_func: str(model_objective),
-            config_top_level_keys.mparams: config.model_params,
+            config_top_level_keys.mparams: save_model_params,
             config_top_level_keys.eparams: config.exp_params.to_cli()
         }
 
