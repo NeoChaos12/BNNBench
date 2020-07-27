@@ -13,6 +13,7 @@ def get_commandline_args():
                         help='A file containing one dataset name per line. The origin directory will be crawled '
                              'looking for folder with the same names as these datasets. If not given, all subfolders '
                              'will be crawled.')
+    parser.add_argument('--suffix', type=str, default='', help='A suffix to identify exp_results{suffix} files. Empty by default.')
     return parser.parse_args()
 
 
@@ -33,13 +34,19 @@ def main():
             # print(f"Skipping {dir.name}")
             continue
         if dir.is_dir():
-            with open(Path(dir.path) / "data" / "exp_results") as fp:
-                res_data = np.array(json.load(fp))
+            try:
+                with open(Path(dir.path) / "summarized_results" / f"exp_results{args.suffix}") as fp:
+                    res_data = np.array(json.load(fp))
+            except FileNotFoundError:
+                continue
         else:
             continue
 
-        means, vars = np.mean(res_data, axis=0), np.var(res_data, axis=0)
-        print(f"{dir.name}\t\t{means[1]:0.3f}\t{vars[1]:0.3f}\t\t{means[2]:0.3f}\t\t{vars[2]:0.3f}")
+        means, stds = np.mean(res_data, axis=0), np.std(res_data, axis=0)
+        print(f"{dir.name}\t\t{means[1]:0.3f}\t{stds[1]:0.3f}\t\t{means[2]:0.3f}\t\t{stds[2]:0.3f}")
+        del means
+        del stds
+        del res_data
 
 
 if __name__ == '__main__':
