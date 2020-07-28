@@ -146,7 +146,7 @@ class MCBatchNorm(MLP):
         tau_range_lower = int(floor(log10(inv_std_y * 0.5))) - 1
         tau_range_upper = int(floor(log10(inv_std_y * 2))) + 1
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="batch_size", lower=5, upper=10))
-        cs.add_hyperparameter(UniformIntegerHyperparameter(name="weight_decay", lower=-1, upper=-15))
+        cs.add_hyperparameter(UniformIntegerHyperparameter(name="weight_decay", lower=-15, upper=-1))
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="num_epochs", lower=5, upper=20))
         cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
                                                          upper=10 ** tau_range_upper))
@@ -326,7 +326,7 @@ class MCBatchNorm(MLP):
         ll = np.mean(ll)
         ll_variance = np.var(ll)
 
-        logger.debug("Model generated final MC-RMSE %f and LL %f." % (self.precision, mc_rmse, ll))
+        logger.debug("Model generated final MC-RMSE %f and LL %f." % (mc_rmse, ll))
 
         self.analytics_headers = ('MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
         return mc_rmse, ll, ll_variance
