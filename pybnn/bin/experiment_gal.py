@@ -45,6 +45,8 @@ def handle_cli():
     parser.add_argument('--config', type=str, default=None,
                         help='Filename of JSON file containing experiment configuration. If not provided, default '
                              'configurations are used.')
+    parser.add_argument('--nsamples', type=int, default=10000,
+                        help='Number of stochastic samples to use for MC-Sampling of the final trained models.')
 
     for argument, helptext in globalConfig.cli_arguments.items():
         argname = '--' + argument
@@ -166,7 +168,7 @@ def perform_experiment():
 
         model.fit(Xtrain, ytrain)
 
-        analytics.append(model.evaluate_gal(Xtest, ytest, nsamples=10000))
+        analytics.append(model.evaluate(Xtest, ytest, nsamples=10000))
         savedir = utils.ensure_path_exists(model.modeldir)
 
         # -----------------------------------------------Save results---------------------------------------------------
@@ -191,6 +193,9 @@ def perform_experiment():
                 print("Could not write configuration file for config:\n%s" % jdict)
 
         if idx == 0:
+            assert len(model.analytics_headers) == len(analytics[-1]), "The model analytics headers don't correspond " \
+                                                                       "to the generated analytics."
+            analytics.insert(0, model.analytics_headers)
             exp_results_file = os.path.normpath(os.path.join(savedir, '..', 'exp_results'))
 
         print("Finished experiment.")

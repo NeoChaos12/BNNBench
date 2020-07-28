@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from itertools import chain
-from typing import Iterable
+from typing import Iterable, Union, Any
 import logging
 
 from pybnn.models.mlp import MLP
@@ -16,6 +16,7 @@ from pybnn.config import globalConfig
 from scipy.special import logsumexp
 
 logger = logging.getLogger(__name__)
+
 
 class MCDropout(MLP):
     r"""
@@ -190,7 +191,7 @@ class MCDropout(MLP):
         cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
-        inv_std_y = np.std(y)   # Assume y is 1-D
+        inv_std_y = np.std(y)  # Assume y is 1-D
         tau_range_lower = int(floor(log10(inv_std_y * 0.5))) - 1
         tau_range_upper = int(floor(log10(inv_std_y * 2))) + 1
         cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
@@ -224,7 +225,7 @@ class MCDropout(MLP):
             new_model.train_network()
             logger.debug("Finished training sample network.")
 
-            new_model.network.train()   # The dropout layers are stochastic only in training mode
+            new_model.network.train()  # The dropout layers are stochastic only in training mode
             ypred = new_model.network(torch.Tensor(Xval))
             valid_loss = new_model.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
             logger.debug("Generated validation loss %f" % valid_loss)
@@ -256,9 +257,10 @@ class MCDropout(MLP):
         if globalConfig.save_model:
             self.save_network()
 
-        return self.precision, valid_loss, history
+        return ((valid_loss, self.precision, self.pdrop), history) if return_history else \
+            (valid_loss, self.precision, self.pdrop)
 
-    def predict_mc(self, X_test, nsamples=1000):
+    def _predict_mc(self, X_test, nsamples=1000):
         r"""
         Performs nsamples stochastic passes over the trained model and returns the predictions.
 
@@ -301,9 +303,27 @@ class MCDropout(MLP):
 
         return Yt_hat
 
-    predict = predict_mc
+    def predict(self, **kwargs):
+        """
+        Given a set of input data features and the number of samples, returns the corresponding predictive means and
+        variances.
+        :param X_test: Union[numpy.ndarray, torch.Tensor]
+            The input feature points of shape [N, d] where N is the number of data points and d is the number of
+            features.
+        :param nsamples: int
+            The number of stochastic forward to sample on.
+        :return: means, variances
+            Two NumPy arrays of shape [N, 1].
+        """
+        X_test = kwargs["X_test"]
+        nsamples = kwargs["nsamples"]
+        mc_pred = self._predict_mc(X_test=X_test, nsamples=nsamples)
+        mean = np.mean(mc_pred, axis=0)
+        var = (1 / self.precision) + np.var(mc_pred, axis=0)
+        return mean, var
 
-    def predict_standard(self, X_test):
+
+    def _predict_standard(self, X_test):
         """
         Generates a model prediction for the given input features X_test for the standard (non-MC) version of Dropout.
         :param X_test: (N,d)
@@ -327,7 +347,7 @@ class MCDropout(MLP):
 
         return standard_pred
 
-    def evaluate_gal(self, X_test, y_test, nsamples=1000):
+    def evaluate(self, X_test, y_test, nsamples=1000):
         """
         Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE of the
         standard dropout prediction and the RMSE and Log-Likelihood of the MC-Dropout prediction.
@@ -339,11 +359,11 @@ class MCDropout(MLP):
             Number of stochastic forward passes to use for generating the MC-Dropout predictions.
         :return: standard_rmse, mc_rmse, log_likelihood
         """
-        standard_pred = self.predict_standard(X_test)
-        standard_rmse = np.mean((standard_pred - y_test) ** 2) ** 0.5
+        # standard_pred = self._predict_standard(X_test)
+        # standard_rmse = np.mean((standard_pred - y_test) ** 2) ** 0.5
 
-        mc_pred = self.predict_mc(X_test=X_test, nsamples=nsamples)
-        mc_mean = np.mean(mc_pred, axis=0)
+        # mc_pred = self._predict_mc(X_test=X_test, nsamples=nsamples)
+        mc_mean, mc_var = self.predict(X_test=X_test, nsamples=nsamples)
         logger.debug("Generated final mean values of shape %s" % str(mc_mean.shape))
         # logger.debug("Generated final variance values of shape %s" % str(variance.shape))
 
@@ -355,8 +375,19 @@ class MCDropout(MLP):
         if len(y_test.shape) == 1:
             y_test = y_test[:, None]
 
-        ll = logsumexp(-0.5 * self.precision * (mc_pred - y_test) ** 2., axis=0) - np.log(nsamples) - 0.5 * \
-             np.log(2 * np.pi) + 0.5 * np.log(self.precision)
-        ll = np.mean(ll)
+        # It simply makes more sense to clip probabilities rather than the powers of the exponent terms. Therefore, it
+        # is better to switch to the standard LL formula using predictive mean and variance.
 
-        return standard_rmse, mc_rmse, ll
+        # ll = logsumexp(np.clip(-0.5 * self.precision * (mc_pred - y_test) ** 2., a_min=-1e2, a_max=None), axis=0) - \
+        #      np.log(nsamples) - 0.5 * np.log(2 * np.pi) + 0.5 * np.log(self.precision)
+
+        ll = -0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var))
+        ll = np.mean(ll)
+        ll_variance = np.var(ll)
+
+        logger.debug("Model with precision %f generated final MC-RMSE %f and LL %f." % (self.precision, mc_rmse, ll))
+
+        # self.analytics_headers = ('Standard RMSE', 'MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
+        # return standard_rmse, mc_rmse, ll, ll_variance
+        self.analytics_headers = ('MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
+        return mc_rmse, ll, ll_variance

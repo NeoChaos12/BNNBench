@@ -203,7 +203,7 @@ class BaseModel(object):
         self.fit(X, y)
 
     @abc.abstractmethod
-    def predict(self, *args, **kwargs):
+    def predict(self, **kwargs):
         """
         Predicts the output of a model for some given inputs. To be defined by each model for itself.
         """
