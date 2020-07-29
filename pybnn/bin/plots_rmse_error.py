@@ -1,5 +1,6 @@
 #!/usr/bin/python
-import numpy as np
+# import numpy as np
+import pandas as pd
 import argparse, json
 import os
 from pathlib import Path
@@ -36,14 +37,20 @@ def main():
         if dir.is_dir():
             try:
                 with open(Path(dir.path) / "summarized_results" / f"exp_results{args.suffix}") as fp:
-                    res_data = np.array(json.load(fp))
+                    # res_data = np.array(json.load(fp))
+                    res_data = json.load(fp)
             except FileNotFoundError:
                 continue
         else:
             continue
 
-        means, stds = np.mean(res_data, axis=0), np.std(res_data, axis=0)
-        print(f"{dir.name}\t\t{means[1]:0.3f}\t{stds[1]:0.3f}\t\t{means[2]:0.3f}\t\t{stds[2]:0.3f}")
+        headers = res_data[0]
+        data = res_data[1:]
+        df = pd.DataFrame(data=data, index=range(len(data)), columns=headers)
+        # means, stds = np.mean(res_data, axis=0), np.std(res_data, axis=0)
+        means, stds = df.mean().values.tolist(), df.std().values.tolist()
+        # print(f"Means: {means}\nSTDs: {stds}")
+        print(f"{dir.name}\t\t{means[0]:0.3f}\t{stds[0]:0.3f}\t\t{means[1]:0.3f}\t\t{stds[1]:0.3f}")
         del means
         del stds
         del res_data

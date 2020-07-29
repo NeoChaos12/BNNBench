@@ -147,7 +147,7 @@ class MCBatchNorm(MLP):
         tau_range_upper = int(floor(log10(inv_std_y * 2))) + 1
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="batch_size", lower=5, upper=10))
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="weight_decay", lower=-15, upper=-1))
-        cs.add_hyperparameter(UniformIntegerHyperparameter(name="num_epochs", lower=5, upper=20))
+        # cs.add_hyperparameter(UniformIntegerHyperparameter(name="num_epochs", lower=5, upper=20))
         cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
                                                          upper=10 ** tau_range_upper))
         confs = cs.sample_configuration(self.num_confs)
@@ -168,7 +168,8 @@ class MCBatchNorm(MLP):
             new_model.model_params = self.model_params
             batch_size = 2 ** conf.get("batch_size")
             weight_decay = 10 ** conf.get("weight_decay")
-            num_epochs = 100 * conf.get("num_epochs")
+            # num_epochs = 100 * conf.get("num_epochs")
+            num_epochs = self.num_epochs // 10
             precision = conf.get("precision")
             logger.debug("Sampled configuration %s" % conf)
 
@@ -184,20 +185,20 @@ class MCBatchNorm(MLP):
             ypred = np.mean(new_model._predict_mc(Xval, nsamples=500), axis=0)
             valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
 
-            res = (valid_loss, batch_size, weight_decay, num_epochs, precision)
+            # res = (valid_loss, batch_size, weight_decay, num_epochs, precision)
+            res = (valid_loss, batch_size, weight_decay, precision)
 
             if optim is None or valid_loss < optim[0]:
                 optim = res
-                logger.debug("Found new minimum validation loss %f at batch size %d, weight decay %f, number of epochs "
-                             "%d and precision %f." % optim)
+                logger.debug("Updated optimum to: %s." % str(optim))
 
             history.append(res)
 
-        logger.info("Found minimum validation loss %f at batch size %d, weight decay %f, number of epochs %d and "
-                    "precision %f." % optim)
+        logger.info("Found optimizing configuration %s." % str(optim))
         globalConfig.tblog = old_tblog_flag
 
-        _, self.batch_size, self.weight_decay, self.num_epochs, self.precision = optim
+        # _, self.batch_size, self.weight_decay, self.num_epochs, self.precision = optim
+        _, self.batch_size, self.weight_decay, self.precision = optim
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 

@@ -208,7 +208,7 @@ def perform_experiment():
         del model
         logger.info("Finished conducting experiment on test split %d." % idx)
 
-    with open(exp_results_file, 'a') as fp:
+    with open(exp_results_file, 'w') as fp:
         json.dump(analytics, fp, indent=4)
 
     logger.info("Finished conducting all experiments on the given dataset.")
