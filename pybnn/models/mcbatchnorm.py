@@ -323,11 +323,15 @@ class MCBatchNorm(MLP):
         if len(y_test.shape) == 1:
             y_test = y_test[:, None]
 
-        ll = -0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var))
-        ll = np.mean(ll)
+        # ll = -0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var))
+
+        # Clip at prob: 1e-4 => clip log of prob at: ln(1e-4) ~= -4
+        ll = np.clip(-0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var)),
+                     a_min=-4., a_max=None)
+        ll_mean = np.mean(ll)
         ll_variance = np.var(ll)
 
-        logger.debug("Model generated final MC-RMSE %f and LL %f." % (mc_rmse, ll))
+        logger.debug("Model generated final MC-RMSE %f and LL %f." % (mc_rmse, ll_mean))
 
         self.analytics_headers = ('MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
-        return mc_rmse, ll, ll_variance
+        return mc_rmse, ll_mean, ll_variance
