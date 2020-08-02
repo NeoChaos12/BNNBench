@@ -88,11 +88,11 @@ class MLP(BaseModel):
             # We no longer support using this keyword argument to initialize a model
             _ = kwargs.pop('model_params')
         except (KeyError, AttributeError):
+            # Pass on the unknown keyword arguments to the super class to deal with.
+            super(MLP, self).__init__(**kwargs)
             # Read this model's unique user-modifiable parameters from arguments
             self.hidden_layer_sizes = hidden_layer_sizes
             self.num_confs = num_confs
-            # Pass on the remaining keyword arguments to the super class to deal with.
-            super(MLP, self).__init__(**kwargs)
         else:
             raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
                                "default values first and then directly set the model_params attribute.")
