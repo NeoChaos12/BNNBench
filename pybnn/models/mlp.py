@@ -3,6 +3,7 @@ import os.path
 import torch
 import torch.nn as nn
 import logging
+from typing import Union
 
 from pybnn.models import BaseModel
 from pybnn.config import globalConfig
@@ -19,21 +20,26 @@ class MLP(BaseModel):
     Simple Multi-Layer Perceptron model. Demonstrates usage of BaseModel as well as the FC Layer generator above.
     """
 
-    # Attributes that are not meant to be modifiable model parameters go here
+    # Type hints for user-modifiable attributes go here
+    hidden_layer_sizes: Union[int, list]
+    num_confs: int
+    # ------------------------------------
+
+    # Attributes that are not meant to be user-modifiable model parameters go here
+    # It is expected that any child classes will modify them as and when appropriate by overwriting them
     MODEL_FILE_IDENTIFIER = "model"
     tb_writer: globalConfig.tb_writer
-    output_dims = 1  # Currently, there is no support for any value except 1
+    output_dims: int
+    # ------------------------------------
 
     # Add any new configurable model parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
-        # "input_dims": 1,  # Inferred during training from X.shape[1]
-        # "loss_func": torch.nn.functional.mse_loss,
-        # "optimizer": optim.Adam,
         "num_confs": 30
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
+    # ------------------------------------
 
     # Combine the parameters used by this model with those of the Base Model
     modelParamsContainer = namedtuple(
@@ -42,9 +48,11 @@ class MLP(BaseModel):
         defaults=tuple(__modelParams._fields_defaults.values()) +
                  tuple(BaseModel.modelParamsContainer._fields_defaults.values())
     )
+    # ------------------------------------
 
     # Create a record of all default parameter values used to run this model, including the Base Model parameters
     _default_model_params = modelParamsContainer()
+    # ------------------------------------
 
     @property
     def input_dims(self):
@@ -52,8 +60,6 @@ class MLP(BaseModel):
 
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
-                 # loss_func=_default_model_params.loss_func,
-                 # optimizer=_default_model_params.optimizer,
                  num_confs=_default_model_params.num_confs, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
@@ -78,13 +84,12 @@ class MLP(BaseModel):
             Other model parameters for the Base Model.
         """
         try:
-            model_params = kwargs.pop('model_params')
+            # TODO: Get rid of this legacy code entirely
+            # We no longer support using this keyword argument to initialize a model
+            _ = kwargs.pop('model_params')
         except (KeyError, AttributeError):
-            # Read this model's unique parameters from arguments
+            # Read this model's unique user-modifiable parameters from arguments
             self.hidden_layer_sizes = hidden_layer_sizes
-            # TODO: Implement configurable loss function and optimizer
-            # self.loss_func = loss_func
-            # self.optimizer = optimizer
             self.num_confs = num_confs
             # Pass on the remaining keyword arguments to the super class to deal with.
             super(MLP, self).__init__(**kwargs)
@@ -92,10 +97,9 @@ class MLP(BaseModel):
             raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
                                "default values first and then directly set the model_params attribute.")
 
-        if kwargs:
-            logger.info("Ignoring unused keyword arguments:\n%s" %
-                        '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
-
+        # The MLP model brooks no compromise on these non-user defined parameters, but they may be overwritten by child
+        # classes.
+        self.output_dims = 1
         self.loss_func = torch.nn.functional.mse_loss
         self.optimizer = optim.Adam
         logger.info("Initialized MLP model.")
