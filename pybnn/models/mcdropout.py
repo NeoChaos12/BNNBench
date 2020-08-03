@@ -30,7 +30,6 @@ class MCDropout(MLP):
     # Add any new parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "pdrop": 0.05,
-        # "weight_decay": 0.0,
         "length_scale": 1.0,
         "precision": 1.0,
         "dataset_size": 100
@@ -73,6 +72,12 @@ class MCDropout(MLP):
         logger.debug("Generating weight decay values for length scale %f, dropout probabilities %s and dataset size %d"
                      % (self.length_scale, str(self.pdrop), self.dataset_size))
         return [self.length_scale ** 2 * (1 - p) / (2 * self.dataset_size * self.precision) for p in self.pdrop]
+
+    # This is necessary since MLP defines it as an attribute
+    @weight_decay.setter
+    def weight_decay(self, val):
+        logger.debug("Silently ignoring assignment to weight decay value since it's a read-only property in "
+                     "MC-Dropout.")
 
     def __init__(self,
                  pdrop=_default_model_params.pdrop,
@@ -188,7 +193,7 @@ class MCDropout(MLP):
 
         logger.info("Fitting MC-Dropout model to the given data.")
 
-        cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
+        cs = ConfigurationSpace(name="PyBNN MC-Dropout Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
         inv_std_y = np.std(y)  # Assume y is 1-D

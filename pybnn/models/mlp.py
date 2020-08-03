@@ -35,6 +35,7 @@ class MLP(BaseModel):
     # Add any new configurable model parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
+        "weight_decay": 0.1,
         "num_confs": 30
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
@@ -60,6 +61,7 @@ class MLP(BaseModel):
 
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
+                 weight_decay=_default_model_params.weight_decay,
                  num_confs=_default_model_params.num_confs, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
@@ -92,6 +94,7 @@ class MLP(BaseModel):
             super(MLP, self).__init__(**kwargs)
             # Read this model's unique user-modifiable parameters from arguments
             self.hidden_layer_sizes = hidden_layer_sizes
+            self.weight_decay = weight_decay
             self.num_confs = num_confs
         else:
             raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
@@ -169,7 +172,8 @@ class MLP(BaseModel):
         """
         logger.debug("Running MLP pre-training procedures.")
         if isinstance(self.learning_rate, float):
-            self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+            self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate,
+                                            weight_decay=self.weight_decay)
             self.lr_scheduler = False
         elif isinstance(self.learning_rate, dict):
             # Assume a dictionary of arguments was passed for the learning rate scheduler

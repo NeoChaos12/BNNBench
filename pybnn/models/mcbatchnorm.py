@@ -25,7 +25,6 @@ class MCBatchNorm(MLP):
         "learn_affines": True,
         "running_stats": True,
         "bn_momentum": 0.1,
-        "weight_decay": 0.1,
         "precision": 0.1
     }
     __modelParams = namedtuple("mcbatchnormModelParams", __modelParamsDefaultDict.keys(),
@@ -46,7 +45,6 @@ class MCBatchNorm(MLP):
                  learn_affines=_default_model_params.learn_affines,
                  running_stats=_default_model_params.running_stats,
                  bn_momentum=_default_model_params.bn_momentum,
-                 weight_decay=_default_model_params.weight_decay,
                  precision=_default_model_params.precision, **kwargs):
         r"""
         Bayesian Optimizer that uses a Multi-Layer Perceptron Neural Network with MC-BatchNorm.
@@ -70,7 +68,6 @@ class MCBatchNorm(MLP):
             self.learn_affines = learn_affines
             self.running_stats = running_stats
             self.bn_momentum = bn_momentum
-            self.weight_decay = weight_decay
             self.precision = precision
             super(MCBatchNorm, self).__init__(**kwargs)
         else:
@@ -139,7 +136,7 @@ class MCBatchNorm(MLP):
 
         logger.info("Fitting MC-Dropout model to the given data.")
 
-        cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
+        cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
         inv_std_y = np.std(y)   # Assume y is 1-D
