@@ -1,15 +1,14 @@
 import logging
-import time
 import numpy as np
-from typing import Union
 
 import torch
 import torch.nn as nn
-
-from pybnn.config import globalConfig as conf
+from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperparameter
+from pybnn.config import globalConfig
 from pybnn.models.mlp import MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import namedtuple
+from scipy.stats import norm
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +74,13 @@ class DeepEnsemble(MLP):
     def n_learners(self):
         return self._n_learners
 
+    @MLP.model_params.setter
+    def model_params(self, new_params):
+        MLP.model_params.fset(self, new_params)
+        super_model_params = self.super_model_params
+        for learner in self._learners:
+            learner.model_params = super_model_params
+
     @n_learners.setter
     def n_learners(self, val):
         assert isinstance(val, int), f"Number of learners can only be set to an int, not {type(val)}."
@@ -131,34 +137,101 @@ class DeepEnsemble(MLP):
 
     def train_network(self, **kwargs):
         """
-        Dummy function to raise an appropriate error once train_network is called on a DeepEnsemble object since the
-        model does not support the function.
+        Sequentially calls each learner's train_network() function
         :param kwargs:
         :return: None
         """
-        raise RuntimeError("DeepEnsemble does not support calling the train_network() function. Use fit() instead.")
+        for learner in self._learners:
+            learner.train_network(**kwargs)
 
     def preprocess_training_data(self, X, y):
-        raise RuntimeError("DeepEnsemble does not support calling the preprocess_training_data() function. Use fit() "
-                           "instead.")
-
-    def fit(self, X, y, **kwargs):
-        r"""
-        Fit the model to the given dataset.
-
-        Parameters
-        ----------
-
-        X: array-like
-            Set of sampled inputs.
-        y: array-like
-            Set of observed outputs.
-        kwargs: dict
         """
+        Sequentially calls the training data pre-processing procedures on all learners to the given training data.
+        :param X:
+        :param y:
+        :return:
+        """
+        for learner in self._learners:
+            learner.preprocess_training_data(X, y)
 
-        for idx, learner in enumerate(self._learners, start=1):
-            logger.info("Training learner #%d out of %d learners." % (idx, self.n_learners))
-            learner.fit(X, y)
+    def fit(self, X, y, return_history=True):
+        """
+        Fits this model to the given data and returns the corresponding optimum weight decay value, final validation
+        loss and hyperparameter fitting history.
+        Generates a  validation set, generates num_confs random values for precision, and for each configuration,
+        generates a weight decay value which in turn is used to train a network. The precision value with the minimum
+        validation loss is returned.
+
+        :param X: Features.
+        :param y: Regression targets.
+        :param return_history: Bool. When True (default), a list containing the configuration optimization history is
+        also returned.
+        :return: tuple (optimal weight decay, final validation loss, history)
+        """
+        from sklearn.model_selection import train_test_split
+        from math import log10, floor
+
+        logger.info("Fitting MC-Dropout model to the given data.")
+
+        cs = ConfigurationSpace(name="PyBNN DeepEnsemble Benchmark")
+
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
+        confs = cs.sample_configuration(self.num_confs)
+        logger.debug("Generated %d random configurations." % self.num_confs)
+
+        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
+        logger.debug("Generated validation set.")
+
+        optim = None
+        history = []
+        old_tblog_flag = globalConfig.tblog
+        globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
+        for idx, conf in enumerate(confs):
+            logger.debug("Training configuration #%d" % (idx + 1))
+
+            new_model = DeepEnsemble()
+            new_model_params = self.model_params
+            new_model_params.weight_decay = conf.get("weight_decay")
+            new_model_params.num_epochs = self.num_epochs // 10
+            logger.debug("Sampled weight decay value %f" % new_model_params.weight_decay)
+
+            # This will automatically update the model params of all learners, because magic.
+            new_model.model_params = new_model_params
+
+            new_model.preprocess_training_data(Xtrain, ytrain)
+            new_model.train_network()
+
+            logger.debug("Finished training sample network.")
+
+            # Get RMSE and LL on validation data
+            _, valid_loss = new_model.evaluate(Xval, yval)
+            logger.debug("Generated validation loss %f" % np.mean(valid_loss))
+
+            res = (-valid_loss, new_model_params.weight_decay)  # Store Negative LL
+
+            if optim is None or valid_loss < optim[0]:
+                optim = res
+                logger.debug("Updated validation loss %f, optimum weight decay value to %f" % optim)
+
+            history.append(res)
+
+        logger.info("Obtained optimal weight decay %f, now training final model." % optim[1:])
+        globalConfig.tblog = old_tblog_flag
+
+        self.weight_decay = optim[1]
+        self.preprocess_training_data(Xtrain, ytrain)
+        self.train_network()
+
+        rmse, valid_loss = self.evaluate(Xval, yval)
+        logger.info("Final trained network has validation RMSE %f and validation NLL: %f" % (rmse, valid_loss))
+
+        # TODO: Integrate saving model parameters file here?
+        # TODO: Implement model saving for DeepEnsemble
+        # if globalConfig.save_model:
+        #     self.save_network()
+
+        return ((valid_loss, self.weight_decay), history) if return_history else \
+            (valid_loss, self.weight_decay)
 
     def predict(self, X_test):
         r"""
@@ -192,7 +265,7 @@ class DeepEnsemble(MLP):
         for learner in self._learners:
             res = learner.predict(X_).view(-1, 2).data.cpu().numpy()
             means.append(res[:, 0])
-            var += 1e-6 # For numerical stability
+            var += 1e-6  # For numerical stability
             # Enforce positivity using softplus as here:
             # https://stackoverflow.com/questions/44230635/avoid-overflow-with-softplus-function-in-python
             var = np.log1p(np.exp(-np.abs(var))) + np.maximum(var, 0)
@@ -205,3 +278,29 @@ class DeepEnsemble(MLP):
             mean = zero_mean_unit_var_denormalization(mean, self.y_mean, self.y_std)
             var *= self.y_std ** 2
         return mean, var
+
+    def evaluate(self, X_test, y_test, **kwargs) -> (np.ndarray, np.ndarray):
+        """
+        Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE and
+        Log-Likelihood of the MC-Dropout prediction.
+        :param X_test: (N, d)
+            Array of input features.
+        :param y_test: (N, 1)
+            Array of expected output values.
+        :return: rmse, log_likelihood
+        """
+        means, vars = self.predict(X_test=X_test)
+        logger.debug("Generated final mean values of shape %s" % str(means.shape))
+
+        if not isinstance(y_test, np.ndarray):
+            y_test = np.array(y_test)
+
+        rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+
+        if len(y_test.shape) == 1:
+            y_test = y_test[:, None]
+
+        vars = np.clip(vars, a_min=1e-6, a_max=None)
+        ll = norm.logpdf(y_test, means, vars)
+
+        return rmse, ll
