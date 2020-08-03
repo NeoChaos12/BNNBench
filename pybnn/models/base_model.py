@@ -1,6 +1,7 @@
 import abc
 import os
 import numpy as np
+from typing import Union
 
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.utils import universal_utils as utils
@@ -17,9 +18,21 @@ logger = logging.getLogger(__name__)
 
 class BaseModel(object):
     __metaclass__ = abc.ABCMeta
+
+    # Type hints for user-modifiable attributes go here
     normalize_input: bool
     normalize_output: bool
     batch_size: int
+    learning_rate: Union[float, dict]
+    num_epochs: int
+    rng: np.random.RandomState
+    model_path: str # TODO: Change to Path
+    model_name: str
+    # ------------------------------------
+
+    # Attributes that are not meant to be user-modifiable model parameters go here
+    # It is expected that any child classes will modify them as and when appropriate by overwriting them
+    # ------------------------------------
 
     # Don't let the children see this
     __modelParamsDefaultDict = {
@@ -34,12 +47,13 @@ class BaseModel(object):
     }
     __modelParams = namedtuple("baseModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
+    # ------------------------------------
 
     # This is children friendly
-
     # Part of the API, the recommended way to setup a model - also add params from parents
     modelParamsContainer = __modelParams
     _default_model_params = modelParamsContainer()  # Must be re-defined as-is by each child!!
+    # ------------------------------------
 
     @property
     def model_params(self):

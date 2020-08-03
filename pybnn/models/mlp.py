@@ -3,6 +3,7 @@ import os.path
 import torch
 import torch.nn as nn
 import logging
+from typing import Union
 
 from pybnn.models import BaseModel
 from pybnn.config import globalConfig
@@ -11,29 +12,65 @@ import torch.optim as optim
 import numpy as np
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from torch.optim.lr_scheduler import StepLR as steplr
+from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperparameter, Constant
 
 logger = logging.getLogger(__name__)
+
+
+def evaluate_rmse(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
+    """
+    Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE.
+    :param model_obj: An instance object of BaseModel or a sub-class of BaseModel
+    :param X_test: (N, d)
+        Array of input features.
+    :param y_test: (N, 1)
+        Array of expected output values.
+    :return: dict [RMSE]
+    """
+    means = model_obj.predict(X_test=X_test)
+    logger.debug("Generated final mean values of shape %s" % str(means.shape))
+
+    if not isinstance(y_test, np.ndarray):
+        y_test = np.array(y_test)
+
+    rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+
+    if len(y_test.shape) == 1:
+        y_test = y_test[:, None]
+
+    # Putting things into a dict helps keep interfaces uniform
+    results = {"RMSE": rmse}
+    return results
+
 
 class MLP(BaseModel):
     """
     Simple Multi-Layer Perceptron model. Demonstrates usage of BaseModel as well as the FC Layer generator above.
     """
 
-    # Attributes that are not meant to be modifiable model parameters go here
+    # Type hints for user-modifiable attributes go here
+    hidden_layer_sizes: Union[int, list]
+    num_confs: int
+    # ------------------------------------
+
+    # Attributes that are not meant to be user-modifiable model parameters go here
+    # It is expected that any child classes will modify them as and when appropriate by overwriting them
     MODEL_FILE_IDENTIFIER = "model"
     tb_writer: globalConfig.tb_writer
-    output_dims = 1  # Currently, there is no support for any value except 1
+    output_dims: int
+    loss_func: torch.nn.functional.mse_loss
+    optimizer: optim.Adam
+    # ------------------------------------
 
     # Add any new configurable model parameters needed exclusively by this model here
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
-        # "input_dims": 1,  # Inferred during training from X.shape[1]
-        # "loss_func": torch.nn.functional.mse_loss,
-        # "optimizer": optim.Adam,
+        "weight_decay": 0.1,
         "num_confs": 30
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
+    # ------------------------------------
 
     # Combine the parameters used by this model with those of the Base Model
     modelParamsContainer = namedtuple(
@@ -42,9 +79,12 @@ class MLP(BaseModel):
         defaults=tuple(__modelParams._fields_defaults.values()) +
                  tuple(BaseModel.modelParamsContainer._fields_defaults.values())
     )
+    # ------------------------------------
 
     # Create a record of all default parameter values used to run this model, including the Base Model parameters
     _default_model_params = modelParamsContainer()
+
+    # ------------------------------------
 
     @property
     def input_dims(self):
@@ -52,8 +92,7 @@ class MLP(BaseModel):
 
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
-                 # loss_func=_default_model_params.loss_func,
-                 # optimizer=_default_model_params.optimizer,
+                 weight_decay=_default_model_params.weight_decay,
                  num_confs=_default_model_params.num_confs, **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
@@ -65,37 +104,24 @@ class MLP(BaseModel):
             The size of each hidden layer in the MLP. Each object in the iterable is read as the size of the
             corresponding MLP hidden layer, starting from the hidden layer right next to the input. Default is
             [50, 50, 50].
-        loss_func: callable
-            A callable object which accepts as input two arguments - output, target - and returns a PyTorch Tensor
-            which is used to calculate the loss. Default is torch.nn.functional.mse_loss.
-        optimizer: callable
-            A callable object which is used as the optimizer by PyTorch and should have the corresponding signature.
-            Default is torch.optim.Adam.
         weight_decay: float
-            The weight decay parameter value to be used for L2 regularization, ideally calculated using prior length
-            scale and optimal model precision, as described in Eq. 3.14 in Yarin Gal's PhD Thesis.
+            The weight decay parameter value to be used for L2 regularization.
+        num_confs: int
+            The number of configurations to iterate through when trying to choose the optimal hyper-parameter
+            configuration.
         kwargs: dict
             Other model parameters for the Base Model.
         """
-        try:
-            model_params = kwargs.pop('model_params')
-        except (KeyError, AttributeError):
-            # Read this model's unique parameters from arguments
-            self.hidden_layer_sizes = hidden_layer_sizes
-            # TODO: Implement configurable loss function and optimizer
-            # self.loss_func = loss_func
-            # self.optimizer = optimizer
-            self.num_confs = num_confs
-            # Pass on the remaining keyword arguments to the super class to deal with.
-            super(MLP, self).__init__(**kwargs)
-        else:
-            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
-                               "default values first and then directly set the model_params attribute.")
+        # Pass on the unknown keyword arguments to the super class to deal with.
+        super(MLP, self).__init__(**kwargs)
+        # Read this model's unique user-modifiable parameters from arguments
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.weight_decay = weight_decay
+        self.num_confs = num_confs
 
-        if kwargs:
-            logger.info("Ignoring unused keyword arguments:\n%s" %
-                        '\n'.join(str(k) + ': ' + str(v) for k, v in kwargs.items()))
-
+        # The MLP model brooks no compromise on these non-user defined parameters, but they may be overwritten by child
+        # classes.
+        self.output_dims = 1
         self.loss_func = torch.nn.functional.mse_loss
         self.optimizer = optim.Adam
         logger.info("Initialized MLP model.")
@@ -120,10 +146,11 @@ class MLP(BaseModel):
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"FC{layer_idx}", fclayer))
             # logger.debug(f"Generated FC Layer {layers[-1][0]}: {fclayer.in_features} x {fclayer.out_features}")
-            logger.debug("Generating Tanh layer for %s" % layers[-1][0])
-            layers.append((f"Tanh{layer_idx}", nn.Tanh()))
+            logger.debug("Generating ReLU layer for %s" % layers[-1][0])
+            layers.append((f"ReLU{layer_idx}", nn.ReLU()))
 
         layers.append(("Output", nn.Linear(self.hidden_layer_sizes[-1], self.output_dims)))
+        logger.debug("Generated fully connected %d x %d output layer." % (layers[-1][1].in_features, layers[-1][1].out_features))
 
         self.network = nn.Sequential(OrderedDict(layers))
         logger.info("Finished generating network.")
@@ -165,12 +192,13 @@ class MLP(BaseModel):
         """
         logger.debug("Running MLP pre-training procedures.")
         if isinstance(self.learning_rate, float):
-            self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
+            self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate,
+                                            weight_decay=self.weight_decay)
             self.lr_scheduler = False
         elif isinstance(self.learning_rate, dict):
             # Assume a dictionary of arguments was passed for the learning rate scheduler
             self.optimizer = self.optimizer(self.network.parameters(), lr=self.learning_rate["init"],
-                                       weight_decay=self.weight_decay)
+                                            weight_decay=self.weight_decay)
             self.scheduler = steplr(self.optimizer, *self.learning_rate['args'], **self.learning_rate['kwargs'])
             self.lr_scheduler = True
         else:
@@ -234,7 +262,8 @@ class MLP(BaseModel):
 
             if globalConfig.tblog:
                 if globalConfig.logTrainLoss:
-                    self.tb_writer.add_scalar(tag=globalConfig.TAG_TRAIN_LOSS, scalar_value=lc[epoch], global_step=epoch + 1)
+                    self.tb_writer.add_scalar(tag=globalConfig.TAG_TRAIN_LOSS, scalar_value=lc[epoch],
+                                              global_step=epoch + 1)
 
                 if globalConfig.logInternals:
                     # TODO: Standardize
@@ -279,19 +308,6 @@ class MLP(BaseModel):
 
         return
 
-    def fit(self, X, y):
-        """
-        Given a dataset of features X and regression targets y, performs all required procedures to train an standard
-        MLP on the dataset. Returns None.
-        :param X: Features.
-        :param y: Regression targets.
-        :return: None
-        """
-        self.preprocess_training_data(X, y)
-        self.train_network()
-
-        return None
-
     def predict(self, X_test):
         r"""
         Returns the predictive mean of the objective function at the given test points.
@@ -323,6 +339,107 @@ class MLP(BaseModel):
             return zero_mean_unit_var_denormalization(Yt_hat, mean=self.y_mean, std=self.y_std)
         else:
             return Yt_hat
+
+    evaluate = evaluate_rmse
+
+    def validation_loss(self, Xval, yval):
+        return np.mean(self.evaluate(Xval, yval)["RMSE"])
+
+    def get_hyperparameter_space(self):
+        """
+        Returns a ConfigSpace.ConfigurationSpace object corresponding to this model's hyperparameter space.
+        :return: ConfigurationSpace
+        """
+
+        cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
+        cs.add_hyperparameter(Constant(name="num_epochs", value=self.num_epochs // 10))
+        return cs
+
+    '''
+    The methodology for re-using the fit method that samples num_conf different configurations in any inherited class is 
+    to overwrite, as and when needed, the following instance methods:
+    
+    1. get_hyperparameter_space() -> ConfigSpace.ConfigurationSpace
+    2. validation_loss() -> float   [Optimization criteria]
+    3. preprocess_training_data() -> None
+    4. train_network() -> None
+    5. evaluate() -> dict          [Evaluation Results e.g. (rmse), (rmse, loglikelihood), etc.]
+    
+    In addition, the property fixed_model_params provides a way to temporarily set certain model parameters during HPO 
+    without actually using their values in the final optimal configuration.
+    '''
+
+    @property
+    def fixed_model_params(self):
+        return {}
+
+    def fit(self, X, y):
+        """
+        Fits this model to the given data and returns the corresponding optimum weight decay value, final validation
+        loss and hyperparameter fitting history.
+        Generates a  validation set, generates num_confs random values for precision, and for each configuration,
+        generates a weight decay value which in turn is used to train a network. The precision value with the minimum
+        validation loss is returned.
+
+        :param X: Features.
+        :param y: Regression targets.
+        :return: tuple [final evaluation results, history]
+        """
+        from sklearn.model_selection import train_test_split
+
+        logger.info("Fitting %s model to the given data." % type(self).__name__)
+
+        hpspace = self.get_hyperparameter_space()
+        confs = hpspace.sample_configuration(self.num_confs)
+        logger.debug("Generated %d random configurations." % self.num_confs)
+
+        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
+        logger.debug("Generated validation set.")
+
+        optim = None
+        history = []
+        old_tblog_flag = globalConfig.tblog
+        globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
+        for idx, conf in enumerate(confs, start=1):
+            logger.debug("Performing HPO, sampled configuration (#%d/%d):\n%s" % (idx, self.num_confs, str(conf)))
+
+            new_model = self.__class__()
+            new_model_params = self.model_params._replace(**conf.get_dictionary(), **self.fixed_model_params)
+
+            new_model.model_params = new_model_params
+            new_model.preprocess_training_data(Xtrain, ytrain)
+            new_model.train_network()
+
+            logger.debug("Finished training sample model.")
+
+            validation_loss = new_model.validation_loss(Xval, yval)
+            logger.debug("Generated validation loss %f" % np.mean(validation_loss))
+
+            res = (validation_loss, conf)
+
+            if optim is None or validation_loss < optim[0]:
+                optim = res
+                logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
+
+            history.append(res)
+
+        logger.info("Obtained optimal configuration %s\nTraining final model." % optim[1])
+        globalConfig.tblog = old_tblog_flag
+
+        self.model_params = self.model_params._replace(**optim[1].get_dictionary())
+        self.preprocess_training_data(Xtrain, ytrain)
+        self.train_network()
+
+        results = self.evaluate(Xval, yval)
+        logger.info("Final analytics data of network training: %s" % results)
+
+        # TODO: Integrate saving model parameters file here?
+        # TODO: Implement model saving for DeepEnsemble
+        # if globalConfig.save_model:
+        #     self.save_network()
+
+        return results, history
 
     def __plot_layer_weights(self, weights, epochs, title="weights"):
         import matplotlib.pyplot as plt
