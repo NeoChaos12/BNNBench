@@ -45,7 +45,7 @@ class DeepEnsemble(MLP):
     # Attributes that are not meant to be user-modifiable model parameters go here
     # It is expected that any child classes will modify them as and when appropriate by overwriting them
     _n_learners = 0
-    _learners: list
+    _learners = []
     # ------------------------------------
 
     # Add any new configurable model parameters needed exclusively by this model here
@@ -92,6 +92,8 @@ class DeepEnsemble(MLP):
             # If the number of learners is being increased, add only the required number of learners to the list
             # Since the default value of _n_learners is 0, this condition will also be called when n_learners is set
             # for the first time in __init__().
+            if not self._learners:
+                self._learners = []
             super_model_params = self.super_model_params
             for _ in range(val - self._n_learners):
                 learner = MLP()
@@ -191,8 +193,10 @@ class DeepEnsemble(MLP):
 
             new_model = DeepEnsemble()
             new_model_params = self.model_params
-            new_model_params.weight_decay = conf.get("weight_decay")
-            new_model_params.num_epochs = self.num_epochs // 10
+            # TODO: Alright, this does it. The namedtuple based interface is really not working out.
+            # Although the model_params idea is good. This needs to be re-worked.
+            new_model_params = new_model_params._replace(weight_decay=conf.get("weight_decay"))
+            new_model_params = new_model_params._replace(num_epochs=self.num_epochs // 10)
             logger.debug("Sampled weight decay value %f" % new_model_params.weight_decay)
 
             # This will automatically update the model params of all learners, because magic.
@@ -251,19 +255,12 @@ class DeepEnsemble(MLP):
 
         """
         logging.info("Using Deep Ensembles model to predict.")
-        # Normalize inputs
-        if self.normalize_input:
-            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
-        else:
-            X_ = X_test
-
-        X_ = torch.Tensor(X_)
 
         means = []
         variances = []
 
         for learner in self._learners:
-            res = learner.predict(X_).view(-1, 2).data.cpu().numpy()
+            res = learner.predict(X_test).view(-1, 2).data.cpu().numpy()
             means.append(res[:, 0])
             var += 1e-6  # For numerical stability
             # Enforce positivity using softplus as here:
@@ -274,9 +271,6 @@ class DeepEnsemble(MLP):
         mean = np.mean(means, axis=0)
         var = np.mean(variances + np.square(means), axis=0) - mean ** 2
 
-        if self.normalize_output:
-            mean = zero_mean_unit_var_denormalization(mean, self.y_mean, self.y_std)
-            var *= self.y_std ** 2
         return mean, var
 
     def evaluate(self, X_test, y_test, **kwargs) -> (np.ndarray, np.ndarray):
