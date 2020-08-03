@@ -24,9 +24,9 @@ class GaussianNLL(nn.Module):
         super(GaussianNLL, self).__init__()
 
     def forward(self, input: torch.Tensor, target: torch.Tensor):
-        # Assuming network outputs variance
-        std = input[:, 1].view(-1, 1) ** 0.5
-        std = nn.functional.softplus(std) + 10e-6
+        # Assuming network outputs variance, add 1e-6 minimum variance for numerical stability
+        std = (input[:, 1].view(-1, 1) + 1e-6) ** 0.5
+        std = nn.functional.softplus(std)
         mu = input[:, 0].view(-1, 1)
         n = torch.distributions.normal.Normal(mu, std)
         loss = n.log_prob(target)
@@ -68,13 +68,12 @@ class DeepEnsemble(MLP):
 
     # Create a record of all default parameter values used to run this model, including the super class parameters
     _default_model_params = modelParamsContainer()
-    # ------------------------------------
 
+    # ------------------------------------
 
     @property
     def n_learners(self):
         return self._n_learners
-
 
     @n_learners.setter
     def n_learners(self, val):
@@ -121,7 +120,6 @@ class DeepEnsemble(MLP):
         logger.info("Intialized Deep Ensemble model.")
         logger.debug(f"Intialized Deep Ensemble model parameters:\n{self.model_params}")
 
-
     @property
     def super_model_params(self):
         """
@@ -131,8 +129,20 @@ class DeepEnsemble(MLP):
         [param_dict.pop(k) for k in self.__modelParamsDefaultDict.keys()]
         return super(self.__class__, self).modelParamsContainer(**param_dict)
 
+    def train_network(self, **kwargs):
+        """
+        Dummy function to raise an appropriate error once train_network is called on a DeepEnsemble object since the
+        model does not support the function.
+        :param kwargs:
+        :return: None
+        """
+        raise RuntimeError("DeepEnsemble does not support calling the train_network() function. Use fit() instead.")
 
-    def train_network(self, X, y, **kwargs):
+    def preprocess_training_data(self, X, y):
+        raise RuntimeError("DeepEnsemble does not support calling the preprocess_training_data() function. Use fit() "
+                           "instead.")
+
+    def fit(self, X, y, **kwargs):
         r"""
         Fit the model to the given dataset.
 
@@ -144,98 +154,15 @@ class DeepEnsemble(MLP):
         y: array-like
             Set of observed outputs.
         kwargs: dict
-            Keyword-only arguments for performing various extra tasks. This includes 'plotter' for plotting the outputs
-            of individual learners after set intervals of training.
         """
 
-        self.X = X
-        self.y = y
-
-        # Normalize inputs and outputs if the respective flags were set
-        # self.normalize_data()
-        #
-        # self.y = self.y[:, None]
-
-        logger.info("Fitting Deep Ensembles model to data.")
-        start_time = time.time()
-        mlp_params = self.super_model_params
-        logger.debug("Generating learners using configuration:\n%s" % str(mlp_params))
-        self.learners = [MLP(model_params=mlp_params) for _ in range(self.n_learners)]
-
-        if conf.tblog:
-            model_exp_name = conf.tb_exp_name
-
-        # Iterate over base learners and train them
-        for idx, learner in enumerate(self.learners, start=1):
-            logger.info("Training learner %d." % idx)
-            learner_exp_name = model_exp_name + f"_learner{idx}"
-            learner.train_network(X, y, tb_logging=conf.tblog, tb_logdir=conf.tbdir, tb_expname=learner_exp_name,
-                                  **kwargs)
-            logger.info("Finished training learner %d\n%s\n" % (idx, '*' * 20))
-
-        if model_exp_name:
-            conf.enable_tb(logdir=conf.tbdir, expname=model_exp_name)
-
-        total_time = time.time() - start_time
-        logger.info("Finished fitting model. Total time: %.3fs" % total_time)
-
-
-    # def _fit_network(self, network):
-    #     r"""
-    #     Fit an MLP neural network to the stored dataset.
-    #
-    #     Parameters
-    #     ----------
-    #
-    #     network: torch.Sequential
-    #         The network to be fit.
-    #     """
-    #     start_time = time.time()
-    #     optimizer = optim.Adam(network.parameters(),
-    #                            lr=self.mlp_params["learning_rate"])
-    #     criterion = GaussianNLL()
-    #
-    #     if TENSORBOARD_LOGGING:
-    #         with SummaryWriter() as writer:
-    #             writer.add_graph(network, torch.rand(size=[self.batch_size, self.mlp_params["input_dims"]],
-    #                                                       dtype=torch.float, requires_grad=False))
-    #
-    #     # Start training
-    #     network.train()
-    #     lc = np.zeros([self.mlp_params["num_epochs"]])
-    #     for epoch in range(self.mlp_params["num_epochs"]):
-    #         epoch_start_time = time.time()
-    #         train_err = 0
-    #         train_batches = 0
-    #
-    #         for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
-    #             optimizer.zero_grad()
-    #             output = network(inputs)
-    #
-    #             # loss = torch.nn.functional.mse_loss(output, targets)
-    #             loss = criterion(output, targets)
-    #             loss.backward()
-    #             optimizer.step()
-    #
-    #             train_err += loss
-    #             train_batches += 1
-    #
-    #         lc[epoch] = train_err / train_batches
-    #         curtime = time.time()
-    #         epoch_time = curtime - epoch_start_time
-    #         total_time = curtime - start_time
-    #         if epoch % 100 == 0:
-    #             logging.debug("Epoch {} of {}".format(epoch + 1, self.mlp_params["num_epochs"]))
-    #             logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
-    #             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
-    #
-    #     return
-
+        for idx, learner in enumerate(self._learners, start=1):
+            logger.info("Training learner #%d out of %d learners." % (idx, self.n_learners))
+            learner.fit(X, y)
 
     def predict(self, X_test):
         r"""
-        Returns the predictive mean and variance of the objective function at
-        the given test points.
+        Returns the predictive mean and variance of the objective function at the given test points.
 
         Parameters
         ----------
@@ -262,20 +189,19 @@ class DeepEnsemble(MLP):
         means = []
         variances = []
 
-        for learner in self.learners:
+        for learner in self._learners:
             res = learner.predict(X_).view(-1, 2).data.cpu().numpy()
             means.append(res[:, 0])
-            std = res[:, 1]
+            var += 1e-6 # For numerical stability
             # Enforce positivity using softplus as here:
             # https://stackoverflow.com/questions/44230635/avoid-overflow-with-softplus-function-in-python
-            std = np.log1p(np.exp(-np.abs(std))) + np.maximum(std, 0)
-            variances.append(std ** 2)
+            var = np.log1p(np.exp(-np.abs(var))) + np.maximum(var, 0)
+            variances.append(var)
 
         mean = np.mean(means, axis=0)
-        std = np.sqrt(np.mean(variances + np.square(means), axis=0) - mean ** 2)
+        var = np.mean(variances + np.square(means), axis=0) - mean ** 2
 
         if self.normalize_output:
             mean = zero_mean_unit_var_denormalization(mean, self.y_mean, self.y_std)
-            std *= self.y_std
-
-        return mean, std
+            var *= self.y_std ** 2
+        return mean, var
