@@ -364,13 +364,8 @@ class MCDropout(MLP):
             Number of stochastic forward passes to use for generating the MC-Dropout predictions.
         :return: standard_rmse, mc_rmse, log_likelihood
         """
-        # standard_pred = self._predict_standard(X_test)
-        # standard_rmse = np.mean((standard_pred - y_test) ** 2) ** 0.5
-
-        # mc_pred = self._predict_mc(X_test=X_test, nsamples=nsamples)
         mc_mean, mc_var = self.predict(X_test=X_test, nsamples=nsamples)
         logger.debug("Generated final mean values of shape %s" % str(mc_mean.shape))
-        # logger.debug("Generated final variance values of shape %s" % str(variance.shape))
 
         if not isinstance(y_test, np.ndarray):
             y_test = np.array(y_test)
