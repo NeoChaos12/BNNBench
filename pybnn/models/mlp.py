@@ -127,8 +127,8 @@ class MLP(BaseModel):
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"FC{layer_idx}", fclayer))
             # logger.debug(f"Generated FC Layer {layers[-1][0]}: {fclayer.in_features} x {fclayer.out_features}")
-            logger.debug("Generating Tanh layer for %s" % layers[-1][0])
-            layers.append((f"Tanh{layer_idx}", nn.Tanh()))
+            logger.debug("Generating ReLU layer for %s" % layers[-1][0])
+            layers.append((f"ReLU{layer_idx}", nn.ReLU()))
 
         layers.append(("Output", nn.Linear(self.hidden_layer_sizes[-1], self.output_dims)))
 
