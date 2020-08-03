@@ -112,20 +112,12 @@ class MLP(BaseModel):
         kwargs: dict
             Other model parameters for the Base Model.
         """
-        try:
-            # TODO: Get rid of this legacy code entirely
-            # We no longer support using this keyword argument to initialize a model
-            _ = kwargs.pop('model_params')
-        except (KeyError, AttributeError):
-            # Pass on the unknown keyword arguments to the super class to deal with.
-            super(MLP, self).__init__(**kwargs)
-            # Read this model's unique user-modifiable parameters from arguments
-            self.hidden_layer_sizes = hidden_layer_sizes
-            self.weight_decay = weight_decay
-            self.num_confs = num_confs
-        else:
-            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
-                               "default values first and then directly set the model_params attribute.")
+        # Pass on the unknown keyword arguments to the super class to deal with.
+        super(MLP, self).__init__(**kwargs)
+        # Read this model's unique user-modifiable parameters from arguments
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.weight_decay = weight_decay
+        self.num_confs = num_confs
 
         # The MLP model brooks no compromise on these non-user defined parameters, but they may be overwritten by child
         # classes.
@@ -158,6 +150,7 @@ class MLP(BaseModel):
             layers.append((f"ReLU{layer_idx}", nn.ReLU()))
 
         layers.append(("Output", nn.Linear(self.hidden_layer_sizes[-1], self.output_dims)))
+        logger.debug("Generated fully connected %d x %d output layer." % (layers[-1][1].in_features, layers[-1][1].out_features))
 
         self.network = nn.Sequential(OrderedDict(layers))
         logger.info("Finished generating network.")
@@ -372,7 +365,14 @@ class MLP(BaseModel):
     3. preprocess_training_data() -> None
     4. train_network() -> None
     5. evaluate() -> dict          [Evaluation Results e.g. (rmse), (rmse, loglikelihood), etc.]
+    
+    In addition, the property fixed_model_params provides a way to temporarily set certain model parameters during HPO 
+    without actually using their values in the final optimal configuration.
     '''
+
+    @property
+    def fixed_model_params(self):
+        return {}
 
     def fit(self, X, y):
         """
@@ -388,10 +388,10 @@ class MLP(BaseModel):
         """
         from sklearn.model_selection import train_test_split
 
-        logger.info("Fitting MC-Dropout model to the given data.")
+        logger.info("Fitting %s model to the given data." % type(self).__name__)
 
-        hs = self.get_hyperparameter_space()
-        confs = hs.sample_configuration(self.num_confs)
+        hpspace = self.get_hyperparameter_space()
+        confs = hpspace.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
 
         Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
@@ -405,7 +405,7 @@ class MLP(BaseModel):
             logger.debug("Performing HPO, sampled configuration (#%d/%d):\n%s" % (idx, self.num_confs, str(conf)))
 
             new_model = self.__class__()
-            new_model_params = self.model_params._replace(**conf._asdict())
+            new_model_params = self.model_params._replace(**conf.get_dictionary(), **self.fixed_model_params)
 
             new_model.model_params = new_model_params
             new_model.preprocess_training_data(Xtrain, ytrain)
@@ -424,15 +424,15 @@ class MLP(BaseModel):
 
             history.append(res)
 
-        logger.info("Obtained optimal configuration %s, now training final model." % optim[1])
+        logger.info("Obtained optimal configuration %s\nTraining final model." % optim[1])
         globalConfig.tblog = old_tblog_flag
 
-        self.model_params = self.model_params._replace(**optim[1]._asdict())
+        self.model_params = self.model_params._replace(**optim[1].get_dictionary())
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 
         results = self.evaluate(Xval, yval)
-        logger.info("Final trained network has validation RMSE %f and validation log-likelihood: %f" % results)
+        logger.info("Final analytics data of network training: %s" % results)
 
         # TODO: Integrate saving model parameters file here?
         # TODO: Implement model saving for DeepEnsemble

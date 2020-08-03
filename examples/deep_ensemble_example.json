@@ -6,7 +6,9 @@
     },
     "model_parameters": {
         "n_learners": 5,
-        "num_confs": 30,
+        "num_confs": 2,
+        "num_epochs": 1000,
+        "batch_size": 32,
         "learning_rate": 1e-3,
         "normalize_input": true,
         "normalize_output": true,

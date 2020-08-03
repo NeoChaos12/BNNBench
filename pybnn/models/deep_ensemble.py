@@ -3,11 +3,11 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, Constant
+from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, UniformIntegerHyperparameter
 from pybnn.config import globalConfig
 from pybnn.models.mlp import BaseModel, MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from scipy.stats import norm
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
         Array of expected output values.
     :return: dict [RMSE, LogLikelihood]
     """
-    means = model_obj.predict(X_test=X_test)
+    means, variances = model_obj.predict(X_test=X_test)
     logger.debug("Generated final mean values of shape %s" % str(means.shape))
 
     if not isinstance(y_test, np.ndarray):
@@ -34,8 +34,8 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
     if len(y_test.shape) == 1:
         y_test = y_test[:, None]
 
-    vars = np.clip(vars, a_min=1e-6, a_max=None)
-    ll = np.mean(norm.logpdf(y_test, means, vars))
+    variances = np.clip(variances, a_min=1e-6, a_max=None)
+    ll = np.mean(norm.logpdf(y_test, means, variances))
 
     # Putting things into a dict helps keep interfaces uniform
     results = {"RMSE": rmse, "LogLikelihood": ll}
@@ -52,9 +52,9 @@ class GaussianNLL(nn.Module):
         super(GaussianNLL, self).__init__()
 
     def forward(self, input: torch.Tensor, target: torch.Tensor):
-        # Assuming network outputs variance, add 1e-6 minimum variance for numerical stability
-        std = (input[:, 1].view(-1, 1) + 1e-6) ** 0.5
-        std = nn.functional.softplus(std)
+        # Assuming network outputs variance
+        std = input[:, 1].view(-1, 1)
+        std = torch.sqrt(std)
         mu = input[:, 0].view(-1, 1)
         n = torch.distributions.normal.Normal(mu, std)
         loss = n.log_prob(target)
@@ -66,7 +66,29 @@ class Learner(MLP):
         super(Learner, self).__init__(**kwargs)
         # Overwrites any other values of these attributes
         self.output_dims = 2
-        self.loss_func = GaussianNLL
+        self.loss_func = GaussianNLL()
+
+    def _generate_network(self):
+        """
+        Generates a network for a single Ensemble Learner. Unlike a regular MLP model, this assumes that the output
+        layer will have exactly two output neurons, representing the mean and variance of the predicted distribution.
+        A positivity constraint as well as a minimum variance of 1e-6 will be added to the neuron for variance.
+        :return:
+        """
+        super(Learner, self)._generate_network()
+
+        class VariancePositivity(nn.Softplus):
+            """
+            Overwrite the forward pass in the Softplus module in order to only enforce positivity on the variance
+            neuron.
+            """
+            def forward(self, input: torch.Tensor) -> torch.Tensor:
+                var = super(VariancePositivity, self).forward(input[:, 1])
+                var = torch.add(var, 1e-6)
+                return torch.stack((input[:, 0], var), dim=1)
+
+        self.network.add_module(name="Positivity", module=VariancePositivity())
+        logger.debug("Modified network to include positivity constraint on network variance.")
 
     def predict(self, X_test):
         """
@@ -100,6 +122,22 @@ class Learner(MLP):
 
     evaluate = evaluate_rmse_ll
 
+    def validation_loss(self, Xval, yval):
+        return -self.evaluate(Xval, yval)["LogLikelihood"]
+
+    def get_hyperparameter_space(self):
+        """
+        Returns a ConfigSpace.ConfigurationSpace object corresponding to this model's hyperparameter space.
+        :return: ConfigurationSpace
+        """
+
+        cs = ConfigurationSpace(name="PyBNN EnsembleLearner")
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
+        return cs
+
+    @property
+    def fixed_model_params(self):
+        return {"num_epochs": self.num_epochs // 10}
 
 class DeepEnsemble(MLP):
     """
@@ -222,16 +260,24 @@ class DeepEnsemble(MLP):
         for learner in self._learners:
             learner.preprocess_training_data(X, y)
 
-    def get_hyperparameter_space(self):
+    def fit(self, X, y):
         """
-        Returns a ConfigSpace.ConfigurationSpace object corresponding to this model's hyperparameter space.
-        :return: ConfigurationSpace
+        Fit a Deep Ensemble model to the given training data X, y. In practice, simply calls the respective learners'
+        fit() methods iteratively, and returns the combined results of all learners' training.
+        :param X:
+        :param y:
+        :return:
         """
+        results = []
+        histories = []
 
-        cs = ConfigurationSpace(name="PyBNN DeepEnsemble Benchmark")
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
-        cs.add_hyperparameter(Constant(name="num_epochs", value=self.num_epochs // 10))
-        return cs
+        for idx, learner in enumerate(self._learners, start=1):
+            logger.info("Fitting learner #%d/%d" % (idx, self.n_learners))
+            res, his = learner.fit(X, y)
+            results.append(res)
+            histories.append(his)
+
+        return results, histories
 
     def predict(self, X_test):
         r"""
@@ -252,20 +298,14 @@ class DeepEnsemble(MLP):
         """
         logging.info("Using Deep Ensembles model to predict.")
 
-        means = []
-        variances = []
+        means = np.zeros(shape=(X_test.shape[0], self.n_learners))
+        variances = np.ones(shape=(X_test.shape[0], self.n_learners))
 
-        for learner in self._learners:
-            res = learner.predict(X_test)
-            means.append(res[:, 0])
-            var += 1e-6  # For numerical stability
-            # Enforce positivity using softplus as here:
-            # https://stackoverflow.com/questions/44230635/avoid-overflow-with-softplus-function-in-python
-            var = np.log1p(np.exp(-np.abs(var))) + np.maximum(var, 0)
-            variances.append(var)
+        for idx, learner in enumerate(self._learners):
+            means[:, idx], variances[:, idx] = learner.predict(X_test)
 
-        mean = np.mean(means, axis=0)
-        var = np.mean(variances + np.square(means), axis=0) - mean ** 2
+        mean = np.mean(means, axis=1)
+        var = np.mean(variances + np.square(means), axis=1) - mean ** 2
 
         return mean, var
 
@@ -292,5 +332,5 @@ class DeepEnsemble(MLP):
 
         vars = np.clip(vars, a_min=1e-6, a_max=None)
         ll = np.mean(norm.logpdf(y_test, means, vars))
-
+        self.analytics_headers = ('RMSE', 'Log-Likelihood')
         return rmse, ll
