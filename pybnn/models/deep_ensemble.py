@@ -3,14 +3,43 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperparameter
+from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, Constant
 from pybnn.config import globalConfig
-from pybnn.models.mlp import MLP
+from pybnn.models.mlp import BaseModel, MLP
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import namedtuple
 from scipy.stats import norm
 
 logger = logging.getLogger(__name__)
+
+
+def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
+    """
+    Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE.
+    :param model_obj: An instance object of either BaseModel or a sub-class of BaseModel.
+    :param X_test: (N, d)
+        Array of input features.
+    :param y_test: (N, 1)
+        Array of expected output values.
+    :return: dict [RMSE, LogLikelihood]
+    """
+    means = model_obj.predict(X_test=X_test)
+    logger.debug("Generated final mean values of shape %s" % str(means.shape))
+
+    if not isinstance(y_test, np.ndarray):
+        y_test = np.array(y_test)
+
+    rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+
+    if len(y_test.shape) == 1:
+        y_test = y_test[:, None]
+
+    vars = np.clip(vars, a_min=1e-6, a_max=None)
+    ll = np.mean(norm.logpdf(y_test, means, vars))
+
+    # Putting things into a dict helps keep interfaces uniform
+    results = {"RMSE": rmse, "LogLikelihood": ll}
+    return results
 
 
 class GaussianNLL(nn.Module):
@@ -30,6 +59,46 @@ class GaussianNLL(nn.Module):
         n = torch.distributions.normal.Normal(mu, std)
         loss = n.log_prob(target)
         return -torch.mean(loss)
+
+
+class Learner(MLP):
+    def __init__(self, **kwargs):
+        super(Learner, self).__init__(**kwargs)
+        # Overwrites any other values of these attributes
+        self.output_dims = 2
+        self.loss_func = GaussianNLL
+
+    def predict(self, X_test):
+        """
+        Returns the predictive mean and variance at the given test points. Overwrites the MLP predict method which
+        is unsuitable for handling two output neurons.
+        :param X_test: np.ndarray (N, d)
+            Test set of input features, containing N data points each having d features.
+        :return: (mean, variance)
+            Models the output of each data point as a normal distribution's parameters.
+        """
+
+        # Normalize inputs
+        if self.normalize_input:
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
+
+        # Sample a number of predictions for each given point
+        # Generate mean and variance for each given point from sampled predictions
+
+        X_ = torch.Tensor(X_)
+        Yt_hat = self.network(X_).data.cpu().numpy()
+        means = Yt_hat[:, 0]
+        variances = Yt_hat[:, 1]
+
+        if self.normalize_output:
+            return (zero_mean_unit_var_denormalization(means, mean=self.y_mean, std=self.y_std),
+                    variances * self.y_std ** 2)
+        else:
+            return means, variances
+
+    evaluate = evaluate_rmse_ll
 
 
 class DeepEnsemble(MLP):
@@ -71,15 +140,22 @@ class DeepEnsemble(MLP):
     # ------------------------------------
 
     @property
+    def learner_model_params(self):
+        learner_model_params = self.model_params._asdict()
+        # Subtract this model's unique parameters from the dictionary
+        [learner_model_params.pop(k) for k in self.__modelParamsDefaultDict.keys()]
+        return learner_model_params
+
+    @property
     def n_learners(self):
         return self._n_learners
 
     @MLP.model_params.setter
     def model_params(self, new_params):
         MLP.model_params.fset(self, new_params)
-        super_model_params = self.super_model_params
+        learner_model_params = self.learner_model_params
         for learner in self._learners:
-            learner.model_params = super_model_params
+            learner.model_params = learner_model_params
 
     @n_learners.setter
     def n_learners(self, val):
@@ -94,11 +170,10 @@ class DeepEnsemble(MLP):
             # for the first time in __init__().
             if not self._learners:
                 self._learners = []
-            super_model_params = self.super_model_params
-            for _ in range(val - self._n_learners):
-                learner = MLP()
-                learner.model_params = super_model_params
-                self._learners.append(learner)
+
+            learner_model_params = self.learner_model_params
+            # Assume that Learner.__init__() will ensure that output_dims and loss_func are set correctly
+            [self._learners.append(Learner(**learner_model_params)) for _ in range(val - self._n_learners)]
         else:
             # If the number of learners remains unchanged, don't really do anything
             pass
@@ -128,15 +203,6 @@ class DeepEnsemble(MLP):
         logger.info("Intialized Deep Ensemble model.")
         logger.debug(f"Intialized Deep Ensemble model parameters:\n{self.model_params}")
 
-    @property
-    def super_model_params(self):
-        """
-        Constructs the model params object of the calling object's super class.
-        """
-        param_dict = self.model_params._asdict()
-        [param_dict.pop(k) for k in self.__modelParamsDefaultDict.keys()]
-        return super(self.__class__, self).modelParamsContainer(**param_dict)
-
     def train_network(self, **kwargs):
         """
         Sequentially calls each learner's train_network() function
@@ -156,86 +222,16 @@ class DeepEnsemble(MLP):
         for learner in self._learners:
             learner.preprocess_training_data(X, y)
 
-    def fit(self, X, y, return_history=True):
+    def get_hyperparameter_space(self):
         """
-        Fits this model to the given data and returns the corresponding optimum weight decay value, final validation
-        loss and hyperparameter fitting history.
-        Generates a  validation set, generates num_confs random values for precision, and for each configuration,
-        generates a weight decay value which in turn is used to train a network. The precision value with the minimum
-        validation loss is returned.
-
-        :param X: Features.
-        :param y: Regression targets.
-        :param return_history: Bool. When True (default), a list containing the configuration optimization history is
-        also returned.
-        :return: tuple (optimal weight decay, final validation loss, history)
+        Returns a ConfigSpace.ConfigurationSpace object corresponding to this model's hyperparameter space.
+        :return: ConfigurationSpace
         """
-        from sklearn.model_selection import train_test_split
-        from math import log10, floor
-
-        logger.info("Fitting MC-Dropout model to the given data.")
 
         cs = ConfigurationSpace(name="PyBNN DeepEnsemble Benchmark")
-
         cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
-        confs = cs.sample_configuration(self.num_confs)
-        logger.debug("Generated %d random configurations." % self.num_confs)
-
-        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
-        logger.debug("Generated validation set.")
-
-        optim = None
-        history = []
-        old_tblog_flag = globalConfig.tblog
-        globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
-        for idx, conf in enumerate(confs):
-            logger.debug("Training configuration #%d" % (idx + 1))
-
-            new_model = DeepEnsemble()
-            new_model_params = self.model_params
-            # TODO: Alright, this does it. The namedtuple based interface is really not working out.
-            # Although the model_params idea is good. This needs to be re-worked.
-            new_model_params = new_model_params._replace(weight_decay=conf.get("weight_decay"))
-            new_model_params = new_model_params._replace(num_epochs=self.num_epochs // 10)
-            logger.debug("Sampled weight decay value %f" % new_model_params.weight_decay)
-
-            # This will automatically update the model params of all learners, because magic.
-            new_model.model_params = new_model_params
-
-            new_model.preprocess_training_data(Xtrain, ytrain)
-            new_model.train_network()
-
-            logger.debug("Finished training sample network.")
-
-            # Get RMSE and LL on validation data
-            _, valid_loss = new_model.evaluate(Xval, yval)
-            logger.debug("Generated validation loss %f" % np.mean(valid_loss))
-
-            res = (-valid_loss, new_model_params.weight_decay)  # Store Negative LL
-
-            if optim is None or valid_loss < optim[0]:
-                optim = res
-                logger.debug("Updated validation loss %f, optimum weight decay value to %f" % optim)
-
-            history.append(res)
-
-        logger.info("Obtained optimal weight decay %f, now training final model." % optim[1:])
-        globalConfig.tblog = old_tblog_flag
-
-        self.weight_decay = optim[1]
-        self.preprocess_training_data(Xtrain, ytrain)
-        self.train_network()
-
-        rmse, valid_loss = self.evaluate(Xval, yval)
-        logger.info("Final trained network has validation RMSE %f and validation NLL: %f" % (rmse, valid_loss))
-
-        # TODO: Integrate saving model parameters file here?
-        # TODO: Implement model saving for DeepEnsemble
-        # if globalConfig.save_model:
-        #     self.save_network()
-
-        return ((valid_loss, self.weight_decay), history) if return_history else \
-            (valid_loss, self.weight_decay)
+        cs.add_hyperparameter(Constant(name="num_epochs", value=self.num_epochs // 10))
+        return cs
 
     def predict(self, X_test):
         r"""
@@ -260,7 +256,7 @@ class DeepEnsemble(MLP):
         variances = []
 
         for learner in self._learners:
-            res = learner.predict(X_test).view(-1, 2).data.cpu().numpy()
+            res = learner.predict(X_test)
             means.append(res[:, 0])
             var += 1e-6  # For numerical stability
             # Enforce positivity using softplus as here:
@@ -295,6 +291,6 @@ class DeepEnsemble(MLP):
             y_test = y_test[:, None]
 
         vars = np.clip(vars, a_min=1e-6, a_max=None)
-        ll = norm.logpdf(y_test, means, vars)
+        ll = np.mean(norm.logpdf(y_test, means, vars))
 
         return rmse, ll
