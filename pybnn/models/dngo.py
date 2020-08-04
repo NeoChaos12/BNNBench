@@ -2,40 +2,83 @@ import time
 import logging
 import numpy as np
 import emcee
+from typing import Union
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
-
 from scipy import optimize
+from scipy.stats import norm
 
-from pybnn.models.base_model import BaseModel
+from pybnn.models.mlp import MLP
 from pybnn.models.bayesian_linear_regression import BayesianLinearRegression, Prior
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from pybnn.models.mlp import MLP
-from pybnn.config import mlpParams  # TODO: Get rid of this, switch to globalConfig notation if needed
-from collections import OrderedDict
+from pybnn.config import globalConfig
+from collections import OrderedDict, namedtuple
 
-TENSORBOARD_LOGGING = False
 logger = logging.getLogger(__name__)
 
-class DNGO(BaseModel):
+class DNGO(MLP):
+    # Type hints for user-modifiable attributes go here
+    adapt_epoch: int
+    alpha: float
+    beta: int
+    do_mcmc: bool
+    n_hypers: int
+    chain_length: int
+    burnin_steps: int
+    # ------------------------------------
 
-    def __init__(self, batch_size=10,
-                 num_epochs=500,
-                 learning_rate=0.01,
+    # Attributes that are not meant to be user-modifiable model parameters go here
+    # It is expected that any child classes will modify them as and when appropriate by overwriting them
+    MODEL_FILE_IDENTIFIER = "model"
+    tb_writer: globalConfig.tb_writer
+    output_dims: int
+    loss_func: torch.nn.functional.mse_loss
+    optimizer: optim.Adam
+    prior = None
+    # ------------------------------------
+
+    # Add any new configurable model parameters needed exclusively by this model here
+    __modelParamsDefaultDict = {
+        "adapt_epoch": 5000,
+        "alpha": 1.0,
+        "beta": 1000,
+        "prior": None,
+        "do_mcmc": True,
+        "n_hypers": 20,
+        "chain_length": 2000,
+        "burnin_steps": 2000,
+    }
+    __modelParams = namedtuple("dngoModelParams", __modelParamsDefaultDict.keys(),
+                               defaults=__modelParamsDefaultDict.values())
+    # ------------------------------------
+
+    # Combine the parameters used by this model with those of MLP
+    # noinspection PyProtectedMember
+    modelParamsContainer = namedtuple(
+        "allModelParams",
+        tuple(__modelParams._fields_defaults.keys()) + tuple(MLP.modelParamsContainer._fields_defaults.keys()),
+        defaults=tuple(__modelParams._fields_defaults.values()) +
+                 tuple(MLP.modelParamsContainer._fields_defaults.values())
+    )
+    # ------------------------------------
+
+    # Create a record of all default parameter values used to run this model, including the Base Model parameters
+    _default_model_params = modelParamsContainer()
+
+    # ------------------------------------
+
+
+    def __init__(self,
                  adapt_epoch=5000,
-                 alpha=1.0, beta=1000,
+                 alpha=1.0,
+                 beta=1000,
                  prior=None,
                  do_mcmc=True,
                  n_hypers=20,
                  chain_length=2000,
-                 burnin_steps=2000,
-                 normalize_input=True,
-                 normalize_output=True,
-                 rng=None,
-                 n_units=[50, 50, 50]):
+                 burnin_steps=2000, **kwargs):
 
         """
         Deep Networks for Global Optimization [1]. This module performs
@@ -81,13 +124,7 @@ class DNGO(BaseModel):
         n_units: list
             Defines a list containing the number of hidden units in each hidden layer of the network
         """
-        # TODO: Streamline parameter specification, define namedtuple for parameters
-        super(DNGO, self).__init__(
-            batch_size=batch_size,
-            normalize_input=normalize_input,
-            normalize_output=normalize_output,
-            rng=rng
-        )
+        super(DNGO, self).__init__(**kwargs)
 
         self.X = None
         self.y = None
@@ -109,10 +146,9 @@ class DNGO(BaseModel):
             self.prior = prior
 
         # Network hyper parameters
-        self.num_epochs = num_epochs
-        self.init_learning_rate = learning_rate
+        self.init_learning_rate = self.learning_rate
 
-        self.mlp_params = mlpParams(hidden_layer_sizes=n_units)
+        # self.mlp_params = mlpParams(hidden_layer_sizes=n_units)
         self.adapt_epoch = adapt_epoch
         self.network = None
         self.models = []
@@ -146,7 +182,7 @@ class DNGO(BaseModel):
         self.network = nn.Sequential(OrderedDict(layers))
 
 
-    @BaseModel._check_shapes_train
+    @MLP._check_shapes_train
     def fit(self, X, y, do_optimize=True):
         """
         Trains the model on the provided data.
@@ -183,8 +219,8 @@ class DNGO(BaseModel):
         optimizer = optim.Adam(self.network.parameters(),
                                lr=self.init_learning_rate)
 
-        if TENSORBOARD_LOGGING:
-            with SummaryWriter() as writer:
+        if globalConfig.tblog:
+            with globalConfig.tb_writer as writer:
                 writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.mlp_params.input_dims],
                                                           dtype=torch.float, requires_grad=False))
 
@@ -333,7 +369,7 @@ class DNGO(BaseModel):
         return nll
 
 
-    @BaseModel._check_shapes_predict
+    @MLP._check_shapes_predict
     def predict(self, X_test):
         r"""
         Returns the predictive mean and variance of the objective function at
@@ -387,3 +423,29 @@ class DNGO(BaseModel):
             v *= self.y_std ** 2
 
         return m, v
+
+    def evaluate(self, X_test, y_test, **kwargs) -> (np.ndarray, np.ndarray):
+        """
+        Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE and
+        Log-Likelihood of the MC-Dropout prediction.
+        :param X_test: (N, d)
+            Array of input features.
+        :param y_test: (N, 1)
+            Array of expected output values.
+        :return: rmse, log_likelihood
+        """
+        means, vars = self.predict(X_test=X_test)
+        logger.debug("Generated final mean values of shape %s" % str(means.shape))
+
+        if not isinstance(y_test, np.ndarray):
+            y_test = np.array(y_test)
+
+        rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+
+        if len(y_test.shape) == 1:
+            y_test = y_test[:, None]
+
+        vars = np.clip(vars, a_min=1e-6, a_max=None)
+        ll = np.mean(norm.logpdf(y_test, means, vars))
+        self.analytics_headers = ('RMSE', 'Log-Likelihood')
+        return rmse, ll
