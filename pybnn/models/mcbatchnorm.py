@@ -10,6 +10,7 @@ from pybnn.config import globalConfig
 from functools import partial
 from collections import OrderedDict, namedtuple
 from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperparameter, UniformIntegerHyperparameter
+from scipy.stats import norm
 
 # TODO: Switch to globalConfig, if needed
 
@@ -320,11 +321,11 @@ class MCBatchNorm(MLP):
         if len(y_test.shape) == 1:
             y_test = y_test[:, None]
 
-        # ll = -0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var))
+        # ll = np.clip(-0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var)),
+        #              a_min=-4., a_max=None)
 
-        # Clip at prob: 1e-4 => clip log of prob at: ln(1e-4) ~= -4
-        ll = np.clip(-0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var)),
-                     a_min=-4., a_max=None)
+        assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
+        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(mc_var, a_min=1e-6, a_max=None))
         ll_mean = np.mean(ll)
         ll_variance = np.var(ll)
 

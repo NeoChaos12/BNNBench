@@ -13,7 +13,7 @@ from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperpara
 from torch.optim.lr_scheduler import StepLR as steplr
 from pybnn.config import globalConfig
 
-from scipy.special import logsumexp
+from scipy.stats import norm
 
 logger = logging.getLogger(__name__)
 
@@ -374,18 +374,10 @@ class MCDropout(MLP):
 
         if len(y_test.shape) == 1:
             y_test = y_test[:, None]
-
-        # It simply makes more sense to clip probabilities rather than the powers of the exponent terms. Therefore, it
-        # is better to switch to the standard LL formula using predictive mean and variance.
-
-        # ll = logsumexp(np.clip(-0.5 * self.precision * (mc_pred - y_test) ** 2., a_min=-1e2, a_max=None), axis=0) - \
-        #      np.log(nsamples) - 0.5 * np.log(2 * np.pi) + 0.5 * np.log(self.precision)
-
-        # ll = -0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var))
-
-        # Clip at prob: 1e-4 => clip log of prob at: ln(1e-4) ~= -4
-        ll = np.clip(-0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var)),
-                     a_min=-4., a_max=None)
+        # ll = np.clip(-0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var)),
+        #              a_min=-4., a_max=None)
+        assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
+        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(mc_var, a_min=1e-6, a_max=None))
         ll_mean = np.mean(ll)
         ll_variance = np.var(ll)
 
