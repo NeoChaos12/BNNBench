@@ -105,14 +105,14 @@ class MCBatchNorm(MLP):
         )
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
-            self.batchnorm_layers.append(bnlayer(num_features=fclayer.in_features))
-            layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
             layers.append((f"FC{layer_idx}", fclayer))
+            self.batchnorm_layers.append(bnlayer(num_features=fclayer.out_features))
+            layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
             # layers.append((f"Tanh{layer_idx}", nn.Tanh()))
             layers.append((f"ReLU{layer_idx}", nn.ReLU()))
 
-        self.batchnorm_layers.append(bnlayer(num_features=n_units[-1]))
-        layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
+        # self.batchnorm_layers.append(bnlayer(num_features=n_units[-1]))
+        # layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
 
@@ -325,7 +325,7 @@ class MCBatchNorm(MLP):
         #              a_min=-4., a_max=None)
 
         assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
-        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(mc_var, a_min=1e-6, a_max=None))
+        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(mc_var, a_min=1e-4, a_max=None))
         ll_mean = np.mean(ll)
         ll_variance = np.var(ll)
 
