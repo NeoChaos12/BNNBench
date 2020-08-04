@@ -225,8 +225,8 @@ class MCDropout(MLP):
             logger.debug("Finished training sample network.")
 
             new_model.network.train()  # The dropout layers are stochastic only in training mode
-            ypred = new_model.network(torch.Tensor(Xval))
-            valid_loss = new_model.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
+            # Set validation loss to mean negative log likelihood
+            valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=1000)[1]
             logger.debug("Generated validation loss %f" % valid_loss)
 
             res = (valid_loss, tau, pdrop)
@@ -248,8 +248,7 @@ class MCDropout(MLP):
         self.train_network()
 
         self.network.eval()
-        ypred = self.network(torch.Tensor(Xval))
-        valid_loss = self.loss_func(torch.Tensor(ypred), torch.Tensor(yval)).data.cpu().numpy()
+        valid_loss = -self.evaluate(X_test=Xval, y_test=yval, nsamples=1000)[1]
         logger.info("Final trained network has validation loss: %f" % valid_loss)
 
         # TODO: Integrate saving model parameters file here?
@@ -302,6 +301,7 @@ class MCDropout(MLP):
 
         return Yt_hat
 
+    # TODO: Unify interface
     def predict(self, **kwargs):
         """
         Given a set of input data features and the number of samples, returns the corresponding predictive means and
