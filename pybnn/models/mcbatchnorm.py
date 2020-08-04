@@ -53,7 +53,7 @@ class MCBatchNorm(MLP):
         Parameters
         ----------
         learn_affines: bool
-            Whether or not to make the affine transformation parameters of batch normalization learnabe. True by
+            Whether or not to make the affine transformation parameters of batch normalization learnable. True by
             default.
         running_stats: bool
             Toggle tracking running stats across batches in BatchNorm layers. True by default.
@@ -63,18 +63,11 @@ class MCBatchNorm(MLP):
         kwargs: dict
             Other model parameters for MLP.
         """
-        try:
-            model_params = kwargs.pop('model_params')
-        except (KeyError, AttributeError):
-            self.learn_affines = learn_affines
-            self.running_stats = running_stats
-            self.bn_momentum = bn_momentum
-            self.precision = precision
-            super(MCBatchNorm, self).__init__(**kwargs)
-        else:
-            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
-                               "default values first and then directly set the model_params attribute.")
-
+        super(MCBatchNorm, self).__init__(**kwargs)
+        self.learn_affines = learn_affines
+        self.running_stats = running_stats
+        self.bn_momentum = bn_momentum
+        self.precision = precision
         logger.info("Intialized MC-BatchNorm model.")
         logger.debug("Intialized MC-BatchNorm model parameters:\n%s" % str(self.model_params))
 
@@ -135,7 +128,7 @@ class MCBatchNorm(MLP):
         from sklearn.model_selection import train_test_split
         from math import log10, floor
 
-        logger.info("Fitting MC-Dropout model to the given data.")
+        logger.info("Fitting MC-BatchNorm model to the given data.")
 
         cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)

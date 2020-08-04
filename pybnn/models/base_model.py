@@ -139,22 +139,16 @@ class BaseModel(object):
         self.X = None
         self.y = None
 
-        try:
-            model_params = kwargs.pop('baseModelParams')
-        except (KeyError, AttributeError):
-            # Read model parameters from arguments
-            # TODO: Create separate MLP and CNN versions as sub-classes, also possibly ABCs.
-            self.num_epochs = num_epochs
-            self.batch_size = batch_size
-            self.learning_rate = learning_rate
-            self.normalize_input = normalize_input
-            self.normalize_output = normalize_output
-            self.rng = rng
-            self.model_path = model_path
-            self.model_name = model_name
-        else:
-            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
-                               "default values first and then directly set the model_params attribute.")
+        # Read model parameters from arguments
+        # TODO: Create separate MLP and CNN versions as sub-classes, also possibly ABCs.
+        self.num_epochs = num_epochs
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.normalize_input = normalize_input
+        self.normalize_output = normalize_output
+        self.rng = rng
+        self.model_path = model_path
+        self.model_name = model_name
 
         if kwargs:
             logger.info("Ignoring unknown keyword arguments:\n%s" %

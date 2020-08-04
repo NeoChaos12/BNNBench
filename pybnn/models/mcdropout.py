@@ -103,18 +103,12 @@ class MCDropout(MLP):
         kwargs: dict
             Other model parameters for MLP.
         """
-        try:
-            model_params = kwargs.pop('model_params')
-        except (KeyError, AttributeError):
-            self.pdrop = pdrop
-            # self.weight_decay = weight_decay
-            self.length_scale = length_scale
-            self.precision = precision
-            self.dataset_size = dataset_size
-            super(MCDropout, self).__init__(**kwargs)
-        else:
-            raise RuntimeError("Using model_params in the __init__ call is no longer supported. Create an object using "
-                               "default values first and then directly set the model_params attribute.")
+        super(MCDropout, self).__init__(**kwargs)
+        self.pdrop = pdrop
+        # self.weight_decay = weight_decay
+        self.length_scale = length_scale
+        self.precision = precision
+        self.dataset_size = dataset_size
 
         logger.info("Intialized MC-Dropout model.")
 
