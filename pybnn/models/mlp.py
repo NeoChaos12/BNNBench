@@ -432,7 +432,7 @@ class MLP(BaseModel):
         self.train_network()
 
         results = self.evaluate(Xval, yval)
-        logger.info("Final analytics data of network training: %s" % results)
+        logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         # TODO: Implement model saving for DeepEnsemble

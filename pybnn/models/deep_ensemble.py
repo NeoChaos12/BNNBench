@@ -120,24 +120,10 @@ class Learner(MLP):
         else:
             return means, variances
 
-    evaluate = evaluate_rmse_ll
-
-    def validation_loss(self, Xval, yval):
-        return -self.evaluate(Xval, yval)["LogLikelihood"]
-
-    def get_hyperparameter_space(self):
-        """
-        Returns a ConfigSpace.ConfigurationSpace object corresponding to this model's hyperparameter space.
-        :return: ConfigurationSpace
-        """
-
-        cs = ConfigurationSpace(name="PyBNN EnsembleLearner")
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
-        return cs
-
-    @property
-    def fixed_model_params(self):
-        return {"num_epochs": self.num_epochs // 10}
+    def evaluate(*args, **kwargs):
+        res = evaluate_rmse_ll(*args, **kwargs)
+        self.analytics_headers = tuple(res.keys())
+        return tuple(res.values())
 
 class DeepEnsemble(MLP):
     """
@@ -260,24 +246,22 @@ class DeepEnsemble(MLP):
         for learner in self._learners:
             learner.preprocess_training_data(X, y)
 
-    def fit(self, X, y):
-        """
-        Fit a Deep Ensemble model to the given training data X, y. In practice, simply calls the respective learners'
-        fit() methods iteratively, and returns the combined results of all learners' training.
-        :param X:
-        :param y:
-        :return:
-        """
-        results = []
-        histories = []
+    def validation_loss(self, Xval, yval):
+        return -self.evaluate(Xval, yval)[1]
 
-        for idx, learner in enumerate(self._learners, start=1):
-            logger.info("Fitting learner #%d/%d" % (idx, self.n_learners))
-            res, his = learner.fit(X, y)
-            results.append(res)
-            histories.append(his)
+    def get_hyperparameter_space(self):
+        """
+        Returns a ConfigSpace.ConfigurationSpace object corresponding to this model's hyperparameter space.
+        :return: ConfigurationSpace
+        """
 
-        return results, histories
+        cs = ConfigurationSpace(name="PyBNN DeepEnsemble")
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
+        return cs
+
+    @property
+    def fixed_model_params(self):
+        return {"num_epochs": self.num_epochs // 10}
 
     def predict(self, X_test):
         r"""
