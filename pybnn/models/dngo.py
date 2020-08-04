@@ -44,7 +44,8 @@ class DNGO(MLP):
         "adapt_epoch": 5000,
         "alpha": 1.0,
         "beta": 1000,
-        "prior": None,
+        # TODO: [Future] Investigate prior types, implement string to callable mapping.
+        # "prior": None,
         "do_mcmc": True,
         "n_hypers": 20,
         "chain_length": 2000,
@@ -74,7 +75,7 @@ class DNGO(MLP):
                  adapt_epoch=5000,
                  alpha=1.0,
                  beta=1000,
-                 prior=None,
+                 # prior=None,
                  do_mcmc=True,
                  n_hypers=20,
                  chain_length=2000,
@@ -140,15 +141,15 @@ class DNGO(MLP):
         self.chain_length = chain_length
         self.burned = False
         self.burnin_steps = burnin_steps
-        if prior is None:
-            self.prior = Prior(rng=self.rng)
-        else:
-            self.prior = prior
+        self.prior = Prior(rng=self.rng)
+        # if prior is None:
+        #     self.prior = Prior(rng=self.rng)
+        # else:
+        #     self.prior = prior
 
         # Network hyper parameters
         self.init_learning_rate = self.learning_rate
 
-        # self.mlp_params = mlpParams(hidden_layer_sizes=n_units)
         self.adapt_epoch = adapt_epoch
         self.network = None
         self.models = []
@@ -158,9 +159,9 @@ class DNGO(MLP):
     def _generate_network(self):
         logger.debug("Generating NN for DNGO.")
 
-        input_dims = self.mlp_params.input_dims
-        output_dims = self.mlp_params.output_dims
-        n_units = self.mlp_params.hidden_layer_sizes
+        input_dims = self.input_dims
+        output_dims = self.output_dims
+        n_units = self.hidden_layer_sizes
         layers = []
         self.batchnorm_layers = []
 
@@ -181,8 +182,6 @@ class DNGO(MLP):
         layers = [("Basis_Functions", self.basis_funcs), ("Output", nn.Linear(n_units[-1], output_dims))]
         self.network = nn.Sequential(OrderedDict(layers))
 
-
-    @MLP._check_shapes_train
     def fit(self, X, y, do_optimize=True):
         """
         Trains the model on the provided data.
@@ -202,13 +201,11 @@ class DNGO(MLP):
         start_time = time.time()
         self.X = X
         self.y = y
-        if self.mlp_params.input_dims != self.X.shape[1]:
-            self.mlp_params = self.mlp_params._replace(input_dims=X.shape[1])
 
         # Normalize inputs and outputs if the respective flags were set
         self.normalize_data()
 
-        self.y = self.y[:, None]
+        # self.y = self.y[:, None]
 
         # Create the neural network
         # features = X.shape[1]
@@ -221,7 +218,7 @@ class DNGO(MLP):
 
         if globalConfig.tblog:
             with globalConfig.tb_writer as writer:
-                writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.mlp_params.input_dims],
+                writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
                                                           dtype=torch.float, requires_grad=False))
 
         # Start training
@@ -368,16 +365,14 @@ class DNGO(MLP):
         nll = -self.marginal_log_likelihood(theta)
         return nll
 
-
-    @MLP._check_shapes_predict
-    def predict(self, X_test):
+    def predict(self, X):
         r"""
         Returns the predictive mean and variance of the objective function at
         the given test points.
 
         Parameters
         ----------
-        X_test: np.ndarray (N, D)
+        X: np.ndarray (N, D)
             N input test points
 
         Returns
@@ -390,17 +385,17 @@ class DNGO(MLP):
         """
         # Normalize inputs
         if self.normalize_input:
-            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+            X_, _, _ = zero_mean_unit_var_normalization(X, self.X_mean, self.X_std)
         else:
-            X_ = X_test
+            X_ = X
 
         # Get features from the net
 
         theta = self.basis_funcs(torch.Tensor(X_)).data.numpy()
 
         # Marginalise predictions over hyperparameters of the BLR
-        mu = np.zeros([len(self.models), X_test.shape[0]])
-        var = np.zeros([len(self.models), X_test.shape[0]])
+        mu = np.zeros([len(self.models), X.shape[0]])
+        var = np.zeros([len(self.models), X.shape[0]])
 
         for i, m in enumerate(self.models):
             mu[i], var[i] = m.predict(theta)
@@ -434,7 +429,7 @@ class DNGO(MLP):
             Array of expected output values.
         :return: rmse, log_likelihood
         """
-        means, vars = self.predict(X_test=X_test)
+        means, vars = self.predict(X=X_test)
         logger.debug("Generated final mean values of shape %s" % str(means.shape))
 
         if not isinstance(y_test, np.ndarray):
@@ -447,5 +442,7 @@ class DNGO(MLP):
 
         vars = np.clip(vars, a_min=1e-6, a_max=None)
         ll = np.mean(norm.logpdf(y_test, means, vars))
+
+        logger.info("DNGO model generated final RMSE of %f and Log-Likelihood of %f." % (rmse, ll))
         self.analytics_headers = ('RMSE', 'Log-Likelihood')
         return rmse, ll
