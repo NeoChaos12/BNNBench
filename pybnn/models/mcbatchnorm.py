@@ -104,8 +104,6 @@ class MCBatchNorm(MLP):
             # layers.append((f"Tanh{layer_idx}", nn.Tanh()))
             layers.append((f"ReLU{layer_idx}", nn.ReLU()))
 
-        # self.batchnorm_layers.append(bnlayer(num_features=n_units[-1]))
-        # layers.append((f"BatchNorm{layer_idx}", self.batchnorm_layers[-1]))
         layers.append(("Output", nn.Linear(n_units[-1], output_dims)))
         self.network = nn.Sequential(OrderedDict(layers))
 
@@ -173,8 +171,10 @@ class MCBatchNorm(MLP):
             new_model.train_network()
             logger.debug("Finished training sample network.")
 
-            ypred = np.mean(new_model._predict_mc(Xval, nsamples=500), axis=0)
-            valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
+            # ypred = np.mean(new_model._predict_mc(Xval, nsamples=500), axis=0)
+            # valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
+            # Set validation loss to mean NLL
+            valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=500)[1]
 
             # res = (valid_loss, batch_size, weight_decay, num_epochs, precision)
             res = (valid_loss, batch_size, weight_decay, precision)
@@ -193,8 +193,9 @@ class MCBatchNorm(MLP):
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 
-        ypred = np.mean(self._predict_mc(Xval, nsamples=500), axis=0)
-        valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
+        # ypred = np.mean(self._predict_mc(Xval, nsamples=500), axis=0)
+        # valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
+        valid_loss = -self.evaluate(X_test=Xval, y_test=yval, nsamples=500)[1]
         logger.info("Final trained network has validation loss: %f" % valid_loss)
 
         # TODO: Integrate saving model parameters file here?
