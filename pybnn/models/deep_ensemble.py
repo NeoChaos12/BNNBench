@@ -120,7 +120,7 @@ class Learner(MLP):
         else:
             return means, variances
 
-    def evaluate(*args, **kwargs):
+    def evaluate(self, *args, **kwargs):
         res = evaluate_rmse_ll(*args, **kwargs)
         self.analytics_headers = tuple(res.keys())
         return tuple(res.values())

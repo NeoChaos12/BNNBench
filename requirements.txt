@@ -1,5 +1,5 @@
 torch
 torchvision
 numpy
-emcee
+emcee<=2.2.1
 scipy

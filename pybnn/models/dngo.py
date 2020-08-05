@@ -18,6 +18,7 @@ from collections import OrderedDict, namedtuple
 
 logger = logging.getLogger(__name__)
 
+
 class DNGO(MLP):
     # Type hints for user-modifiable attributes go here
     adapt_epoch: int
@@ -70,7 +71,6 @@ class DNGO(MLP):
 
     # ------------------------------------
 
-
     def __init__(self,
                  adapt_epoch=5000,
                  alpha=1.0,
@@ -93,12 +93,6 @@ class DNGO(MLP):
 
         Parameters
         ----------
-        batch_size: int
-            Batch size for training the neural network
-        num_epochs: int
-            Number of epochs for training
-        learning_rate: float
-            Initial learning rate for Adam
         adapt_epoch: int
             Defines after how many epochs the learning rate will be decayed by a factor 10
         alpha: float
@@ -116,14 +110,6 @@ class DNGO(MLP):
             The chain length of the MCMC sampler
         burnin_steps: int
             The number of burnin steps before the sampling procedure starts
-        normalize_output : bool
-            Zero mean unit variance normalization of the output values
-        normalize_input : bool
-            Zero mean unit variance normalization of the input values
-        rng: nfrom torch.utils.tensorboard import SummaryWriterp.random.RandomState
-            Random number generator
-        n_units: list
-            Defines a list containing the number of hidden units in each hidden layer of the network
         """
         super(DNGO, self).__init__(**kwargs)
 
@@ -154,7 +140,6 @@ class DNGO(MLP):
         self.network = None
         self.models = []
         self.hypers = None
-
 
     def _generate_network(self):
         logger.debug("Generating NN for DNGO.")
@@ -298,7 +283,6 @@ class DNGO(MLP):
 
             self.models.append(model)
 
-
     def marginal_log_likelihood(self, theta):
         """
         Log likelihood of the data marginalised over the weights w. See chapter 3.5 of
@@ -346,7 +330,6 @@ class DNGO(MLP):
         if np.any(np.isnan(mll)):
             return -1e25
         return mll
-
 
     def negative_mll(self, theta):
         """
