@@ -315,11 +315,8 @@ class MCBatchNorm(MLP):
         if len(y_test.shape) == 1:
             y_test = y_test[:, None]
 
-        # ll = np.clip(-0.5 * (np.log(2 * np.pi) + np.log(mc_var) + 0.5 * (((y_test - mc_mean) ** 2) / mc_var)),
-        #              a_min=-4., a_max=None)
-
         assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
-        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(mc_var, a_min=1e-4, a_max=None))
+        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(np.abs(mc_var ** 0.5), a_min=1e-3, a_max=None))
         ll_mean = np.mean(ll)
         ll_variance = np.var(ll)
 
