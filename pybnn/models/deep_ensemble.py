@@ -23,7 +23,7 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
         Array of expected output values.
     :return: dict [RMSE, LogLikelihood]
     """
-    means, variances = model_obj.predict(X_test=X_test)
+    means, stds = model_obj.predict(X_test=X_test)
     logger.debug("Generated final mean values of shape %s" % str(means.shape))
 
     if not isinstance(y_test, np.ndarray):
@@ -34,8 +34,8 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
     if len(y_test.shape) == 1:
         y_test = y_test[:, None]
 
-    variances = np.clip(variances, a_min=1e-6, a_max=None)
-    ll = np.mean(norm.logpdf(y_test, means, variances))
+    stds = np.clip(stds, a_min=1e-3, a_max=None)
+    ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
 
     # Putting things into a dict helps keep interfaces uniform
     results = {"RMSE": rmse, "LogLikelihood": ll}
@@ -45,18 +45,17 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
 class GaussianNLL(nn.Module):
     r"""
     Defines the negative log likelihood loss function used for training neural networks that output a tensor
-    [mean, variance], assumed to be approximating the mean and variance of a Gaussian Distribution.
+    [mean, std], assumed to be approximating the mean and standard deviation of a Gaussian Distribution.
     """
 
     def __init__(self):
         super(GaussianNLL, self).__init__()
 
     def forward(self, input: torch.Tensor, target: torch.Tensor):
-        # Assuming network outputs variance
+        # Assuming network outputs std
         std = input[:, 1].view(-1, 1)
-        std = torch.sqrt(std)
         mu = input[:, 0].view(-1, 1)
-        n = torch.distributions.normal.Normal(mu, std)
+        n = torch.distributions.normal.Normal(loc=mu, scale=std)
         loss = n.log_prob(target)
         return -torch.mean(loss)
 
@@ -71,32 +70,33 @@ class Learner(MLP):
     def _generate_network(self):
         """
         Generates a network for a single Ensemble Learner. Unlike a regular MLP model, this assumes that the output
-        layer will have exactly two output neurons, representing the mean and variance of the predicted distribution.
-        A positivity constraint as well as a minimum variance of 1e-6 will be added to the neuron for variance.
+        layer will have exactly two output neurons, representing the mean and standard deviation of the predicted
+        distribution. A positivity constraint as well as a minimum value of 1e-3 will be added to the neuron for
+        std dev.
         :return:
         """
         super(Learner, self)._generate_network()
 
         class VariancePositivity(nn.Softplus):
             """
-            Overwrite the forward pass in the Softplus module in order to only enforce positivity on the variance
+            Overwrite the forward pass in the Softplus module in order to only enforce positivity on the std dev
             neuron.
             """
             def forward(self, input: torch.Tensor) -> torch.Tensor:
-                var = super(VariancePositivity, self).forward(input[:, 1])
-                var = torch.add(var, 1e-6)
-                return torch.stack((input[:, 0], var), dim=1)
+                std = super(VariancePositivity, self).forward(input[:, 1])
+                std = torch.add(std, 1e-3)
+                return torch.stack((input[:, 0], std), dim=1)
 
         self.network.add_module(name="Positivity", module=VariancePositivity())
-        logger.debug("Modified network to include positivity constraint on network variance.")
+        logger.debug("Modified network to include positivity constraint on network std dev.")
 
     def predict(self, X_test):
         """
-        Returns the predictive mean and variance at the given test points. Overwrites the MLP predict method which
+        Returns the predictive mean and std dev at the given test points. Overwrites the MLP predict method which
         is unsuitable for handling two output neurons.
         :param X_test: np.ndarray (N, d)
             Test set of input features, containing N data points each having d features.
-        :return: (mean, variance)
+        :return: (mean, std_dev)
             Models the output of each data point as a normal distribution's parameters.
         """
 
@@ -107,18 +107,18 @@ class Learner(MLP):
             X_ = X_test
 
         # Sample a number of predictions for each given point
-        # Generate mean and variance for each given point from sampled predictions
+        # Generate mean and std dev for each given point from sampled predictions
 
         X_ = torch.Tensor(X_)
         Yt_hat = self.network(X_).data.cpu().numpy()
         means = Yt_hat[:, 0]
-        variances = Yt_hat[:, 1]
+        stds = Yt_hat[:, 1]
 
         if self.normalize_output:
             return (zero_mean_unit_var_denormalization(means, mean=self.y_mean, std=self.y_std),
-                    variances * self.y_std ** 2)
+                    stds * self.y_std)
         else:
-            return means, variances
+            return means, stds
 
     def evaluate(self, *args, **kwargs):
         res = evaluate_rmse_ll(*args, **kwargs)
@@ -265,7 +265,7 @@ class DeepEnsemble(MLP):
 
     def predict(self, X_test):
         r"""
-        Returns the predictive mean and variance of the objective function at the given test points.
+        Returns the predictive mean and standard deviation of the objective function at the given test points.
 
         Parameters
         ----------
@@ -277,21 +277,22 @@ class DeepEnsemble(MLP):
         np.array(N,)
             predictive mean
         np.array(N,)
-            predictive variance
+            predictive std_dev
 
         """
         logging.info("Using Deep Ensembles model to predict.")
 
-        means = np.zeros(shape=(X_test.shape[0], self.n_learners))
-        variances = np.ones(shape=(X_test.shape[0], self.n_learners))
+        learner_means = np.zeros(shape=(X_test.shape[0], self.n_learners))
+        learner_stds = np.ones(shape=(X_test.shape[0], self.n_learners))
 
         for idx, learner in enumerate(self._learners):
-            means[:, idx], variances[:, idx] = learner.predict(X_test)
+            learner_means[:, idx], learner_stds[:, idx] = learner.predict(X_test)
 
-        mean = np.mean(means, axis=1)
-        var = np.mean(variances + np.square(means), axis=1) - mean ** 2
+        model_means = np.mean(learner_means, axis=1)
+        # \sigma_*^2 = M^{-1} * (\Sum_m (\sigma_m^2 + \mu_m^2)) - \mu_*^2
+        model_stds = np.abs(np.sqrt(np.mean(np.square(learner_stds) + np.square(learner_means), axis=1) - np.square(model_means)))
 
-        return mean, var
+        return model_means, model_stds
 
     def evaluate(self, X_test, y_test, **kwargs) -> (np.ndarray, np.ndarray):
         """
@@ -303,7 +304,7 @@ class DeepEnsemble(MLP):
             Array of expected output values.
         :return: rmse, log_likelihood
         """
-        means, vars = self.predict(X_test=X_test)
+        means, stds = self.predict(X_test=X_test)
         logger.debug("Generated final mean values of shape %s" % str(means.shape))
 
         if not isinstance(y_test, np.ndarray):
@@ -314,7 +315,7 @@ class DeepEnsemble(MLP):
         if len(y_test.shape) == 1:
             y_test = y_test[:, None]
 
-        vars = np.clip(vars, a_min=1e-6, a_max=None)
-        ll = np.mean(norm.logpdf(y_test, means, vars))
+        stds = np.clip(stds, a_min=1e-3, a_max=None)
+        ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
         self.analytics_headers = ('RMSE', 'Log-Likelihood')
         return rmse, ll
