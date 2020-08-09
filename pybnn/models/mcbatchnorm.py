@@ -137,9 +137,9 @@ class MCBatchNorm(MLP):
         cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
-        inv_std_y = np.std(y)  # Assume y is 1-D
-        tau_range_lower = int(floor(log10(inv_std_y * 0.5))) - 1
-        tau_range_upper = int(floor(log10(inv_std_y * 2))) + 1
+        inv_var_y = 1. / np.var(y)  # Assume y is 1-D
+        tau_range_lower = int(floor(log10(inv_var_y * 0.5))) - 1
+        tau_range_upper = int(floor(log10(inv_var_y * 2))) + 1
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="batch_size", lower=5, upper=10))
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="weight_decay", lower=-15, upper=-1))
         # cs.add_hyperparameter(UniformIntegerHyperparameter(name="num_epochs", lower=5, upper=20))
