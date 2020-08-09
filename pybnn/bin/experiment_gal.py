@@ -6,7 +6,7 @@ import argparse
 
 try:
     import pybnn
-except:
+except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
 
@@ -153,14 +153,13 @@ def perform_experiment():
         # ---------------------------------------------Generate model---------------------------------------------------
 
         model = config.mtype(**config.model_params)
-        # if config.exp_params['tbdir'] is None:
         if config.exp_params.tbdir in [None, '']:
             config.exp_params.tbdir = model.modeldir
-            logger.info("Tensorboard directory set to: %s" % (config.exp_params.tbdir))
+            logger.info("Tensorboard directory set to: %s" % str(config.exp_params.tbdir))
         globalConfig.params = config.exp_params
 
+        # TODO: Implement and verify proper RNG usage, storage in config file
         rng: np.random.RandomState = model.rng
-        mean_only = True if config.mtype is model_types.mlp else False
 
         logger.info("Saving new model to: %s" % config.model_params["model_path"])
 
@@ -168,7 +167,12 @@ def perform_experiment():
 
         model.fit(Xtrain, ytrain)
 
-        analytics.append(model.evaluate(Xtest, ytest, nsamples=10000))
+        res: dict = model.evaluate(Xtest, ytest, nsamples=10000)
+        if idx == 0:
+            analytics_headers = res.keys()
+
+        analytics.append(res.values())
+        logger.info("Analytics for test set: %s" % str(res))
         savedir = utils.ensure_path_exists(model.modeldir)
 
         # -----------------------------------------------Save results---------------------------------------------------
@@ -193,9 +197,9 @@ def perform_experiment():
                 print("Could not write configuration file for config:\n%s" % jdict)
 
         if idx == 0:
-            assert len(model.analytics_headers) == len(analytics[-1]), "The model analytics headers don't correspond " \
+            assert len(analytics_headers) == len(analytics[-1]), "The model analytics headers don't correspond " \
                                                                        "to the generated analytics."
-            analytics.insert(0, model.analytics_headers)
+            analytics.insert(0, analytics_headers)
             exp_results_file = os.path.normpath(os.path.join(savedir, '..', 'exp_results'))
 
         print("Finished experiment.")
