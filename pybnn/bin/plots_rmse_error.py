@@ -28,8 +28,9 @@ def main():
         with open(Path(datasets)) as fp:
             datasets = [l.strip() for l in fp]
 
-    print(f"Dataset\t\tAverage RMSE\tVariance\t\tAverage Log-likelihood\tVariance")
+    output_headers = ("Mean RMSE", "Std Dev", "Mean LL", "Std Dev")
     subdirs = os.scandir(root_dir)
+    output_df = pd.DataFrame(columns=output_headers)
     for dir in subdirs:
         if datasets is not None and dir.name not in datasets:
             # print(f"Skipping {dir.name}")
@@ -48,12 +49,12 @@ def main():
         data = res_data[1:]
         df = pd.DataFrame(data=data, index=range(len(data)), columns=headers)
         # means, stds = np.mean(res_data, axis=0), np.std(res_data, axis=0)
-        means, stds = df.mean().values.tolist(), df.std().values.tolist()
+        means, stds = df.mean(), df.std()
+        output_df.loc[dir.name, output_headers] = (means[headers[0]], stds[headers[0]], means[headers[1]], stds[headers[1]])
         # print(f"Means: {means}\nSTDs: {stds}")
-        print(f"{dir.name}\t\t{means[0]:0.3f}\t{stds[0]:0.3f}\t\t{means[1]:0.3f}\t\t{stds[1]:0.3f}")
-        del means
-        del stds
-        del res_data
+        # print(f"{dir.name}\t\t{means[0]:0.3f}\t{stds[0]:0.3f}\t\t{means[1]:0.3f}\t\t{stds[1]:0.3f}")
+    print(output_df)
+
 
 
 if __name__ == '__main__':
