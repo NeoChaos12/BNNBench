@@ -58,10 +58,11 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test, **kwargs) -> (np.ndar
     if not isinstance(y_test, np.ndarray):
         y_test = np.array(y_test)
 
-    if len(y_test.shape) == 1:
-        y_test = y_test[:, None]
+    # assert y_test.shape == means.shape and y_test.shape == stds.shape
 
-    assert y_test.shape == means.shape and y_test.shape == stds.shape
+    # if len(y_test.shape) == 1:
+    #     y_test = y_test[:, None]
+
 
     rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
     stds = np.clip(stds, a_min=1e-3, a_max=None)
