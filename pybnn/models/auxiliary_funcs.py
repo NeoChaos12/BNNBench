@@ -52,7 +52,8 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test, **kwargs) -> (np.ndar
     :return: dict [RMSE, LogLikelihood, LogLikelihood STD]
     """
     means, stds = model_obj.predict(X_test=X_test, **kwargs)
-    logger.debug("Generated final mean values of shape %s" % str(means.shape))
+    logger.debug("Generated final mean values of shape %s and std values of shape %s" %
+                 (str(means.shape), str(stds.shape)))
 
     if not isinstance(y_test, np.ndarray):
         y_test = np.array(y_test)

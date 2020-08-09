@@ -6,40 +6,12 @@ import torch.nn as nn
 from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, UniformIntegerHyperparameter
 from pybnn.config import globalConfig
 from pybnn.models.mlp import BaseModel, MLP
+from pybnn.models.auxiliary_funcs import evaluate_rmse_ll
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from collections import namedtuple, OrderedDict
 from scipy.stats import norm
 
 logger = logging.getLogger(__name__)
-
-
-def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
-    """
-    Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE.
-    :param model_obj: An instance object of either BaseModel or a sub-class of BaseModel.
-    :param X_test: (N, d)
-        Array of input features.
-    :param y_test: (N, 1)
-        Array of expected output values.
-    :return: dict [RMSE, LogLikelihood]
-    """
-    means, stds = model_obj.predict(X_test=X_test)
-    logger.debug("Generated final mean values of shape %s" % str(means.shape))
-
-    if not isinstance(y_test, np.ndarray):
-        y_test = np.array(y_test)
-
-    rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-
-    if len(y_test.shape) == 1:
-        y_test = y_test[:, None]
-
-    stds = np.clip(stds, a_min=1e-3, a_max=None)
-    ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
-
-    # Putting things into a dict helps keep interfaces uniform
-    results = {"RMSE": rmse, "LogLikelihood": ll}
-    return results
 
 
 class GaussianNLL(nn.Module):
@@ -120,10 +92,8 @@ class Learner(MLP):
         else:
             return means, stds
 
-    def evaluate(self, *args, **kwargs):
-        res = evaluate_rmse_ll(*args, **kwargs)
-        self.analytics_headers = tuple(res.keys())
-        return tuple(res.values())
+    def evaluate(self, X_test, y_test):
+        return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test)
 
 class DeepEnsemble(MLP):
     """
@@ -247,7 +217,7 @@ class DeepEnsemble(MLP):
             learner.preprocess_training_data(X, y)
 
     def validation_loss(self, Xval, yval):
-        return -self.evaluate(Xval, yval)[1]
+        return -self.evaluate(Xval, yval)["LogLikelihood"]
 
     def get_hyperparameter_space(self):
         """
@@ -290,11 +260,12 @@ class DeepEnsemble(MLP):
 
         model_means = np.mean(learner_means, axis=1)
         # \sigma_*^2 = M^{-1} * (\Sum_m (\sigma_m^2 + \mu_m^2)) - \mu_*^2
-        model_stds = np.abs(np.sqrt(np.mean(np.square(learner_stds) + np.square(learner_means), axis=1) - np.square(model_means)))
+        model_stds = np.abs(np.sqrt(np.mean(np.square(learner_stds) + np.square(learner_means), axis=1) -
+                                    np.square(model_means)))
 
         return model_means, model_stds
 
-    def evaluate(self, X_test, y_test, **kwargs) -> (np.ndarray, np.ndarray):
+    def evaluate(self, X_test, y_test) -> dict:
         """
         Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE and
         Log-Likelihood of the MC-Dropout prediction.
@@ -302,20 +273,23 @@ class DeepEnsemble(MLP):
             Array of input features.
         :param y_test: (N, 1)
             Array of expected output values.
-        :return: rmse, log_likelihood
+        :return: dict [RMSE, LogLikelihood, LogLikelihood STD]
         """
-        means, stds = self.predict(X_test=X_test)
-        logger.debug("Generated final mean values of shape %s" % str(means.shape))
 
-        if not isinstance(y_test, np.ndarray):
-            y_test = np.array(y_test)
+        return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test)
 
-        rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-
-        if len(y_test.shape) == 1:
-            y_test = y_test[:, None]
-
-        stds = np.clip(stds, a_min=1e-3, a_max=None)
-        ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
-        self.analytics_headers = ('RMSE', 'Log-Likelihood')
-        return rmse, ll
+        # means, stds = self.predict(X_test=X_test)
+        # logger.debug("Generated final mean values of shape %s" % str(means.shape))
+        #
+        # if not isinstance(y_test, np.ndarray):
+        #     y_test = np.array(y_test)
+        #
+        # rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+        #
+        # if len(y_test.shape) == 1:
+        #     y_test = y_test[:, None]
+        #
+        # stds = np.clip(stds, a_min=1e-3, a_max=None)
+        # ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
+        # self.analytics_headers = ('RMSE', 'Log-Likelihood')
+        # return rmse, ll
