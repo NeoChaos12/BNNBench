@@ -5,6 +5,7 @@ import torch.nn as nn
 import logging
 
 from pybnn.models.mlp import MLP
+from pybnn.models.auxiliary_funcs import evaluate_rmse_ll
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.config import globalConfig
 from functools import partial
@@ -15,6 +16,7 @@ from scipy.stats import norm
 # TODO: Switch to globalConfig, if needed
 
 logger = logging.getLogger(__name__)
+
 
 class MCBatchNorm(MLP):
     r"""
@@ -71,7 +73,6 @@ class MCBatchNorm(MLP):
         logger.info("Intialized MC-BatchNorm model.")
         logger.debug("Intialized MC-BatchNorm model parameters:\n%s" % str(self.model_params))
 
-
     def _generate_network(self):
         logger.debug("Generating NN for MCBatchNorm using parameters:\nTrack running stats: %s"
                      "\nMomentum: %s\nlearn affines: %s" % (self.running_stats, self.bn_momentum, self.learn_affines)
@@ -112,17 +113,22 @@ class MCBatchNorm(MLP):
 
     # Pre-training procedures same as for MLP, uses a common weight decay parameter for all layers.
 
-    def fit(self, X, y, return_history=True):
+    def fit(self, X, y):
         """
         Fits this model to the given data and returns the corresponding optimum hyperparameter configuration, final
         validation loss and hyperparameter fitting history.
         Generates a  validation set and generates num_confs hyperparameter configurations that are validated against
         validation loss on small training samples to choose the optimal configuration for full network training.
+        Note: Completely overrides the fit() method of MLP on account of limitations in the ConfigSpace package.
 
         :param X: Features.
         :param y: Regression targets.
         :return: tuple (optimal configuration, final validation loss, history)
         """
+
+        # TODO: Update modelParams property to synchronize it with ConfigSpace, thus allowing MLP.fit() to be re-used as
+        # TODO: well as extending the functionality of the model to generic hyperparameter optimizers.
+
         from sklearn.model_selection import train_test_split
         from math import log10, floor
 
@@ -131,7 +137,7 @@ class MCBatchNorm(MLP):
         cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark")
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
-        inv_std_y = np.std(y)   # Assume y is 1-D
+        inv_std_y = np.std(y)  # Assume y is 1-D
         tau_range_lower = int(floor(log10(inv_std_y * 0.5))) - 1
         tau_range_upper = int(floor(log10(inv_std_y * 2))) + 1
         cs.add_hyperparameter(UniformIntegerHyperparameter(name="batch_size", lower=5, upper=10))
@@ -152,20 +158,20 @@ class MCBatchNorm(MLP):
 
         for idx, conf in enumerate(confs):
             logger.debug("Training configuration #%d" % (idx + 1))
-
-            new_model = MCBatchNorm()
-            new_model.model_params = self.model_params
-            batch_size = 2 ** conf.get("batch_size")
-            weight_decay = 10 ** conf.get("weight_decay")
-            # num_epochs = 100 * conf.get("num_epochs")
-            num_epochs = self.num_epochs // 10
-            precision = conf.get("precision")
             logger.debug("Sampled configuration %s" % conf)
 
-            new_model.batch_size = batch_size
-            new_model.weight_decay = weight_decay
-            new_model.num_epochs = num_epochs
-            new_model.precision = precision
+            new_model = MCBatchNorm()
+            new_model.model_params = self.model_params._replace({
+                "batch_size": 2 ** conf.get("batch_size"),
+                "weight_decay": 10 ** conf.get("weight_decay"),
+                # "num_epochs": 100 * conf.get("num_epochs"),
+                "num_epochs": self.num_epochs // 10,
+                "precision": conf.get("precision")
+            })
+            # new_model.batch_size = batch_size
+            # new_model.weight_decay = weight_decay
+            # new_model.num_epochs = num_epochs
+            # new_model.precision = precision
 
             new_model.preprocess_training_data(Xtrain, ytrain)
             new_model.train_network()
@@ -174,37 +180,43 @@ class MCBatchNorm(MLP):
             # ypred = np.mean(new_model._predict_mc(Xval, nsamples=500), axis=0)
             # valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
             # Set validation loss to mean NLL
-            valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=500)[1]
+            valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=500)["LogLikelihood"]
+            logger.debug("Generated validation loss %f" % valid_loss)
 
             # res = (valid_loss, batch_size, weight_decay, num_epochs, precision)
-            res = (valid_loss, batch_size, weight_decay, precision)
+            # res = (valid_loss, batch_size, weight_decay, precision)
+            res = (valid_loss, conf)
 
             if optim is None or valid_loss < optim[0]:
                 optim = res
-                logger.debug("Updated optimum to: %s." % str(optim))
+                logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
 
             history.append(res)
 
-        logger.info("Found optimizing configuration %s." % str(optim))
+        logger.info("Training final model using optimal configuration %s\n" % optim[1])
         globalConfig.tblog = old_tblog_flag
 
         # _, self.batch_size, self.weight_decay, self.num_epochs, self.precision = optim
-        _, self.batch_size, self.weight_decay, self.precision = optim
+        self.model_params = self.model_params._replace({
+            "batch_size": 2 ** optim[1].get("batch_size"),
+            "weight_decay": 10 ** optim[1].get("weight_decay"),
+            # "num_epochs": 100 * optim[1].get("num_epochs"),
+            "precision": optim[1].get("precision")
+        })
+        # _, self.batch_size, self.weight_decay, self.precision = optim
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 
         # ypred = np.mean(self._predict_mc(Xval, nsamples=500), axis=0)
         # valid_loss = np.mean((ypred - yval) ** 2) ** 0.5
-        valid_loss = -self.evaluate(X_test=Xval, y_test=yval, nsamples=500)[1]
-        logger.info("Final trained network has validation loss: %f" % valid_loss)
+        results = self.evaluate(Xval, yval)
+        logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         if globalConfig.save_model:
             self.save_network()
 
-        return ((valid_loss, self.batch_size, self.weight_decay, self.num_epochs, self.precision), history) \
-            if return_history else (valid_loss, self.batch_size, self.weight_decay, self.num_epochs, self.precision)
-
+        return results, history
 
     def _predict_mc(self, X_test, nsamples=1000):
         r"""
@@ -269,8 +281,7 @@ class MCBatchNorm(MLP):
 
         return Yt_hat
 
-
-    def predict(self, **kwargs):
+    def predict(self, X_test, nsamples=500):
         """
         Given a set of input data features and the number of samples, returns the corresponding predictive means and
         variances.
@@ -278,22 +289,19 @@ class MCBatchNorm(MLP):
             The input feature points of shape [N, d] where N is the number of data points and d is the number of
             features.
         :param nsamples: int
-            The number of stochastic forward to sample on.
+            The number of stochastic forward passes to sample on. Default 500.
         :return: means, variances
             Two NumPy arrays of shape [N, 1].
         """
-        X_test = kwargs["X_test"]
-        nsamples = kwargs["nsamples"]
         mc_pred = self._predict_mc(X_test=X_test, nsamples=nsamples)
         mean = np.mean(mc_pred, axis=0)
         var = (1 / self.precision) + np.var(mc_pred, axis=0)
         return mean, var
 
-
     def evaluate(self, X_test, y_test, nsamples=500):
         """
         Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE and
-        Log-Likelihood of the MC-Dropout prediction.
+        Log-Likelihood of the MC-BatchNorm prediction.
         :param X_test: (N, d)
             Array of input features.
         :param y_test: (N, 1)
@@ -303,24 +311,26 @@ class MCBatchNorm(MLP):
         :return: mc_rmse, log_likelihood
         """
 
-        mc_mean, mc_var = self.predict(X_test=X_test, nsamples=nsamples)
-        logger.debug("Generated final mean values of shape %s" % str(mc_mean.shape))
-        # logger.debug("Generated final variance values of shape %s" % str(variance.shape))
+        return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test, nsamples=nsamples)
 
-        if not isinstance(y_test, np.ndarray):
-            y_test = np.array(y_test)
-
-        mc_rmse = np.mean((mc_mean.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-
-        if len(y_test.shape) == 1:
-            y_test = y_test[:, None]
-
-        assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
-        ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(np.abs(mc_var ** 0.5), a_min=1e-3, a_max=None))
-        ll_mean = np.mean(ll)
-        ll_variance = np.var(ll)
-
-        logger.debug("Model generated final MC-RMSE %f and LL %f." % (mc_rmse, ll_mean))
-
-        self.analytics_headers = ('MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
-        return mc_rmse, ll_mean, ll_variance
+        # mc_mean, mc_var = self.predict(X_test=X_test, nsamples=nsamples)
+        # logger.debug("Generated final mean values of shape %s" % str(mc_mean.shape))
+        # # logger.debug("Generated final variance values of shape %s" % str(variance.shape))
+        #
+        # if not isinstance(y_test, np.ndarray):
+        #     y_test = np.array(y_test)
+        #
+        # mc_rmse = np.mean((mc_mean.squeeze() - y_test.squeeze()) ** 2) ** 0.5
+        #
+        # if len(y_test.shape) == 1:
+        #     y_test = y_test[:, None]
+        #
+        # assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
+        # ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(np.abs(mc_var ** 0.5), a_min=1e-3, a_max=None))
+        # ll_mean = np.mean(ll)
+        # ll_variance = np.var(ll)
+        #
+        # logger.debug("Model generated final MC-RMSE %f and LL %f." % (mc_rmse, ll_mean))
+        #
+        # self.analytics_headers = ('MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
+        # return mc_rmse, ll_mean, ll_variance
