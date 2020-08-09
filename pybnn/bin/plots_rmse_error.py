@@ -53,6 +53,14 @@ def main():
         output_df.loc[dir.name, output_headers] = (means[headers[0]], stds[headers[0]], means[headers[1]], stds[headers[1]])
         # print(f"Means: {means}\nSTDs: {stds}")
         # print(f"{dir.name}\t\t{means[0]:0.3f}\t{stds[0]:0.3f}\t\t{means[1]:0.3f}\t\t{stds[1]:0.3f}")
+
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    pd.set_option('display.max_colwidth', None)
+    # pd.set_option('display.colheader_justify', "center")
+    pd.set_option('display.precision', 3)
+    output_df.sort_index(inplace=True)
     print(output_df)
 
 
