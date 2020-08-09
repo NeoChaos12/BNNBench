@@ -216,11 +216,8 @@ class MCDropout(MLP):
             logger.debug("Sampled configuration %s" % conf)
 
             new_model = MCDropout()
-            new_model.model_params = self.model_params._replace({
-                "tau": conf.get("precision"),
-                "pdrop": conf.get("pdrop"),
-                "num_epochs": self.num_epochs // 10
-            })
+            new_model.model_params = self.model_params._replace(**conf.get_dictionary(),
+                                                                num_epochs=self.num_epochs // 10)
 
             # new_model.precision = tau
             # new_model.num_epochs = self.num_epochs // 10

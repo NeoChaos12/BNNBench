@@ -5,10 +5,11 @@ import json
 import argparse
 
 try:
-    import pybnn
+    from pybnn import logger
 except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
+    from pybnn import logger
 
 import pybnn.utils.data_utils
 from pybnn.models import model_types
@@ -17,7 +18,7 @@ from pybnn.utils.attrDict import AttrDict
 import pybnn.utils.universal_utils as utils
 import logging
 
-logger = logging.getLogger('pybnn')
+logger.setLevel(logging.INFO)
 config_top_level_keys = utils.config_top_level_keys
 
 # ----------------------------------------------------------------------------------------------------------------------

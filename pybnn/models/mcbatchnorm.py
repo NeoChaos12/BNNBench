@@ -161,7 +161,7 @@ class MCBatchNorm(MLP):
             logger.debug("Sampled configuration %s" % conf)
 
             new_model = MCBatchNorm()
-            new_model.model_params = self.model_params._replace({
+            new_model.model_params = self.model_params._replace(**{
                 "batch_size": 2 ** conf.get("batch_size"),
                 "weight_decay": 10 ** conf.get("weight_decay"),
                 # "num_epochs": 100 * conf.get("num_epochs"),
@@ -197,7 +197,7 @@ class MCBatchNorm(MLP):
         globalConfig.tblog = old_tblog_flag
 
         # _, self.batch_size, self.weight_decay, self.num_epochs, self.precision = optim
-        self.model_params = self.model_params._replace({
+        self.model_params = self.model_params._replace(**{
             "batch_size": 2 ** optim[1].get("batch_size"),
             "weight_decay": 10 ** optim[1].get("weight_decay"),
             # "num_epochs": 100 * optim[1].get("num_epochs"),
