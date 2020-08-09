@@ -6,6 +6,7 @@ import logging
 from typing import Union
 
 from pybnn.models import BaseModel
+from pybnn.models.auxiliary_funcs import evaluate_rmse
 from pybnn.config import globalConfig
 from collections import OrderedDict, namedtuple
 import torch.optim as optim
@@ -15,32 +16,6 @@ from torch.optim.lr_scheduler import StepLR as steplr
 from ConfigSpace import ConfigurationSpace, Configuration, UniformFloatHyperparameter, Constant
 
 logger = logging.getLogger(__name__)
-
-
-def evaluate_rmse(model_obj: BaseModel, X_test, y_test) -> (np.ndarray,):
-    """
-    Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE.
-    :param model_obj: An instance object of BaseModel or a sub-class of BaseModel
-    :param X_test: (N, d)
-        Array of input features.
-    :param y_test: (N, 1)
-        Array of expected output values.
-    :return: dict [RMSE]
-    """
-    means = model_obj.predict(X_test=X_test)
-    logger.debug("Generated final mean values of shape %s" % str(means.shape))
-
-    if not isinstance(y_test, np.ndarray):
-        y_test = np.array(y_test)
-
-    rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-
-    if len(y_test.shape) == 1:
-        y_test = y_test[:, None]
-
-    # Putting things into a dict helps keep interfaces uniform
-    results = {"RMSE": rmse}
-    return results
 
 
 class MLP(BaseModel):
@@ -329,10 +304,8 @@ class MLP(BaseModel):
         else:
             X_ = X_test
 
-        # Sample a number of predictions for each given point
-        # Generate mean and variance for each given point from sampled predictions
-
         X_ = torch.Tensor(X_)
+        self.network.eval()
         Yt_hat = self.network(X_).data.cpu().numpy()
 
         if self.normalize_output:
@@ -424,10 +397,10 @@ class MLP(BaseModel):
 
             history.append(res)
 
-        logger.info("Obtained optimal configuration %s\nTraining final model." % optim[1])
+        logger.info("Training final model using optimal configuration %s\n" % optim[1])
         globalConfig.tblog = old_tblog_flag
 
-        self.model_params = self.model_params._replace(**optim[1].get_dictionary())
+        self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 
