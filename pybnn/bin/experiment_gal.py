@@ -130,7 +130,7 @@ def perform_experiment():
     # -----------------------------------------------Generate data------------------------------------------------------
 
     if isinstance(config.OBJECTIVE_FUNC, AttrDict):
-        data_splits = pybnn.utils.data_utils.data_generator(config.OBJECTIVE_FUNC)
+        data_splits = pybnn.utils.data_utils.data_generator(config.OBJECTIVE_FUNC, numbered=True)
     else:
         raise RuntimeError("This script does not support the old-style interface for specifying 1D toy functions.")
 
@@ -138,7 +138,8 @@ def perform_experiment():
 
     analytics = []
     exp_results_file = ''
-    for idx, (Xtrain, ytrain, Xtest, ytest) in enumerate(data_splits):
+    first_iteration_flag = True
+    for idx, (Xtrain, ytrain, Xtest, ytest) in data_splits:
 
         logger.info("Now conducting experiment on test split %d." % idx)
 
@@ -169,7 +170,7 @@ def perform_experiment():
         model.fit(Xtrain, ytrain)
 
         res: dict = model.evaluate(Xtest, ytest, nsamples=10000)
-        if idx == 0:
+        if first_iteration_flag:
             analytics_headers = res.keys()
 
         analytics.append(tuple(res.values()))
@@ -197,11 +198,12 @@ def perform_experiment():
             except TypeError as e:
                 print("Could not write configuration file for config:\n%s" % jdict)
 
-        if idx == 0:
+        if first_iteration_flag:
             assert len(analytics_headers) == len(analytics[-1]), "The model analytics headers don't correspond " \
                                                                        "to the generated analytics."
             analytics.insert(0, tuple(analytics_headers))
             exp_results_file = os.path.normpath(os.path.join(savedir, '..', 'exp_results'))
+            first_iteration_flag = False
 
         print("Finished experiment.")
 

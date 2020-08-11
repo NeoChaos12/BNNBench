@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
+from typing import Union, Optional, Tuple, List
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +72,17 @@ dataloader_args = {
 
 
 # TODO: Define standard AttrDict or namedtuple for dataset configurations
-def data_generator(obj_config: AttrDict) -> (np.ndarray, np.ndarray):
+def data_generator(obj_config: AttrDict, numbered=True) -> \
+        Union[Tuple[np.ndarray, np.ndarray], Tuple[int, Tuple[np.ndarray, np.ndarray]]]:
     """
     Parses the objective configuration for a named dataset and returns the dataset as X, y arrays.
     :param obj_config: The pre-processed configuration for defining an objective dataset.
-    :return: The required dataset as a 2-tuple of numpy arrays, (X, y), where X is the array of observed features and y
-    is the array of observed results/labels.
+    :param numbered: If True (default), returns the index number of the split along with each split.
+    :return: Iterator over [index, data] or data
+        data is the required dataset as a 2-tuple of numpy arrays, (X, y), where X is the array of observed features
+        and y is the array of observed results/labels. This function only returns an iterator.
     """
 
     dname = obj_config.name.lower()
-    return _generate_test_splits_from_local_dataset(**dataloader_args[dname], splits=obj_config.splits)
+    generator = _generate_test_splits_from_local_dataset(**dataloader_args[dname], splits=obj_config.splits)
+    return enumerate(generator, start=obj_config.splits[0]) if numbered else generator
