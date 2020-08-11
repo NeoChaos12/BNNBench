@@ -200,7 +200,7 @@ class MCDropout(MLP):
         tau_range_upper = int(floor(log10(inv_var_y * 2))) + 1
         cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
                                                          upper=10 ** tau_range_upper))
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-6, upper=1e-1, log=True))
+        cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-3, upper=9e-1, log=True))
         confs = cs.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
 
@@ -219,16 +219,12 @@ class MCDropout(MLP):
             new_model.model_params = self.model_params._replace(**conf.get_dictionary(),
                                                                 num_epochs=self.num_epochs // 10)
 
-            # new_model.precision = tau
-            # new_model.num_epochs = self.num_epochs // 10
-            # new_model.pdrop = pdrop
             logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
 
             new_model.preprocess_training_data(Xtrain, ytrain)
             new_model.train_network()
             logger.debug("Finished training sample network.")
 
-            # new_model.network.train()  # The dropout layers are stochastic only in training mode
             # Set validation loss to mean negative log likelihood
             valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=1000)["LogLikelihood"]
             logger.debug("Generated validation loss %f" % valid_loss)
@@ -240,23 +236,22 @@ class MCDropout(MLP):
                 logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
 
             history.append(res)
+            # Explicitly free up memory RIGHT NOW, useful for cases with bigger models or large datasets.
+            del new_model
 
         logger.info("Training final model using optimal configuration %s\n" % optim[1])
         globalConfig.tblog = old_tblog_flag
 
         self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
-        # self.precision = optim[1]
-        # self.pdrop = optim[2]
         self.preprocess_training_data(Xtrain, ytrain)
         self.train_network()
 
-        # self.network.eval()
         results = self.evaluate(Xval, yval)
         logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
-        if globalConfig.save_model:
-            self.save_network()
+        # if globalConfig.save_model:
+        #     self.save_network()
 
         return results, history
 
@@ -288,7 +283,6 @@ class MCDropout(MLP):
         # Sample a number of predictions for each given point
 
         self.network.train()
-
         if self.normalize_output:
             Yt_hat = np.array(
                 [zero_mean_unit_var_denormalization(
@@ -331,20 +325,6 @@ class MCDropout(MLP):
         """
 
         return super(MCDropout, self).predict(X_test=X_test)
-        # Normalize inputs
-        # if self.normalize_input:
-        #     X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
-        # else:
-        #     X_ = X_test
-        #
-        # X_ = torch.Tensor(X_)
-        #
-        # standard_pred = self.network(X_).data.cpu().numpy()
-        #
-        # if self.normalize_output:
-        #     standard_pred = zero_mean_unit_var_denormalization(standard_pred, self.y_mean, self.y_std)
-        #
-        # return standard_pred
 
     def evaluate(self, X_test, y_test, nsamples=1000):
         """
@@ -360,25 +340,3 @@ class MCDropout(MLP):
         """
 
         return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test, nsamples=nsamples)
-
-        # mc_mean, mc_var = self.predict(X_test=X_test, nsamples=nsamples)
-        # logger.debug("Generated final mean values of shape %s" % str(mc_mean.shape))
-        #
-        # if not isinstance(y_test, np.ndarray):
-        #     y_test = np.array(y_test)
-        #
-        # mc_rmse = np.mean((mc_mean.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-        #
-        # if len(y_test.shape) == 1:
-        #     y_test = y_test[:, None]
-        # assert y_test.shape == mc_mean.shape and y_test.shape == mc_var.shape
-        # ll = norm.logpdf(y_test, loc=mc_mean, scale=np.clip(np.abs(mc_var ** 0.5), a_min=1e-3, a_max=None))
-        # ll_mean = np.mean(ll)
-        # ll_variance = np.var(ll)
-        #
-        # logger.debug("Model with precision %f generated final MC-RMSE %f and LL %f." % (self.precision, mc_rmse, ll_mean))
-        #
-        # # self.analytics_headers = ('Standard RMSE', 'MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
-        # # return standard_rmse, mc_rmse, ll, ll_variance
-        # self.analytics_headers = ('MC RMSE', 'Log-Likelihood', 'Log-Likelihood Sample Variance')
-        # return mc_rmse, ll_mean, ll_variance

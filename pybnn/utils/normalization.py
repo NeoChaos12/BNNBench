@@ -21,7 +21,7 @@ def zero_mean_unit_var_normalization(X, mean=None, std=None):
     if mean is None:
         mean = np.mean(X, axis=0)
     if std is None:
-        std = np.std(X, axis=0)
+        std = np.clip(np.std(X, axis=0), a_min=1e-6, a_max=None)
 
     X_normalized = (X - mean) / std
 
