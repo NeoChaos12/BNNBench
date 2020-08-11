@@ -2,7 +2,7 @@
     "objective_function": {
       "type": "dataset",
       "name": "boston",
-      "splits": [0, 20]
+      "splits": [0, 1]
     },
     "model_parameters": {
         "num_epochs": 1000,
@@ -24,6 +24,6 @@
         "logTrainLoss": true,
         "logInternals": true,
         "logTrainPerformance": true,
-        "save_model": true
+        "save_model": false
     }
 }

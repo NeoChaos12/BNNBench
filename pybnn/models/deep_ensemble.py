@@ -54,6 +54,7 @@ class Learner(MLP):
             Overwrite the forward pass in the Softplus module in order to only enforce positivity on the std dev
             neuron.
             """
+
             def forward(self, input: torch.Tensor) -> torch.Tensor:
                 std = super(VariancePositivity, self).forward(input[:, 1])
                 std = torch.add(std, 1e-3)
@@ -94,6 +95,7 @@ class Learner(MLP):
 
     def evaluate(self, X_test, y_test):
         return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test)
+
 
 class DeepEnsemble(MLP):
     """
@@ -265,7 +267,7 @@ class DeepEnsemble(MLP):
 
         return model_means, model_stds
 
-    def evaluate(self, X_test, y_test) -> dict:
+    def evaluate(self, X_test, y_test, **kwargs) -> dict:
         """
         Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE and
         Log-Likelihood of the MC-Dropout prediction.

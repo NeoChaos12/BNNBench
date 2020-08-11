@@ -20,6 +20,6 @@
         "logTrainLoss": true,
         "logInternals": false,
         "logTrainPerformance": true,
-        "save_model": true
+        "save_model": false
     }
 }

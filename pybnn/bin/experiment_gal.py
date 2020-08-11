@@ -172,7 +172,7 @@ def perform_experiment():
         if idx == 0:
             analytics_headers = res.keys()
 
-        analytics.append(res.values())
+        analytics.append(tuple(res.values()))
         logger.info("Analytics for test set: %s" % str(res))
         savedir = utils.ensure_path_exists(model.modeldir)
 
@@ -200,7 +200,7 @@ def perform_experiment():
         if idx == 0:
             assert len(analytics_headers) == len(analytics[-1]), "The model analytics headers don't correspond " \
                                                                        "to the generated analytics."
-            analytics.insert(0, analytics_headers)
+            analytics.insert(0, tuple(analytics_headers))
             exp_results_file = os.path.normpath(os.path.join(savedir, '..', 'exp_results'))
 
         print("Finished experiment.")

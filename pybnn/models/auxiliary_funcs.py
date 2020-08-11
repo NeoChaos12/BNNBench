@@ -66,7 +66,7 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test, **kwargs) -> (np.ndar
 
     rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
     stds = np.clip(stds, a_min=1e-3, a_max=None)
-    ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
+    ll = norm.logpdf(y_test, loc=means, scale=stds)
     ll_mean = np.mean(ll)
     ll_std = np.std(ll)
 
