@@ -401,18 +401,19 @@ class MLP(BaseModel):
         globalConfig.tblog = old_tblog_flag
 
         self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
-        self.preprocess_training_data(Xtrain, ytrain)
+        self.preprocess_training_data(X, y)
         self.train_network()
 
-        results = self.evaluate(Xval, yval)
-        logger.info("Final analytics data of network training: %s" % str(results))
+        # results = self.evaluate(Xval, yval)
+        # logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         # TODO: Implement model saving for DeepEnsemble
         # if globalConfig.save_model:
         #     self.save_network()
 
-        return results, history
+        # return results, history
+        return history
 
     def __plot_layer_weights(self, weights, epochs, title="weights"):
         import matplotlib.pyplot as plt

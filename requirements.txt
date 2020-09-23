@@ -3,3 +3,4 @@ torchvision
 numpy
 emcee<=2.2.1
 scipy
+ConfigSpace

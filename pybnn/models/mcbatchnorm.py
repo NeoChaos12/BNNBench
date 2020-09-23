@@ -194,17 +194,18 @@ class MCBatchNorm(MLP):
             "precision": optim[1].get("precision")
         })
 
-        self.preprocess_training_data(Xtrain, ytrain)
+        self.preprocess_training_data(X, y)
         self.train_network()
 
-        results = self.evaluate(Xval, yval)
-        logger.info("Final analytics data of network training: %s" % str(results))
+        # results = self.evaluate(Xval, yval)
+        # logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         # if globalConfig.save_model:
         #     self.save_network()
 
-        return results, history
+        # return results, history
+        return history
 
     def _predict_mc(self, X_test, nsamples=1000):
         r"""
