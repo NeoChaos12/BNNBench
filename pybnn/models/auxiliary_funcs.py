@@ -40,7 +40,7 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test, **kwargs) -> (np.ndar
     """
     Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE.
     Assumes that the model implements a method model_obj.predict(X_test, **kwargs) which, given an input (N, d)
-    numpy.ndarray, returns a tuple (means, stds) such that means and stds are (N, 1) numpy.ndarray objects
+    numpy.ndarray, returns a tuple (means, vars) such that means and vars are (N, 1) numpy.ndarray objects
     corresponding to the predicted means and standard deviations at each data point contained in X_test.
     :param model_obj: An instance object of either BaseModel or a sub-class of BaseModel.
     :param X_test: (N, d)
@@ -51,22 +51,21 @@ def evaluate_rmse_ll(model_obj: BaseModel, X_test, y_test, **kwargs) -> (np.ndar
         Keyword arguments passed directly to model_obj.predict
     :return: dict [RMSE, LogLikelihood, LogLikelihood STD]
     """
-    means, stds = model_obj.predict(X_test=X_test, **kwargs)
+    means, vars = model_obj.predict(X_test=X_test, **kwargs)
     logger.debug("Generated final mean values of shape %s and std values of shape %s" %
-                 (str(means.shape), str(stds.shape)))
+                 (str(means.shape), str(vars.shape)))
 
     if not isinstance(y_test, np.ndarray):
         y_test = np.array(y_test)
 
-    # assert y_test.shape == means.shape and y_test.shape == stds.shape
+    # assert y_test.shape == means.shape and y_test.shape == vars.shape
 
     # if len(y_test.shape) == 1:
     #     y_test = y_test[:, None]
 
-
     rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-    stds = np.clip(stds, a_min=1e-3, a_max=None)
-    ll = norm.logpdf(y_test, loc=means, scale=stds)
+    vars = np.clip(vars, a_min=1e-6, a_max=None)
+    ll = norm.logpdf(y_test, loc=means, scale=np.sqrt(vars))
     ll_mean = np.mean(ll)
     ll_std = np.std(ll)
 
