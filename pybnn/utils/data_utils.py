@@ -1,9 +1,11 @@
 import os
 import logging
 import numpy as np
+from pathlib import Path
+
 from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
-from typing import Union, Optional, Tuple, List
+from typing import Union, Optional, Tuple, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -86,3 +88,46 @@ def data_generator(obj_config: AttrDict, numbered=True) -> \
     dname = obj_config.name.lower()
     generator = _generate_test_splits_from_local_dataset(**dataloader_args[dname], splits=obj_config.splits)
     return enumerate(generator, start=obj_config.splits[0]) if numbered else generator
+
+
+from sklearn.model_selection import train_test_split
+from emukit.core.loop.loop_state import create_loop_state
+
+
+def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str) -> \
+        Tuple[Sequence, Sequence, Sequence[str], Sequence[str]]:
+    """
+    Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
+    :param data_folder: The folder containing all relevant data files.
+    :param benchmark_name: The name of the benchmark, including the task id, in the format "<benchmark>_<task_id>", for
+    example "xgboost_189909".
+    :return: X, Y, feature_names, target_names
+    """
+
+    if not isinstance(data_folder, Path):
+        data_folder = Path(data_folder).expanduser().resolve()
+
+    data_file = data_folder /  (benchmark_name + "_data.txt")
+    headers_file = data_folder / (benchmark_name + "_headers.txt")
+    # TODO: Enable and check automatic target/feature selection using txt files
+    # feature_ind_file = basename / "_feature_indices.txt"
+    # target_ind_file = basename / "_target_indices.txt"
+
+    with open(headers_file) as fp:
+        headers = fp.readline().split(" ")
+
+    # with open(feature_ind_file) as fp:
+    #     feature_indices = [int(ind) for ind in fp.readlines()]
+    #
+    # with open(target_ind_file) as fp:
+    #     target_indices = [int(ind) for ind in fp.readlines()]
+
+    full_dataset = np.genfromtxt(data_file)
+    X, Y = full_dataset[:, :-2], full_dataset[:, -1]
+    features = headers[:-2]
+    targets = headers[-1]
+    # X, Y = full_dataset[:, feature_indices], full_dataset[:, target_indices]
+    # features = headers[feature_indices]
+    # targets = headers[target_indices]
+
+    return X, Y, features, targets

@@ -6,7 +6,7 @@ from emukit.core import (
     DiscreteParameter,
 )
 from math import log, exp
-from typing import Any, Sequence, Union
+from typing import Any, Sequence, Union, Dict
 
 
 # TODO: Define more mappings
@@ -96,22 +96,28 @@ value_maps = {
 }
 
 
-def configuration_CS_to_Emu(config: Union[cs.Configuration, Sequence], cspace: cs.ConfigurationSpace,
-                            headers: Union[Sequence, Any] = None):
+def configuration_CS_to_Emu(config: Union[cs.Configuration, Sequence, Dict], cspace: cs.ConfigurationSpace):
     """ Map a Configuration object config defined in the ConfigurationSpace cspace to an equivalent array of values
     compatible with the relevant Emukit parameter space. The configuration can be provided as either an object of
     type ConfigSpace.Configuration, or a sequence of normalized unit vector values, or a sequence of unnormalized
-    values along with the respective sequence of headers. """
+    values expected to map directly to the keys of the ConfigurationSpace. This is controlled by the vector flag. """
+
+    hypers = cspace.get_hyperparameters()
 
     if not isinstance(config, cs.Configuration):
         # Construct a cs.Configuration object from the values/vector provided.
-        if headers is None:
+        # This automatically checks for all constraints.
+        if isinstance(config, Sequence):
             # Assume vector representation was provided
             config = cs.Configuration(configuration_space=cspace, vector=config)
+        elif isinstance(config, Dict):
+            config = cs.Configuration(
+                configuration_space=cspace,
+                values={h: v for h, v in config.items()}
+            )
         else:
-            config = cs.Configuration(configuration_space=cspace, values={h: v for h, v in zip(headers, config)})
-
-    hypers = cspace.get_hyperparameters()
+            raise TypeError("Invalid object type %s for config. " \
+                            "Check the help for configuration_CS_to_Emu() for compatible types." % str(type(config)))
 
     ret = [value_maps[type(h)](config.get(h.name), h) for h in hypers]
     return ret
