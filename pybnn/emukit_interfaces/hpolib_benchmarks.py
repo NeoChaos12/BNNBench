@@ -15,7 +15,7 @@ class Benchmarks(Enum):
 class HPOlibBenchmarkObjective(UserFunctionWrapper):
     """ An emukit compatible objective function generated from an HPOlib Benchmark instance. """
 
-    def __init__(self, benchmark: Enum, task_id: int):
+    def __init__(self, benchmark: Enum, task_id: int, rng: int = 1):
         if benchmark == Benchmarks.XGBOOST:
             from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
         elif benchmark == Benchmarks.SVM:
@@ -24,7 +24,7 @@ class HPOlibBenchmarkObjective(UserFunctionWrapper):
             raise RuntimeError("Unexpected input %s of type %s, no corresponding benchmarks are known." %
                                (str(benchmark), str(type(benchmark))))
 
-        self.benchmark = bench(task_id=task_id)
+        self.benchmark = bench(task_id=task_id, rng=rng)
         self.original_space = self.benchmark.get_configuration_space()
         self.emukit_space = map_CS_to_Emu(self.original_space)
         self.map_configuration_to_original = EmutoCSMap(self.original_space)

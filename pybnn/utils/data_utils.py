@@ -94,15 +94,25 @@ from sklearn.model_selection import train_test_split
 from emukit.core.loop.loop_state import create_loop_state
 
 
-def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str) -> \
+def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
+                               extension: str = "txt") -> \
         Tuple[Sequence, Sequence, Sequence[str], Sequence[str]]:
     """
     Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
-    :param data_folder: The folder containing all relevant data files.
-    :param benchmark_name: The name of the benchmark, including the task id, in the format "<benchmark>_<task_id>", for
-    example "xgboost_189909".
+    :param data_folder: Path or string
+        The folder containing all relevant data files.
+    :param benchmark_name: string
+        The name of the benchmark.
+    :param task_id: int
+        The task id used for generating the required data,used to select the correct data file.
+    :param rng_seed: int
+        The seed that was used for generating the data, used to select the correct data file.
+    :param extension: string
+        The file extension.
     :return: X, Y, feature_names, target_names
     """
+
+    full_benchmark_name = f"{benchmark_name}_{task_id}_rng{task_id}.{extension}"
 
     if not isinstance(data_folder, Path):
         data_folder = Path(data_folder).expanduser().resolve()
