@@ -95,7 +95,8 @@ from emukit.core.loop.loop_state import create_loop_state
 
 
 def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                               extension: str = "txt") -> \
+                               extension: str = "txt", features: Tuple[int] = None,
+                               targets: Tuple[int] = None) -> \
         Tuple[Sequence, Sequence, Sequence[str], Sequence[str]]:
     """
     Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
@@ -109,6 +110,12 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
         The seed that was used for generating the data, used to select the correct data file.
     :param extension: string
         The file extension.
+    :param features: Tuple of integers
+        Indices specifying the subset of all available input dimensions which should be read. If None, all indices are
+        read. Default is None.
+    :param targets: Tuple of integers
+        Indices specifying the subset of all available output dimensions which should be read. If None, all indices are
+        read. Default is None.
     :return: X, Y, feature_names, target_names
     """
 
@@ -133,9 +140,17 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
     #     target_indices = [int(ind) for ind in fp.readlines()]
 
     full_dataset = np.genfromtxt(data_file)
-    X, Y = full_dataset[:, :-2], full_dataset[:, -1]
+    X, Y = full_dataset[:, :-2], full_dataset[:, -2:]
     features = headers[:-2]
-    targets = headers[-2]
+    targets = headers[-2:]
+
+    if features:
+        X = X[:, features]
+        features = headers[:-2]
+
+    if targets:
+        Y = Y[:, targets]
+        targets = headers[-2]
     # X, Y = full_dataset[:, feature_indices], full_dataset[:, target_indices]
     # features = headers[feature_indices]
     # targets = headers[target_indices]
