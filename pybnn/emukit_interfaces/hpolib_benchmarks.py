@@ -33,7 +33,7 @@ class HPOlibBenchmarkObjective(UserFunctionWrapper):
         def benchmark_wrapper(X: np.ndarray):
             assert X.ndim == 2, f"Something is wrong. Wasn't the input supposed to be a 2D array? " \
                                  f"Instead, it has shape {X.shape}"
-            res = [[self.benchmark.objective_function(self.map_configuration_to_original(X[idx, :]))["cost"]]
+            res = [[self.benchmark.objective_function(self.map_configuration_to_original(X[idx, :]))["function_value"]]
                    for idx in range(X.shape[0])]
             return np.asarray(res)
 

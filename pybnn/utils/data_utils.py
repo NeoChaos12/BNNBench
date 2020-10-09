@@ -125,7 +125,7 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
     full_dataset = np.genfromtxt(data_file)
     X, Y = full_dataset[:, :-2], full_dataset[:, -1]
     features = headers[:-2]
-    targets = headers[-1]
+    targets = headers[-2]
     # X, Y = full_dataset[:, feature_indices], full_dataset[:, target_indices]
     # features = headers[feature_indices]
     # targets = headers[target_indices]
