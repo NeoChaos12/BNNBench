@@ -2,10 +2,11 @@ import os
 import logging
 import numpy as np
 from pathlib import Path
+from typing import Union, Optional, Tuple, Sequence
+import itertools as itr
 
 from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
-from typing import Union, Optional, Tuple, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ from emukit.core.loop.loop_state import create_loop_state
 
 
 def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                               extension: str = "txt", features: Tuple[int] = None,
+                               extension: str = "csv", features: Tuple[int] = None,
                                targets: Tuple[int] = None) -> \
         Tuple[Sequence, Sequence, Sequence[str], Sequence[str]]:
     """
@@ -119,19 +120,19 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
     :return: X, Y, feature_names, target_names
     """
 
-    full_benchmark_name = f"{benchmark_name}_{task_id}_rng{task_id}.{extension}"
+    full_benchmark_name = f"{benchmark_name}_{task_id}_rng{rng_seed}"
 
     if not isinstance(data_folder, Path):
         data_folder = Path(data_folder).expanduser().resolve()
 
-    data_file = data_folder /  (benchmark_name + "_data.txt")
-    headers_file = data_folder / (benchmark_name + "_headers.txt")
+    data_file = data_folder /  (full_benchmark_name + f"_data.{extension}")
+    headers_file = data_folder / (full_benchmark_name + f"_headers.{extension}")
     # TODO: Enable and check automatic target/feature selection using txt files
     # feature_ind_file = basename / "_feature_indices.txt"
     # target_ind_file = basename / "_target_indices.txt"
 
     with open(headers_file) as fp:
-        headers = fp.readline().split(" ")
+        headers = fp.readlines()
 
     # with open(feature_ind_file) as fp:
     #     feature_indices = [int(ind) for ind in fp.readlines()]
@@ -140,19 +141,70 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
     #     target_indices = [int(ind) for ind in fp.readlines()]
 
     full_dataset = np.genfromtxt(data_file)
-    X, Y = full_dataset[:, :-2], full_dataset[:, -2:]
-    features = headers[:-2]
-    targets = headers[-2:]
+    if not features:
+        features = slice(0, -2)
 
-    if features:
-        X = X[:, features]
-        features = headers[:-2]
+    if not targets:
+        targets = -2
 
-    if targets:
-        Y = Y[:, targets]
-        targets = headers[-2]
-    # X, Y = full_dataset[:, feature_indices], full_dataset[:, target_indices]
-    # features = headers[feature_indices]
-    # targets = headers[target_indices]
+    X, Y, feature_names, target_names = full_dataset[:, features], full_dataset[:, targets], \
+                                        headers[features], headers[targets]
 
     return X, Y, features, targets
+
+
+def get_single_configs(arr: np.ndarray, evals_per_config: int, return_indices: bool = True, rng_seed: int = 1) -> \
+        Union[np.ndarray, Optional[Sequence]]:
+    """
+    If multiple evaluations per configuration had been performed, returns a selection of single configurations
+    from the tiled data as well as the corresponding indices unless otherwise specified.
+    :param arr: numpy array
+        The array of tiled configurations of shape [N, d].
+    :param evals_per_config: int
+        The number of times each configuration had been evaluated i.e. the tile frequency.
+    :param return_indices: bool
+        If True (default), the indices of the chosen rows are returned as well.
+    :param rng_seed: int
+        The seed for the RNG.
+    :return: de-tiled array, [indices]
+    """
+
+    nconfigs = int(arr.shape[0] / evals_per_config)
+    assert arr.shape[0] % evals_per_config == 0, f"For {evals_per_config} evaluations per configuration, the math " \
+                                                 f"doesn't add up, since {arr.shape[0]} total evaluations were read."
+
+    rng = np.random.RandomState(seed=rng_seed)
+    indices = np.asarray(tuple(map(rng.choice, [range(evals_per_config)] * nconfigs))) + \
+              np.array(range(0, arr.shape[0], evals_per_config), dtype=int)
+    selection = arr[indices]
+
+    return (selection, indices) if return_indices else selection
+
+def get_mean_output_per_config(arr: np.ndarray, evals_per_config: int) -> np.ndarray:
+    """ Generates mean output values from an array containing tiled outputs for multiple evaluations per
+    configuration. The input array must of shape [N, d], where N is the total number of evaluations and should be
+    divisible by evals_per_config. """
+
+    nconfigs = int(arr.shape[0] / evals_per_config)
+    assert arr.shape[0] % evals_per_config == 0, f"For {evals_per_config} evaluations per configuration, the math " \
+                                                 f"doesn't add up, since {arr.shape[0]} total evaluations were read."
+
+    tmp = arr.reshape((nconfigs, evals_per_config, -1))
+    return np.mean(tmp, axis=1)
+
+
+def split_data_indices(npoints: int, train_frac: float, rng_seed: int = None, return_test_indices: bool = True) -> \
+    Tuple[np.ndarray, Optional[np.ndarray]]:
+    """ Generate array indices to allow a dataset to be split into a training (and test) set. """
+
+    from math import floor
+    rng = np.random.RandomState(seed=rng_seed)
+    trainset_size = floor(npoints * train_frac)
+    all_idx = np.asarray(range(npoints), dtype=int)
+    train_idx = rng.choice(all_idx, size=trainset_size)
+    if return_test_indices:
+        test_idx = np.asarray([True] * npoints, dtype=bool)
+        test_idx[train_idx] = False
+        return train_idx, all_idx[test_idx]
+    else:
+        return train_idx
