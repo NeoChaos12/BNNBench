@@ -193,18 +193,33 @@ def get_mean_output_per_config(arr: np.ndarray, evals_per_config: int) -> np.nda
     return np.mean(tmp, axis=1)
 
 
-def split_data_indices(npoints: int, train_frac: float, rng_seed: int = None, return_test_indices: bool = True) -> \
+def split_data_indices(npoints: int, train_frac: float = None, train_size: int = None, rng_seed: int = None, return_test_indices: bool = True) -> \
     Tuple[np.ndarray, Optional[np.ndarray]]:
-    """ Generate array indices to allow a dataset to be split into a training (and test) set. """
+    """ Generate array indices to allow a dataset to be split into a training (and test) set. Either train_frac or
+    train_size must be given. train_size takes priority over train_frac. """
+
+    if train_frac is None and train_size is None:
+        raise RuntimeError("The size of the training set must be specified as either a fraction (train_frac) or as an "
+                           "integer (train_size).")
 
     from math import floor
     rng = np.random.RandomState(seed=rng_seed)
-    trainset_size = floor(npoints * train_frac)
-    all_idx = np.asarray(range(npoints), dtype=int)
-    train_idx = rng.choice(all_idx, size=trainset_size)
+    trainset_size = floor(npoints * train_frac) if train_size is None else train_size
+    all_idx = np.arange(npoints, dtype=int)
+    train_idx = rng.choice(all_idx, size=trainset_size, replace=False)
     if return_test_indices:
-        test_idx = np.asarray([True] * npoints, dtype=bool)
+        test_idx = np.repeat(True, repeats=npoints)
         test_idx[train_idx] = False
         return train_idx, all_idx[test_idx]
     else:
         return train_idx
+
+
+def exclude_indices(npoints: int, indices: Sequence) -> Sequence:
+    """ Helper function to generate a sequence of indices that excludes the given indices for a given maximum number of
+    indices. """
+
+    all_idx = np.arange(npoints, dtype=int)
+    req_idx = np.repeat(True, repeats=npoints)
+    req_idx[indices] = False
+    return all_idx[req_idx]
