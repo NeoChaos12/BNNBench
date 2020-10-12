@@ -16,7 +16,7 @@ from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
 from pybnn.emukit_interfaces import metrics as pybnn_metrics
 from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
-from pybnn.emukit_interfaces import logger as interface_logger
+from pybnn.emukit_interfaces import _logger as interface_logger
 
 # Logging setup
 interface_logger.setLevel(logging.DEBUG)
