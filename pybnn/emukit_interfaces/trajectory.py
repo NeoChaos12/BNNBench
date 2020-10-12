@@ -128,33 +128,3 @@ class TrajectoryResult(BayesianOptimizationResults):
             ax2.xaxis.set_minor_locator(plt.LinearLocator())
 
         return fig, ax
-
-def create_loop_state_from_data(X: np.ndarray, Y: np.ndarray, func_output_dim: int = 1,
-                                extra_output_names: List = None) -> LoopState:
-        """
-        Create a new LoopState object using the given data arrays.
-
-        :param X: Function inputs. Shape: (N, function input dimension,)
-        :param Y: Function output(s). Shape: (N, function output dimension + extra output dimension,)
-        :param kwargs: Extra outputs of the UserFunction to store, each item's shape: (N, extra output dimension,)
-
-        :returns: An object of type LoopState
-        """
-
-        assert X.shape[0] == Y.shape[0], "X and Y must have the same number of data points."
-        Y_only = Y[:, :func_output_dim]
-        extra_args = Y[:, func_output_dim:]
-
-        if extra_output_names is not None:
-            assert extra_args.shape[1] == len(extra_output_names), f"Mismatch in the number of extra output names " \
-                                                                   f"and extra output dimensions."
-
-        results = [None] * X.shape[0]
-        for i in range(X.shape[0]):
-            results[i] = UserFunctionResult(
-                X=X[i, :],
-                Y=Y_only[i, :],
-                **dict(zip(extra_output_names, extra_args[i, :]))
-            )
-
-        return LoopState(results)

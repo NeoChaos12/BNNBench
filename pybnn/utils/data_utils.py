@@ -1,6 +1,7 @@
 import os
 import logging
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from typing import Union, Optional, Tuple, Sequence
 import itertools as itr
@@ -96,9 +97,8 @@ from emukit.core.loop.loop_state import create_loop_state
 
 
 def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                               extension: str = "csv", features: Tuple[int] = None,
-                               targets: Tuple[int] = None) -> \
-        Tuple[Sequence, Sequence, Sequence[str], Sequence[str]]:
+                               extension: str = "csv") -> \
+        Tuple[np.ndarray, np.ndarray, np.ndarray, Sequence[str], Sequence[str], Sequence[str]]:
     """
     Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
     :param data_folder: Path or string
@@ -111,12 +111,6 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
         The seed that was used for generating the data, used to select the correct data file.
     :param extension: string
         The file extension.
-    :param features: Tuple of integers
-        Indices specifying the subset of all available input dimensions which should be read. If None, all indices are
-        read. Default is None.
-    :param targets: Tuple of integers
-        Indices specifying the subset of all available output dimensions which should be read. If None, all indices are
-        read. Default is None.
     :return: X, Y, feature_names, target_names
     """
 
@@ -127,30 +121,27 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
 
     data_file = data_folder /  (full_benchmark_name + f"_data.{extension}")
     headers_file = data_folder / (full_benchmark_name + f"_headers.{extension}")
-    # TODO: Enable and check automatic target/feature selection using txt files
-    # feature_ind_file = basename / "_feature_indices.txt"
-    # target_ind_file = basename / "_target_indices.txt"
+    feature_ind_file = data_folder / (full_benchmark_name + f"_feature_indices.{extension}")
+    output_ind_file = data_folder / (full_benchmark_name + f"_output_indices.{extension}")
+    meta_ind_file = data_folder / (full_benchmark_name + f"_meta_indices.{extension}")
 
     with open(headers_file) as fp:
-        headers = fp.readlines()
+        headers = [line.strip() for line in fp.readlines()]
 
-    # with open(feature_ind_file) as fp:
-    #     feature_indices = [int(ind) for ind in fp.readlines()]
-    #
-    # with open(target_ind_file) as fp:
-    #     target_indices = [int(ind) for ind in fp.readlines()]
+    with open(feature_ind_file) as fp:
+        feature_indices = [int(ind) for ind in fp.readlines()]
 
-    full_dataset = np.genfromtxt(data_file)
-    if not features:
-        features = slice(0, -2)
+    with open(output_ind_file) as fp:
+        output_indices = [int(ind) for ind in fp.readlines()]
 
-    if not targets:
-        targets = -2
+    with open(meta_ind_file) as fp:
+        meta_indices = [int(ind) for ind in fp.readlines()]
 
-    X, Y, feature_names, target_names = full_dataset[:, features], full_dataset[:, targets], \
-                                        headers[features], headers[targets]
-
-    return X, Y, features, targets
+    full_dataset = pd.read_csv(data_file, sep=" ", names=headers)
+    # full_dataset = np.genfromtxt(data_file)
+    return full_dataset.iloc[:, feature_indices].to_numpy(), full_dataset.iloc[:, output_indices].to_numpy(), \
+           full_dataset.iloc[:, meta_indices].to_numpy(), full_dataset.columns[feature_indices], full_dataset.columns[output_indices], \
+           full_dataset.columns[meta_indices]
 
 
 def get_single_configs(arr: np.ndarray, evals_per_config: int, return_indices: bool = True, rng_seed: int = 1) -> \
