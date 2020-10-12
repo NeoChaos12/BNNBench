@@ -28,8 +28,9 @@ class TargetEvaluationDurationMetric(metrics.Metric):
         """ Calculate the time it took for the evaluation of the target function in the last iteration. """
 
         try:
-            starts: np.ndarray = loop_state.query_timestamp
-            ends: np.ndarray = loop_state.response_timestamp
+            starts: np.ndarray = loop_state.query_timestamp[self.last_observed_iter:]
+            ends: np.ndarray = loop_state.response_timestamp[self.last_observed_iter:]
+            logger.debug("Generating durations for %d timestamps." % starts.shape[0])
         except ValueError as e:
             # Most likely a model which does not have the corresponding timestamps
             logger.debug("No matching timestamps founds for the given loop state, skipping metric %s calculation." %
@@ -40,9 +41,9 @@ class TargetEvaluationDurationMetric(metrics.Metric):
         assert starts.shape == ends.shape, "Shape mismatch between target function evaluation timestamp arrays."
         # Both should be [N, 1] arrays
 
-        durations = np.subtract(ends[self.last_observed_iter:], starts[self.last_observed_iter:])
-        self.last_observed_iter = starts.size - 1
-
+        durations = np.subtract(ends, starts).squeeze()
+        self.last_observed_iter = starts.size
+        logger.debug("Generated durations(s): %s." % str(durations))
         return durations
 
     def reset(self) -> None:
@@ -62,13 +63,15 @@ class AcquisitionValueMetric(metrics.Metric):
         if loop_state.X[-1] is not None:
             new_configs = loop_state.X[self.last_observed_iter:, :]
             try:
-                vals = loop.candidate_point_calculator.acquisition.evaluate(new_configs)
+                logger.debug("Generating acquisition function value(s) for %d configurations." % new_configs.shape[0])
+                vals = loop.candidate_point_calculator.acquisition.evaluate(new_configs).squeeze()
             except AttributeError:
                 # This is probably either a dummy loop or uses no acquisition function
                 logger.debug("Could not access acquisition function. Skipping metric %s calculation." % self.name)
                 vals = np.array([0])
 
-            self.last_observed_iter = loop_state.X.shape[0] - 1
+            self.last_observed_iter = loop_state.X.shape[0]
+            logger.debug("Generated acquisition function value(s): %s." % str(vals))
             return vals
         return np.array([np.nan])
 
@@ -97,6 +100,8 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         """
 
         try:
+            logger.debug("Generating mean and variance predictions for NLL calculation on %d test configurations." %
+                         self.x_test.shape[0])
             means, variances = loop.model_updaters[0].model.predict(self.x_test)
         except AttributeError:
             # This is probably a dummy loop with no acquisition function
@@ -106,7 +111,9 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         from scipy.stats import norm
         variances = np.clip(variances, a_min=1e-6, a_max=None)
         ll = norm.logpdf(self.y_test, loc=means, scale=np.sqrt(variances))
-        return np.mean(ll, axis=0)
+        ll = np.mean(ll, axis=0).squeeze()
+        logger.debug("Generated mean NLL value(s): %s." % str(ll))
+        return ll
 
 
 # Almost one-to-one re-implementation of the equivalent metric provided in emukit by default, made in order to handle
@@ -135,11 +142,30 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         """
 
         try:
+            logger.debug("Generating mean and variance predictions for RMSE calculation on %d test configurations." %
+                         self.x_test.shape[0])
             predictions = loop.model_updaters[0].model.predict(self.x_test)[0]
         except AttributeError as e:
             # Most likely a Random model that has no model attribute.
             logger.debug("No model found. Skipping metric %s calculation." % self.name)
             return np.array([0])
 
-        mse = np.mean(np.square(self.y_test - predictions), axis=0)
-        return np.sqrt(mse)
+        rmse = np.sqrt(np.mean(np.square(self.y_test - predictions), axis=0)).squeeze()
+        logger.debug("Generated RMSE value(s): %s" % str(rmse))
+        return rmse
+
+def _add_value_to_metrics_dict_corrected(loop_state, value, key_name):
+    """
+    A corrected version for the default function provided in emukit.benchmarking.loop_benchmarks.benchmarker.
+    """
+
+    new_value = np.asarray(value)
+    if new_value.ndim == 0:
+        new_value = new_value.reshape((-1))
+
+    if key_name in loop_state.metrics:
+        # Array already exists - append new value
+        loop_state.metrics[key_name] = np.concatenate([loop_state.metrics[key_name], new_value], axis=0)
+    else:
+        # Initialise array
+        loop_state.metrics[key_name] = new_value

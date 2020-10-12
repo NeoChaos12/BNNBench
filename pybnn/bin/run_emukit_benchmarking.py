@@ -9,18 +9,31 @@ from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 from pybnn.models import MCDropout, MCBatchNorm
 from pybnn.emukit_interfaces.loops import create_pybnn_bo_loop, ModelType
 
-from emukit.benchmarking.loop_benchmarking.benchmarker import Benchmarker
+from emukit.benchmarking.loop_benchmarking import benchmarker
 from emukit.benchmarking.loop_benchmarking.random_search import RandomSearch
 from emukit.examples.gp_bayesian_optimization.single_objective_bayesian_optimization import GPBayesianOptimization
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
 from pybnn.emukit_interfaces import metrics as pybnn_metrics
 from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
-from pybnn.emukit_interfaces import _logger as interface_logger
+
+# ############# SETUP ENVIRONMENT ######################################################################################
 
 # Logging setup
-interface_logger.setLevel(logging.DEBUG)
+
+# logging.basicConfig(level=logging.WARNING)
+# from pybnn.emukit_interfaces import _logger as interface_logger
+# interface_logger.setLevel(logging.DEBUG)
+# benchmarker_logger = benchmarker._log
+# benchmarker_logger.setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Miscellaneous setup
+
+# This is necessary because the default function definition mishandles array shapes.
+benchmarker._add_value_to_metrics_dict = pybnn_metrics._add_value_to_metrics_dict_corrected
+
 
 # Global variables
 NUM_LOOP_ITERS = 5
@@ -120,9 +133,13 @@ metrics = [emukit_metrics.TimeMetric(), emukit_metrics.CumulativeCostMetric(), p
            emukit_metrics.MinimumObservedValueMetric(), pybnn_metrics.TargetEvaluationDurationMetric(),
            pybnn_metrics.NegativeLogLikelihoodMetric(x_test=test_X, y_test=test_Y)]
 
-benchmarkers = Benchmarker(loops, target_function, target_function.emukit_space, metrics=metrics)
+benchmarkers = benchmarker.Benchmarker(loops, target_function, target_function.emukit_space, metrics=metrics)
 benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_initial_data=NUM_INITIAL_DATA,
                                                n_repeats=NUM_REPEATS)
+
+# TODO: Handle initial metric values, since the default code simply flattens the entire array of results for each
+#  iteration at the time of plotting. Suggestion: Store these values separately during initialization and augment the
+#  plotting routines and results accordingly afterwards.
 
 plots_against_iterations = BenchmarkPlot(benchmark_results=benchmark_results)
 plots_against_iterations.make_plot()
