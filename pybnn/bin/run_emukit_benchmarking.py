@@ -3,7 +3,15 @@
 import logging
 from pathlib import Path
 import numpy as np
-from pybnn.bin import _default_log_format
+
+try:
+    from pybnn.bin import _default_log_format
+except (ImportError, ModuleNotFoundError):
+    import sys
+    import os.path
+    sys.path.append(os.path.expandvars('$PYBNNPATH'))
+    from pybnn.bin import _default_log_format
+
 import pybnn.utils.data_utils as dutils
 from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 

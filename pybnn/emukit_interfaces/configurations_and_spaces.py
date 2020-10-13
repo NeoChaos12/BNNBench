@@ -70,8 +70,8 @@ def EmutoCSMap(cspace: cs.ConfigurationSpace):
     returns a sequence of values compatible with the given instance of ConfigSpace.ConfigurationSpace, given that the
     ParameterSpace itself is compatible. """
 
-    def map(values: Sequence):
-        return [_emu_to_cs_map[type(p).__name__](p, v) for p, v in zip(cspace.get_hyperparameters(), values)]
+    def map(values: Sequence) -> Dict:
+        return {p.name: _emu_to_cs_map[type(p).__name__](p, v) for p, v in zip(cspace.get_hyperparameters(), values)}
 
     return map
 
