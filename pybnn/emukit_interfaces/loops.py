@@ -6,6 +6,8 @@ import numpy as np
 from emukit.bayesian_optimization.loops.bayesian_optimization_loop import BayesianOptimizationLoop
 from emukit.core import ParameterSpace
 from emukit.core.loop.loop_state import LoopState, create_loop_state, UserFunctionResult
+from emukit.examples.gp_bayesian_optimization.single_objective_bayesian_optimization import GPBayesianOptimization
+from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from typing import List, Sequence, Union
 
 logger = logging.getLogger(__name__)
@@ -26,9 +28,19 @@ def create_pybnn_bo_loop(model_type: ModelType, model_params: BaseModel.modelPar
     pybnn_model = PyBNNModel(model=model_classes[model_type], model_params=model_params)
     pybnn_model.set_data(initial_state.X, initial_state.Y)
     boloop = BayesianOptimizationLoop(space=space, model=pybnn_model)
-    boloop.loop_state = initial_state
+    boloop.loop_state = LoopState(initial_results=initial_state.results[:])
     logger.info("BOLoop for PyBNN model initialized.")
     return boloop
+
+
+def create_gp_bo_loop(space: ParameterSpace, initial_state: LoopState, acquisition_type: AcquisitionType,
+                      **kwargs) -> BayesianOptimizationLoop:
+    """ Creates a Bayesian Optimization Loop using a GP model. The keyword arguments are passed as is to
+    emukit.examples.gp_bayesian_optimization.single_objective_bayesian_optimization.GPBayesianOptimization. """
+    loop = GPBayesianOptimization(variables_list=space.parameters, X=initial_state.X, Y=initial_state.Y,
+                                  acquisition_type=acquisition_type, **kwargs)
+    loop.loop_state = LoopState(initial_results=initial_state.results[:])
+    return loop
 
 
 def create_loop_state_from_data(X: np.ndarray, Y: np.ndarray, func_output_dim: int = 1,

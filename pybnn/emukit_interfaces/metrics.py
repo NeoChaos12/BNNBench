@@ -66,7 +66,7 @@ class AcquisitionValueMetric(metrics.Metric):
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
         if loop_state.X[-1] is not None:
             # new_configs = loop_state.X[self.last_observed_iter:, :]
-            new_configs = loop_state.X[-1, :]
+            new_configs = loop_state.X[[-1], :]
             try:
                 logger.debug("Generating acquisition function value(s) for %d configurations." % new_configs.shape[0])
                 vals = loop.candidate_point_calculator.acquisition.evaluate(new_configs).squeeze()

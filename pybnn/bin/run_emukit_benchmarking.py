@@ -3,15 +3,15 @@
 import logging
 from pathlib import Path
 import numpy as np
+from pybnn.bin import _default_log_format
 import pybnn.utils.data_utils as dutils
 from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 
 from pybnn.models import MCDropout, MCBatchNorm
-from pybnn.emukit_interfaces.loops import create_pybnn_bo_loop, ModelType
+from pybnn.emukit_interfaces.loops import create_pybnn_bo_loop, ModelType, create_gp_bo_loop
 
 from emukit.benchmarking.loop_benchmarking import benchmarker
 from emukit.benchmarking.loop_benchmarking.random_search import RandomSearch
-from emukit.examples.gp_bayesian_optimization.single_objective_bayesian_optimization import GPBayesianOptimization
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
 from pybnn.emukit_interfaces import metrics as pybnn_metrics
@@ -21,7 +21,7 @@ from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
 
 # Logging setup
 
-logging.basicConfig(level=logging.WARNING, format='[%(levelname)s] %(name)s at %(asctime)s --- %(message)s')
+logging.basicConfig(level=logging.WARNING, format=_default_log_format)
 # from pybnn.emukit_interfaces import _log as interface_logger
 # interface_logger.setLevel(logging.DEBUG)
 # benchmarker_logger = benchmarker._log
@@ -36,12 +36,14 @@ logger.setLevel(logging.DEBUG)
 
 
 # Global variables
-NUM_LOOP_ITERS = 5
+NUM_LOOP_ITERS = 200
 TASK_ID = 189909
 SOURCE_RNG_SEED = 1
 NUM_INITIAL_DATA = None
-NUM_REPEATS = 2
+NUM_REPEATS = 10
 SOURCE_DATA_TILE_FREQ = 10
+
+save_dir = Path("~/experiments/").expanduser()
 
 # ############# LOAD DATA ##############################################################################################
 
@@ -78,20 +80,11 @@ X_emu = X_emu_full[tile_index]
 NUM_INITIAL_DATA = 10 * X.shape[1]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 
-# train_ind = dutils.split_data_indices(npoints=X.shape[0], train_size=NUM_INITIAL_DATA, rng_seed=None,
-#                                return_test_indices=False)
-
-# train_X, train_Y = X_emu[train_ind], y[train_ind]
-# test_ind = dutils.exclude_indices(npoints=X_full.shape[0], indices=ind1[train_ind])
-# test_X, test_Y = X_emu_full[test_ind], y_full[test_ind]
-
 test_X, test_Y = X_emu_full, y_full
 X_rmse_test = X_emu_full[tile_index]
 Y_rmse_test = np.mean(test_Y.reshape((-1, SOURCE_DATA_TILE_FREQ, len(outputs))), axis=1)
 assert X_rmse_test.shape[0] == Y_rmse_test.shape[0]
 
-# train_loop_state = create_loop_state(x_init=train_X, y_init=train_Y[:, np.newaxis])
-# train_loop_state = LoopStateWithTimestamps.from_state(train_loop_state)
 
 # ############# SETUP MODELS ###########################################################################################
 
@@ -117,13 +110,13 @@ loops = [
             initial_state=loop_state
         )
     ),
-    # (
-    #     'Gaussian Process',
-    #     lambda loop_state: GPBayesianOptimization(
-    #         variables_list=target_function.emukit_space.parameters, X=loop_state.X, Y=loop_state.Y,
-    #         acquisition_type=AcquisitionType.EI, noiseless=True
-    #     )
-    # )
+    (
+        'Gaussian Process',
+        lambda loop_state: create_gp_bo_loop(
+            space=target_function.emukit_space, initial_state=loop_state, acquisition_type=AcquisitionType.EI,
+            noiseless=True
+        )
+    )
 ]
 
 # ############# RUN BENCHMARKS #########################################################################################
@@ -141,7 +134,19 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
 #  iteration at the time of plotting. Suggestion: Store these values separately during initialization and augment the
 #  plotting routines and results accordingly afterwards.
 
+import matplotlib.pyplot as plt
+
 plots_against_iterations = BenchmarkPlot(benchmark_results=benchmark_results)
+n_metrics = len(plots_against_iterations.metrics_to_plot)
+plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics)
 plots_against_iterations.make_plot()
+plt.savefig(save_dir / "vs_iter.pdf")
+# plt.show()
+
 plots_against_time = BenchmarkPlot(benchmark_results=benchmark_results, x_axis_metric_name='time')
+n_metrics = len(plots_against_time.metrics_to_plot)
+plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics)
 plots_against_time.make_plot()
+plt.savefig(save_dir / "vs_time.pdf")
+# plt.show()
+# breakpoint()
