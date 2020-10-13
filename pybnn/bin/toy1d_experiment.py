@@ -16,7 +16,7 @@ except:
 import pybnn.utils.data_utils
 from pybnn.models import MLP, MCDropout, MCBatchNorm, DNGO, DeepEnsemble
 from pybnn.config import globalConfig as conf
-from pybnn import logger as pybnn_logger
+from pybnn import _log as pybnn_logger
 from pybnn.toy_functions import parameterisedObjectiveFunctions, nonParameterisedObjectiveFunctions, SamplingMethods
 from pybnn.toy_functions.toy_1d import ObjectiveFunction1D
 from pybnn.toy_functions.sampler import sample_1d_func

@@ -13,7 +13,7 @@ except:
 import pybnn.utils.data_utils
 from pybnn.models import model_types
 from pybnn.config import globalConfig
-from pybnn import logger as pybnn_logger
+from pybnn import _log as pybnn_logger
 from pybnn.utils.attrDict import AttrDict
 import pybnn.utils.universal_utils as utils
 

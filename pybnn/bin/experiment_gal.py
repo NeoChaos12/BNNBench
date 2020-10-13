@@ -5,11 +5,11 @@ import json
 import argparse
 
 try:
-    from pybnn import logger
+    from pybnn import _log
 except (ImportError, ModuleNotFoundError):
     import sys
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
-    from pybnn import logger
+    from pybnn import _log
 
 import pybnn.utils.data_utils
 from pybnn.models import model_types
@@ -18,7 +18,7 @@ from pybnn.utils.attrDict import AttrDict
 import pybnn.utils.universal_utils as utils
 import logging
 
-logger.setLevel(logging.INFO)
+_log.setLevel(logging.INFO)
 config_top_level_keys = utils.config_top_level_keys
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -80,31 +80,31 @@ def handle_cli():
     default_model_params = model_types[mtype]._default_model_params._asdict()
 
     if args.config is not None:
-        logger.info("--config flag detected.")
+        _log.info("--config flag detected.")
         config_file_path = utils.standard_pathcheck(args.config)
         with open(config_file_path, 'r') as fp:
             json_config = json.load(fp)
 
         if config_top_level_keys.obj_func in json_config:
-            logger.debug("Attempting to fetch objective function %s" %
-                         json_config[config_top_level_keys.obj_func])
+            _log.debug("Attempting to fetch objective function %s" %
+                       json_config[config_top_level_keys.obj_func])
             if isinstance(json_config[config_top_level_keys.obj_func], dict):
                 utils.parse_objective(config=json_config[config_top_level_keys.obj_func], out=config)
             else:
                 raise RuntimeError("This script is intended for use with datasets only and thus requires the dataset "
                                    "to be specified as a dict in the JSON config file.")
-            logger.info("Fetched objective.")
+            _log.info("Fetched objective.")
 
         if config_top_level_keys.mparams in json_config:
             json_model_params = json_config[config_top_level_keys.mparams]
-            logger.info("Using model parameters provided by config file.")
+            _log.info("Using model parameters provided by config file.")
             for key, val in default_model_params.items():
                 config.model_params[key] = val if json_model_params.get(key, None) is None else \
                     json_model_params[key]
-            logger.info("Final model parameters: %s" % config.model_params)
+            _log.info("Final model parameters: %s" % config.model_params)
 
         if config_top_level_keys.eparams in json_config:
-            logger.info("Using experiment parameters provided by config file.")
+            _log.info("Using experiment parameters provided by config file.")
             json_exp_params = json_config[config_top_level_keys.eparams]
 
             for key in globalConfig.cli_arguments:
@@ -118,12 +118,12 @@ def handle_cli():
                     setattr(config.exp_params, key, jsonval)
 
             # TODO: Fix. Use the params property to display this properly.
-            logger.info("Final experiment parameters: %s" % config.exp_params)
+            _log.info("Final experiment parameters: %s" % config.exp_params)
     else:
-        logger.info("No config file detected, using default parameters.")
+        _log.info("No config file detected, using default parameters.")
         config.model_params = default_model_params
 
-    logger.info("Finished reading command line arguments.")
+    _log.info("Finished reading command line arguments.")
 
 
 def perform_experiment():
@@ -134,21 +134,21 @@ def perform_experiment():
     else:
         raise RuntimeError("This script does not support the old-style interface for specifying 1D toy functions.")
 
-    logger.debug("Finished generating dataset splits.")
+    _log.debug("Finished generating dataset splits.")
 
     analytics = []
     exp_results_file = ''
     first_iteration_flag = True
     for idx, (Xtrain, ytrain, Xtest, ytest) in data_splits:
 
-        logger.info("Now conducting experiment on test split %d." % idx)
+        _log.info("Now conducting experiment on test split %d." % idx)
 
         Xtrain = Xtrain[:, None] if len(Xtrain.shape) == 1 else Xtrain
         ytrain = ytrain[:, None] if len(ytrain.shape) == 1 else ytrain
         Xtest = Xtest[:, None] if len(Xtest.shape) == 1 else Xtest
         ytest = ytest[:, None] if len(ytest.shape) == 1 else ytest
-        logger.debug("Loaded split with training X, y of shapes %s, %s and test X, y of shapes %s, %s" %
-                     (Xtrain.shape, ytrain.shape, Xtest.shape, ytest.shape))
+        _log.debug("Loaded split with training X, y of shapes %s, %s and test X, y of shapes %s, %s" %
+                   (Xtrain.shape, ytrain.shape, Xtest.shape, ytest.shape))
 
         config.model_params["dataset_size"] = Xtrain.shape[0] + Xtest.shape[0]
 
@@ -157,13 +157,13 @@ def perform_experiment():
         model = config.mtype(**config.model_params)
         if config.exp_params.tbdir in [None, '']:
             config.exp_params.tbdir = model.modeldir
-            logger.info("Tensorboard directory set to: %s" % str(config.exp_params.tbdir))
+            _log.info("Tensorboard directory set to: %s" % str(config.exp_params.tbdir))
         globalConfig.params = config.exp_params
 
         # TODO: Implement and verify proper RNG usage, storage in config file
         rng: np.random.RandomState = model.rng
 
-        logger.info("Saving new model to: %s" % config.model_params["model_path"])
+        _log.info("Saving new model to: %s" % config.model_params["model_path"])
 
         # -----------------------------------------------Let it roll----------------------------------------------------
 
@@ -174,7 +174,7 @@ def perform_experiment():
             analytics_headers = res.keys()
 
         analytics.append(tuple(res.values()))
-        logger.info("Analytics for test set: %s" % str(res))
+        _log.info("Analytics for test set: %s" % str(res))
         savedir = utils.ensure_path_exists(model.modeldir)
 
         # -----------------------------------------------Save results---------------------------------------------------
@@ -213,12 +213,12 @@ def perform_experiment():
             summary(model.network, input_size=(model.batch_size, model.input_dims))
 
         del model
-        logger.info("Finished conducting experiment on test split %d." % idx)
+        _log.info("Finished conducting experiment on test split %d." % idx)
 
     with open(exp_results_file, 'w') as fp:
         json.dump(analytics, fp, indent=4)
 
-    logger.info("Finished conducting all experiments on the given dataset.")
+    _log.info("Finished conducting all experiments on the given dataset.")
 
 
 if __name__ == '__main__':

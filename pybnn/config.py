@@ -2,7 +2,7 @@ from collections import namedtuple
 from functools import partial
 from torch.utils.tensorboard import SummaryWriter
 import logging
-from pybnn import logger
+from pybnn import _log
 from pybnn.utils import universal_utils as utils
 
 class ExpConfig:
@@ -59,7 +59,7 @@ class ExpConfig:
     def debug(self, val):
         assert type(val) is bool
         self.__debug = val
-        logger.setLevel(logging.DEBUG if val else logging.INFO)
+        _log.setLevel(logging.DEBUG if val else logging.INFO)
 
 
     @property

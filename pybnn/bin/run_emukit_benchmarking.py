@@ -21,8 +21,8 @@ from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
 
 # Logging setup
 
-# logging.basicConfig(level=logging.WARNING)
-# from pybnn.emukit_interfaces import _logger as interface_logger
+logging.basicConfig(level=logging.WARNING, format='[%(levelname)s] %(name)s at %(asctime)s --- %(message)s')
+# from pybnn.emukit_interfaces import _log as interface_logger
 # interface_logger.setLevel(logging.DEBUG)
 # benchmarker_logger = benchmarker._log
 # benchmarker_logger.setLevel(logging.DEBUG)
@@ -32,7 +32,7 @@ logger.setLevel(logging.DEBUG)
 # Miscellaneous setup
 
 # This is necessary because the default function definition mishandles array shapes.
-benchmarker._add_value_to_metrics_dict = pybnn_metrics._add_value_to_metrics_dict_corrected
+# benchmarker._add_value_to_metrics_dict = pybnn_metrics._add_value_to_metrics_dict_corrected
 
 
 # Global variables
