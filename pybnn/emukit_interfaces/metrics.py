@@ -22,33 +22,37 @@ class TargetEvaluationDurationMetric(metrics.Metric):
 
     def __init__(self, name: str = "evaluation_duration", ):
         self.name = name
-        self.last_observed_iter = 0
+        # self.last_observed_iter = 0
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
         """ Calculate the time it took for the evaluation of the target function in the last iteration. """
 
         try:
-            starts: np.ndarray = loop_state.query_timestamp[self.last_observed_iter:]
-            ends: np.ndarray = loop_state.response_timestamp[self.last_observed_iter:]
-            logger.debug("Generating durations for %d timestamps." % starts.shape[0])
+            # starts: np.ndarray = loop_state.query_timestamp[self.last_observed_iter:]
+            # ends: np.ndarray = loop_state.response_timestamp[self.last_observed_iter:]
+            starts: np.ndarray = loop_state.query_timestamp[-1]
+            ends: np.ndarray = loop_state.response_timestamp[-1]
+
+            # logger.debug("Generating durations for %d timestamps." % starts.shape[0])
         except ValueError as e:
             # Most likely a model which does not have the corresponding timestamps
             logger.debug("No matching timestamps founds for the given loop state, skipping metric %s calculation." %
                          self.name)
             return np.array([0])
 
-        assert starts.size == ends.size, "Size mismatch between target function evaluation timestamp arrays."
-        assert starts.shape == ends.shape, "Shape mismatch between target function evaluation timestamp arrays."
+        # assert starts.size == ends.size, "Size mismatch between target function evaluation timestamp arrays."
+        # assert starts.shape == ends.shape, "Shape mismatch between target function evaluation timestamp arrays."
         # Both should be [N, 1] arrays
 
-        durations = np.subtract(ends, starts).squeeze()
-        self.last_observed_iter = starts.size
+        # durations = np.subtract(ends, starts).squeeze()
+        durations = np.array([ends - starts])
+        # self.last_observed_iter = starts.size
         logger.debug("Generated durations(s): %s." % str(durations))
         return durations
 
-    def reset(self) -> None:
-        self.last_observed_iter = 0
-        return
+    # def reset(self) -> None:
+    #     self.last_observed_iter = 0
+    #     return
 
 
 class AcquisitionValueMetric(metrics.Metric):
@@ -57,26 +61,27 @@ class AcquisitionValueMetric(metrics.Metric):
     def __init__(self, name: str = "acquisition_value"):
 
         self.name = name
-        self.last_observed_iter = 0
+        # self.last_observed_iter = 0
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
         if loop_state.X[-1] is not None:
-            new_configs = loop_state.X[self.last_observed_iter:, :]
+            # new_configs = loop_state.X[self.last_observed_iter:, :]
+            new_configs = loop_state.X[-1, :]
             try:
                 logger.debug("Generating acquisition function value(s) for %d configurations." % new_configs.shape[0])
                 vals = loop.candidate_point_calculator.acquisition.evaluate(new_configs).squeeze()
             except AttributeError:
                 # This is probably either a dummy loop or uses no acquisition function
                 logger.debug("Could not access acquisition function. Skipping metric %s calculation." % self.name)
-                vals = np.array([0])
+                vals = np.array([-np.inf])
 
-            self.last_observed_iter = loop_state.X.shape[0]
+            # self.last_observed_iter = loop_state.X.shape[0]
             logger.debug("Generated acquisition function value(s): %s." % str(vals))
             return vals
         return np.array([np.nan])
 
-    def reset(self) -> None:
-        self.last_observed_iter = 0
+    # def reset(self) -> None:
+        # self.last_observed_iter = 0
 
 class NegativeLogLikelihoodMetric(metrics.Metric):
     """ Records the average negative log likelihood of the model prediction. """
