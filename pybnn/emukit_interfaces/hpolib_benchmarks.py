@@ -18,13 +18,19 @@ class Benchmarks(Enum):
 class HPOlibBenchmarkObjective(UserFunctionWrapper):
     """ An emukit compatible objective function generated from an HPOlib Benchmark instance. """
 
-    def __init__(self, benchmark: Enum, task_id: int, rng: int = 1):
+    def __init__(self, benchmark: Enum, task_id: int, rng: int = 1, use_local=False):
         if benchmark == Benchmarks.XGBOOST:
             logger.debug("Setting up XGBoost benchmark as objective.")
-            from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
+            if use_local:
+                from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
+            else:   
+                from hpolib.container.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
         elif benchmark == Benchmarks.SVM:
             logger.debug("Setting up SVM benchmark as objective.")
-            from hpolib.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
+            if use_local:
+                from hpolib.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
+            else:   
+                from hpolib.container.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
         else:
             raise RuntimeError("Unexpected input %s of type %s, no corresponding benchmarks are known." %
                                (str(benchmark), str(type(benchmark))))

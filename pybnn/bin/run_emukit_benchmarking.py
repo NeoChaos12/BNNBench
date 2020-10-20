@@ -7,13 +7,14 @@ import json_tricks
 import argparse
 
 try:
-    from pybnn.bin import _default_log_format
+    from pybnn import _log as pybnn_log
 except (ImportError, ModuleNotFoundError):
     import sys
     import os.path
     sys.path.append(os.path.expandvars('$PYBNNPATH'))
-    from pybnn.bin import _default_log_format
+    from pybnn import _log as pybnn_log
 
+from pybnn.bin import _default_log_format
 import pybnn.utils.data_utils as dutils
 from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 
@@ -28,16 +29,6 @@ from pybnn.emukit_interfaces import metrics as pybnn_metrics
 from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
 
 # ############# SETUP ENVIRONMENT ######################################################################################
-
-# Logging setup
-
-logging.basicConfig(level=logging.WARNING, format=_default_log_format)
-# from pybnn.emukit_interfaces import _log as interface_logger
-# interface_logger.setLevel(logging.DEBUG)
-# benchmarker_logger = benchmarker._log
-# benchmarker_logger.setLevel(logging.DEBUG)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 # CLI setup
 
@@ -55,11 +46,25 @@ parser.add_argument("--source_data_tile_freq", type=int, default=10, help="The n
                                                                           "queried when benchmarking the HPOlib "
                                                                           "objective benchmark.")
 parser.add_argument("-s", "--sdir", type=str, default=None, help="The path to the directory where all HPOlib data "
-                                                                 "files are to be stored. Default: Current working "
+                                                                 "files are to be read from. Default: Current working "
                                                                  "directory.")
 parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files are "
                                                                 "to be stored. Default: same as sdir.")
+parser.add_argument("--use_local", action="store_true", default=False, help="Use a local version of the HPOlib "
+                                                                            "benchmark objective instead of the "
+                                                                            "container.")
+parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode logging.")
 args = parser.parse_args()
+
+# Logging setup
+logging.basicConfig(level=logging.WARNING, format=_default_log_format)
+logger = logging.getLogger(__name__)
+
+# from pybnn.emukit_interfaces import _log as interface_logger
+# interface_logger.setLevel(logging.DEBUG)
+benchmarker_logger = benchmarker._log
+benchmarker_logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+pybnn_log.setLevel(logging.DEBUG if args.debug else logging.INFO)
 
 # Global constants
 NUM_LOOP_ITERS = args.iterations
@@ -101,7 +106,8 @@ bins = list(range(0, X_full.shape[0] + SOURCE_DATA_TILE_FREQ, SOURCE_DATA_TILE_F
 assert all(map(lambda i: bins[i] <= tile_index[i] and tile_index[i] < bins[i+1], range(len(tile_index))))
 
 # SETUP TARGET FUNCTION
-target_function = HPOlibBenchmarkObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED)
+target_function = HPOlibBenchmarkObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED, 
+        use_local=args.use_local)
 
 X_emu_full = target_function.map_configurations_to_emukit(X_full)
 X_emu = X_emu_full[tile_index]
