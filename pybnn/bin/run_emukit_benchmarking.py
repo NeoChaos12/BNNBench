@@ -3,6 +3,8 @@
 import logging
 from pathlib import Path
 import numpy as np
+import json_tricks
+import argparse
 
 try:
     from pybnn.bin import _default_log_format
@@ -37,25 +39,43 @@ logging.basicConfig(level=logging.WARNING, format=_default_log_format)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-# Miscellaneous setup
+# CLI setup
 
-# This is necessary because the default function definition mishandles array shapes.
-# benchmarker._add_value_to_metrics_dict = pybnn_metrics._add_value_to_metrics_dict_corrected
+parser = argparse.ArgumentParser(description="Run a benchmarking experiment for comparing the performances of various "
+                                             "models")
 
+parser.add_argument("-i", "--iterations", type=int, required=True, help="The number of iterations that each BO loop is "
+                                                                        "run for using any given model.")
+parser.add_argument("-t", "--task_id", type=int, default=189909, help="The OpenML task id to be used by HPOlib.")
+parser.add_argument("--seed", type=int, default=1, help="An RNG seed for generating repeatable results.")
+parser.add_argument("-n", "--num_repeats", type=int, default=10, help="The number of times the benchmarking process is "
+                                                                      "to be repeated and averaged over for each model "
+                                                                      "type.")
+parser.add_argument("--source_data_tile_freq", type=int, default=10, help="The number of times each configuration was "
+                                                                          "queried when benchmarking the HPOlib "
+                                                                          "objective benchmark.")
+parser.add_argument("-s", "--sdir", type=str, default=None, help="The path to the directory where all HPOlib data "
+                                                                 "files are to be stored. Default: Current working "
+                                                                 "directory.")
+parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files are "
+                                                                "to be stored. Default: same as sdir.")
+args = parser.parse_args()
 
-# Global variables
-NUM_LOOP_ITERS = 200
-TASK_ID = 189909
-SOURCE_RNG_SEED = 1
+# Global constants
+NUM_LOOP_ITERS = args.iterations
+TASK_ID = args.task_id
+SOURCE_RNG_SEED = args.seed
 NUM_INITIAL_DATA = None
-NUM_REPEATS = 10
-SOURCE_DATA_TILE_FREQ = 10
+NUM_REPEATS = args.num_repeats
+SOURCE_DATA_TILE_FREQ = args.source_data_tile_freq
 
-save_dir = Path("~/experiments/").expanduser()
+# data_dir = Path().home() / 'master_project' / 'pybnn' / 'local_scripts' / 'xgboost_data'
+data_dir = Path().cwd() if args.sdir is None else Path(args.sdir).expanduser().resolve()
+save_dir = Path(data_dir) if args.odir is None else Path(args.odir).expanduser().resolve()
+save_dir.mkdir(exist_ok=True, parents=True)
 
 # ############# LOAD DATA ##############################################################################################
 
-data_dir = Path().home() / 'master_project' / 'pybnn' / 'local_scripts' / 'xgboost_data'
 
 data = dutils.read_hpolib_benchmark_data(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID,
                                                   rng_seed=SOURCE_RNG_SEED)
@@ -137,6 +157,17 @@ metrics = [emukit_metrics.TimeMetric(), emukit_metrics.CumulativeCostMetric(), p
 benchmarkers = benchmarker.Benchmarker(loops, target_function, target_function.emukit_space, metrics=metrics)
 benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_initial_data=NUM_INITIAL_DATA,
                                                n_repeats=NUM_REPEATS)
+
+# Save results
+
+results_file = save_dir / "benchmark_results.json"
+json_tricks.dump({
+    "loop_names": benchmark_results.loop_names,
+    "n_repeats": benchmark_results.n_repeats,
+    "metric_names": benchmark_results.metric_names,
+    "results": benchmark_results._results
+    }, results_file, indent=4)
+
 
 # TODO: Handle initial metric values, since the default code simply flattens the entire array of results for each
 #  iteration at the time of plotting. Suggestion: Store these values separately during initialization and augment the
