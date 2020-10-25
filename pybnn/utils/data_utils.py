@@ -111,7 +111,7 @@ def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: st
         The seed that was used for generating the data, used to select the correct data file.
     :param extension: string
         The file extension.
-    :return: X, Y, feature_names, target_names
+    :return: X, Y, metadata, feature_names, target_names, meta_headers
     """
 
     full_benchmark_name = f"{benchmark_name}_{task_id}_rng{rng_seed}"

@@ -20,13 +20,14 @@ from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 
 from pybnn.models import MCDropout, MCBatchNorm
 from pybnn.emukit_interfaces.loops import create_pybnn_bo_loop, ModelType, create_gp_bo_loop
+from pybnn.emukit_interfaces import metrics as pybnn_metrics
 
 from emukit.benchmarking.loop_benchmarking import benchmarker
 from emukit.benchmarking.loop_benchmarking.random_search import RandomSearch
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
-from pybnn.emukit_interfaces import metrics as pybnn_metrics
 from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
+from emukit.core.loop.loop_state import create_loop_state
 
 # ############# SETUP ENVIRONMENT ######################################################################################
 
@@ -94,12 +95,13 @@ if y_full.ndim == 1:
     y_full = y_full[:, np.newaxis]
 
 if meta_full.ndim == 1:
+    # Only 1d metadata is supported for the sake of convenience.
     meta_full = meta_full[:, np.newaxis]
 
-X, tile_index = dutils.get_single_configs(X_full, evals_per_config=SOURCE_DATA_TILE_FREQ, return_indices=True,
-                                    rng_seed=SOURCE_RNG_SEED)
-y = y_full[tile_index]
-meta = meta_full[tile_index]
+X_detiled, tile_index = dutils.get_single_configs(X_full, evals_per_config=SOURCE_DATA_TILE_FREQ, return_indices=True,
+                                                  rng_seed=SOURCE_RNG_SEED)
+# y_detiled = y_full[tile_index]
+# meta = meta_full[tile_index]
 
 # SANITY CHECKS
 bins = list(range(0, X_full.shape[0] + SOURCE_DATA_TILE_FREQ, SOURCE_DATA_TILE_FREQ))
@@ -110,15 +112,30 @@ target_function = HPOlibBenchmarkObjective(benchmark=Benchmarks.XGBOOST, task_id
         use_local=args.use_local)
 
 X_emu_full = target_function.map_configurations_to_emukit(X_full)
-X_emu = X_emu_full[tile_index]
-NUM_INITIAL_DATA = 10 * X.shape[1]
+NUM_INITIAL_DATA = 10 * X_detiled.shape[1]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 
-test_X, test_Y = X_emu_full, y_full
-X_rmse_test = X_emu_full[tile_index]
-Y_rmse_test = np.mean(test_Y.reshape((-1, SOURCE_DATA_TILE_FREQ, len(outputs))), axis=1)
+# train_ind, test_ind = dutils.split_data_indices(npoints=X_detiled.shape[0], train_size=NUM_INITIAL_DATA,
+#                                       rng_seed=SOURCE_RNG_SEED, return_test_indices=True)
+# train_X, train_Y, train_meta = X_emu_full[tile_index, :][train_ind, :], y_full[tile_index, :][train_ind, :], \
+#                                meta_full[tile_index, :][train_ind, :]
+# test_X, test_Y, test_meta = X_emu_full[tile_index, :][test_ind, :], y_full[tile_index, :][test_ind, :], \
+#                             meta_full[tile_index, :][train_ind, :]
+train_ind, test_ind = dutils.split_data_indices(npoints=X_emu_full.shape[0], train_size=NUM_INITIAL_DATA,
+                                      rng_seed=SOURCE_RNG_SEED, return_test_indices=True)
+train_X, train_Y, train_meta = X_emu_full[train_ind, :], y_full[train_ind, :], meta_full[train_ind, :]
+test_X, test_Y, test_meta = X_emu_full[test_ind, :], y_full[test_ind, :], meta_full[train_ind, :]
+X_rmse_test = X_detiled
+Y_rmse_test = np.mean(y_full.reshape((-1, SOURCE_DATA_TILE_FREQ, len(outputs))), axis=1)
 assert X_rmse_test.shape[0] == Y_rmse_test.shape[0]
 
+# Hack to manually set up an initial loop state for model training
+initial_loop_state = create_loop_state(
+    x_init=train_X,
+    y_init=train_Y,
+    # We only support 1d metadata
+    **{key: train_meta[:, idx] for idx, key in enumerate(meta_headers)}
+)
 
 # ############# SETUP MODELS ###########################################################################################
 
@@ -133,21 +150,24 @@ loops = [
     (
         'Random Search',
         lambda loop_state: RandomSearch(
-            space=target_function.emukit_space, x_init=loop_state.X, y_init=loop_state.Y,
-            cost_init=loop_state.cost
+            # space=target_function.emukit_space, x_init=loop_state.X, y_init=loop_state.Y,
+            space=target_function.emukit_space, x_init=initial_loop_state.X, y_init=initial_loop_state.Y,
+            cost_init=initial_loop_state.cost
         )
     ),
     (
         'MCDropout',
         lambda loop_state: create_pybnn_bo_loop(
             model_type=ModelType.MCDROPOUT, model_params=model_params, space=target_function.emukit_space,
-            initial_state=loop_state
+            # initial_state=loop_state
+            initial_state=initial_loop_state
         )
     ),
     (
         'Gaussian Process',
         lambda loop_state: create_gp_bo_loop(
-            space=target_function.emukit_space, initial_state=loop_state, acquisition_type=AcquisitionType.EI,
+            # space=target_function.emukit_space, initial_state=loop_state, acquisition_type=AcquisitionType.EI,
+            space=target_function.emukit_space, initial_state=initial_loop_state, acquisition_type=AcquisitionType.EI,
             noiseless=True
         )
     )
@@ -161,7 +181,7 @@ metrics = [emukit_metrics.TimeMetric(), emukit_metrics.CumulativeCostMetric(), p
            pybnn_metrics.NegativeLogLikelihoodMetric(x_test=test_X, y_test=test_Y)]
 
 benchmarkers = benchmarker.Benchmarker(loops, target_function, target_function.emukit_space, metrics=metrics)
-benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_initial_data=NUM_INITIAL_DATA,
+benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_initial_data=1,
                                                n_repeats=NUM_REPEATS)
 
 # Save results
@@ -174,6 +194,18 @@ with open(results_file, 'w') as fp:
         "metric_names": benchmark_results.metric_names,
         "results": benchmark_results._results
         }, fp, indent=4)
+
+initial_state_file = save_dir / "initial_loop_state.json"
+try:
+    with open(initial_state_file, 'w') as fp:
+        json_tricks.dump(dict(
+            x_init=train_X,
+            y_init=train_Y,
+            **{key: train_meta[:, idx] for idx, key in enumerate(meta_headers)}
+        ))
+except (ValueError, TypeError) as e:
+    logger.info("Could not save initial loop state due to error: %s\nInitial loop state may be recovered using the "
+                "following selection indices: %s" % (repr(e), str(train_ind)))
 
 
 # TODO: Handle initial metric values, since the default code simply flattens the entire array of results for each
