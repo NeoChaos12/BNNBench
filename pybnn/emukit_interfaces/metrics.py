@@ -58,9 +58,10 @@ class TargetEvaluationDurationMetric(metrics.Metric):
 class AcquisitionValueMetric(metrics.Metric):
     """ Records the acquisition function values used in each iteration. """
 
-    def __init__(self, name: str = "acquisition_value"):
+    def __init__(self, name: str = "acquisition_value", nan_value=-1):
 
         self.name = name
+        self.nan_value = nan_value
         # self.last_observed_iter = 0
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
@@ -73,12 +74,12 @@ class AcquisitionValueMetric(metrics.Metric):
             except AttributeError:
                 # This is probably either a dummy loop or uses no acquisition function
                 logger.debug("Could not access acquisition function. Skipping metric %s calculation." % self.name)
-                vals = np.array([-np.inf])
+                vals = np.array([self.nan_value])
 
             # self.last_observed_iter = loop_state.X.shape[0]
             logger.debug("Generated acquisition function value(s): %s." % str(vals))
             return vals
-        return np.array([np.nan])
+        return np.array([self.nan_value])
 
     # def reset(self) -> None:
         # self.last_observed_iter = 0

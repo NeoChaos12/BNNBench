@@ -167,12 +167,13 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
 # Save results
 
 results_file = save_dir / "benchmark_results.json"
-json_tricks.dump({
-    "loop_names": benchmark_results.loop_names,
-    "n_repeats": benchmark_results.n_repeats,
-    "metric_names": benchmark_results.metric_names,
-    "results": benchmark_results._results
-    }, results_file, indent=4)
+with open(results_file, 'w') as fp:
+    json_tricks.dump({
+        "loop_names": benchmark_results.loop_names,
+        "n_repeats": benchmark_results.n_repeats,
+        "metric_names": benchmark_results.metric_names,
+        "results": benchmark_results._results
+        }, fp, indent=4)
 
 
 # TODO: Handle initial metric values, since the default code simply flattens the entire array of results for each
