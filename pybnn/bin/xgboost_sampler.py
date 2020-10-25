@@ -1,6 +1,5 @@
 #!/usr/bin/python
 
-from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
 import pandas as pd
 import argparse
 import itertools as it
@@ -8,10 +7,9 @@ import logging
 import time
 from pathlib import Path
 
-cspace = Bench.get_configuration_space()
-hypers = cspace.get_hyperparameter_names()
-results = ['function_value', 'cost']
-cols = hypers + results
+container_dir = "/work/ws/nemo/fr_ab771-pybnn_ws-0/hpolib_containers"
+container_link = 'library://phmueller/automl'
+container_source = container_dir
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -25,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("-x", "--runs_per_sample", type=int, default=10)
     parser.add_argument("-d", "--output_dir", type=str, default=".")
     parser.add_argument("-e", "--extension", type=str, default="csv")
+    parser.add_argument("--use_local", action="store_true", default=False)
     args = parser.parse_args()
 
     task_id = args.task_id
@@ -34,6 +33,18 @@ if __name__ == "__main__":
     output_dir = Path(args.output_dir).expanduser().resolve()
     extension = args.extension
 
+    if args.use_local:
+        from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
+        benchmark = Bench(task_id=task_id, rng=rng_seed)
+    else:
+        from hpolib.container.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
+        benchmark = Bench(task_id=task_id, container_source=container_source, rng=rng_seed)
+
+    cspace = benchmark.get_configuration_space()
+    hypers = cspace.get_hyperparameter_names()
+    results = ['function_value', 'cost']
+    cols = hypers + results
+
     full_benchmark_name = f"xgboost_{task_id}_rng{rng_seed}"
 
     data_file = output_dir /  f"{full_benchmark_name}_data.{extension}"
@@ -42,7 +53,6 @@ if __name__ == "__main__":
     output_ind_file = output_dir / f"{full_benchmark_name}_output_indices.{extension}"
     meta_ind_file = output_dir / f"{full_benchmark_name}_meta_indices.{extension}"
 
-    benchmark = Bench(task_id=task_id, rng=rng_seed)
     total_rows = nsamples * runs_per_sample
     data = pd.DataFrame(data=None, index=list(range(runs_per_sample)), columns=cols)
     configs = cspace.sample_configuration(nsamples)
