@@ -57,7 +57,7 @@ if __name__ == "__main__":
     data = pd.DataFrame(data=None, index=list(range(runs_per_sample)), columns=cols)
     configs = cspace.sample_configuration(nsamples)
 
-    default_feature_header_indices = list(range(len(hypers)))
+    default_feature_header_indices = list(str(i) for i in range(len(hypers)))
     default_output_header_index = len(cols) - 2
     default_meta_header_index = len(cols) - 1
 
@@ -71,10 +71,10 @@ if __name__ == "__main__":
         fp.write("\n".join(default_feature_header_indices))
 
     with open(output_ind_file, 'w') as fp:
-        fp.write(default_output_header_index)
+        fp.write(str(default_output_header_index))
 
     with open(meta_ind_file, 'w') as fp:
-        fp.write(default_meta_header_index)
+        fp.write(str(default_meta_header_index))
 
     # How to interpret this iterator black magic: Generate a combined iterator from the chain of iterables
     # obtained by applying _repeat_ on every element of _configs_ for _nsamples_ repetitions.
