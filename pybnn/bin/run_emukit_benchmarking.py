@@ -185,15 +185,23 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
                                                n_repeats=NUM_REPEATS)
 
 # Save results
+results_array = np.empty(shape=(len(loops), len(metrics), NUM_REPEATS, NUM_LOOP_ITERS))
+for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
+    for metric_idx, metric_name in enumerate(benchmark_results.metric_names):
+        results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
 
-results_file = save_dir / "benchmark_results.json"
-with open(results_file, 'w') as fp:
+results_json_file = save_dir / "benchmark_results.json"
+with open(results_json_file, 'w') as fp:
     json_tricks.dump({
         "loop_names": benchmark_results.loop_names,
         "n_repeats": benchmark_results.n_repeats,
         "metric_names": benchmark_results.metric_names,
-        "results": benchmark_results._results
+        "array_orderings": ["loop_names", "metric_names", "n_repeats", "n_iterations"]
+        # "results": benchmark_results._results
         }, fp, indent=4)
+
+results_npy_file = save_dir / "benchmark_results.npy"
+np.save(results_npy_file, arr=results_array, allow_pickle=False)
 
 initial_state_file = save_dir / "initial_loop_state.json"
 try:
