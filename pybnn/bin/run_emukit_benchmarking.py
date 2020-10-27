@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 import numpy as np
-import json_tricks
+import json_tricks as json
 import argparse
 
 try:
@@ -134,7 +134,7 @@ initial_loop_state = create_loop_state(
     x_init=train_X,
     y_init=train_Y,
     # We only support 1d metadata
-    **{key: train_meta[:, idx] for idx, key in enumerate(meta_headers)}
+    **{key: train_meta[:, idx].reshape(-1, 1) for idx, key in enumerate(meta_headers)}
 )
 
 # ############# SETUP MODELS ###########################################################################################
@@ -185,14 +185,15 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
                                                n_repeats=NUM_REPEATS)
 
 # Save results
-results_array = np.empty(shape=(len(loops), len(metrics), NUM_REPEATS, NUM_LOOP_ITERS))
+# Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
+results_array = np.empty(shape=(len(loops), len(metrics), NUM_REPEATS, NUM_LOOP_ITERS + 1))
 for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
     for metric_idx, metric_name in enumerate(benchmark_results.metric_names):
         results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
 
 results_json_file = save_dir / "benchmark_results.json"
 with open(results_json_file, 'w') as fp:
-    json_tricks.dump({
+    json.dump({
         "loop_names": benchmark_results.loop_names,
         "n_repeats": benchmark_results.n_repeats,
         "metric_names": benchmark_results.metric_names,
@@ -204,13 +205,15 @@ results_npy_file = save_dir / "benchmark_results.npy"
 np.save(results_npy_file, arr=results_array, allow_pickle=False)
 
 initial_state_file = save_dir / "initial_loop_state.json"
+# with open(initial_state_file, 'w+b') as fp:
+#     pickle.dump(initial_loop_state, file=fp)
 try:
     with open(initial_state_file, 'w') as fp:
-        json_tricks.dump(dict(
+        json.dump(dict(
             x_init=train_X,
             y_init=train_Y,
             **{key: train_meta[:, idx] for idx, key in enumerate(meta_headers)}
-        ))
+        ), fp)
 except (ValueError, TypeError) as e:
     logger.info("Could not save initial loop state due to error: %s\nInitial loop state may be recovered using the "
                 "following selection indices: %s" % (repr(e), str(train_ind)))

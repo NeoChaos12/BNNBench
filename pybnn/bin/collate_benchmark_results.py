@@ -53,7 +53,7 @@ def dfs(source: Path):
 
 
 def read_result_files(source: Path):
-    with open(source / JSON_RESULTS_FILE, 'w') as fp:
+    with open(source / JSON_RESULTS_FILE) as fp:
         jdata = json_tricks.load(fp)
 
     ndata = np.load(source / NUMPY_RESULTS_FILE, allow_pickle=False)
