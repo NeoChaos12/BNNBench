@@ -1,5 +1,6 @@
 torch
 torchvision
+tensorboard
 numpy
 emcee<=2.2.1
 scipy

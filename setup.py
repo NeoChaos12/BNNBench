@@ -10,7 +10,7 @@ setup(
     license='BSD 3-Clause License',
     classifiers=['Development Status :: 4 - Beta'],
     packages=find_packages(),
-    python_requires='>=3.6',
+    python_requires='>=3.7',
     install_requires=['torch', 'torchvision', 'numpy', 'emcee', 'scipy', 'tensorboard'],
     extras_require={},
     keywords=['python', 'Bayesian', 'neural networks'],
