@@ -13,8 +13,15 @@ from pathlib import Path
 import numpy as np
 import json_tricks
 import argparse
-from pybnn.bin import _default_log_format
-from typing import Union, Dict, Sequence
+
+
+try:
+    from pybnn.bin import _default_log_format
+except (ImportError, ModuleNotFoundError):
+    import sys
+    import os.path
+    sys.path.append(os.path.expandvars('$PYBNNPATH'))
+    from pybnn.bin import _default_log_format
 
 
 _log = logging.getLogger(__name__)
@@ -202,6 +209,6 @@ except FileExistsError:
     _log.warning("Found existing data in output directory. Attempting to backup existing data to %s.bak." %
                  str(target_dir))
     backup_dir = target_dir.rename(target_dir.parent / f"{target_dir.name}.bak")
-    target_dir.mkdir(parents=True)
+    target_dir.mkdir(parents=True, exist_ok=True)
 
 modes[mode].collate(data_arrays, base_jdata)
