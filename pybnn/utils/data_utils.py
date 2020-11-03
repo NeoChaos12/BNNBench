@@ -3,13 +3,16 @@ import logging
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Union, Optional, Tuple, Sequence
+from typing import Union, Optional, Tuple, Sequence, Callable
 from math import floor
+import itertools
 
 from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
 
-logger = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
+
+# ################### pybnn data utils ########################
 
 DATASETS_ROOT = "$HOME/UCI_Datasets"
 DATADIR = "data"
@@ -18,9 +21,6 @@ FEATURE_INDEX_FILE = "index_features.txt"
 TARGET_INDEX_FILE = "index_target.txt"
 TESTSET_INDICES_PREFIX = "index_test_"
 TRAINSET_INDICES_PREFIX = "index_train_"
-
-Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
-RNG_Input = Union[int, np.random.RandomState, None]
 
 
 def _read_file_to_numpy_array(root, filename, *args, **kwargs):
@@ -42,7 +42,7 @@ def _generate_test_splits_from_local_dataset(name: str, root: str = DATASETS_ROO
     if splits is None:
         splits = (0, 20)
 
-    logger.debug("Using splits: %s" % str(splits))
+    _log.debug("Using splits: %s" % str(splits))
 
     feature_indices = _read_file_to_numpy_array(datadir, FEATURE_INDEX_FILE, dtype=int)
     target_indices = _read_file_to_numpy_array(datadir, TARGET_INDEX_FILE, dtype=int)
@@ -54,10 +54,10 @@ def _generate_test_splits_from_local_dataset(name: str, root: str = DATASETS_ROO
         split_train_indices = _read_file_to_numpy_array(datadir, TRAINSET_INDICES_PREFIX + str(index) + '.txt',
                                                         dtype=int)
 
-        logger.debug("Using %s test indices, stored in variable of type %s, containing dtype %s" %
-                     (str(split_test_indices.shape), type(split_test_indices), split_test_indices.dtype))
-        logger.debug("Using %s train indices, stored in variable of type %s, containing dtype %s" %
-                     (str(split_train_indices.shape), type(split_train_indices), split_train_indices.dtype))
+        _log.debug("Using %s test indices, stored in variable of type %s, containing dtype %s" %
+                   (str(split_test_indices.shape), type(split_test_indices), split_test_indices.dtype))
+        _log.debug("Using %s train indices, stored in variable of type %s, containing dtype %s" %
+                   (str(split_train_indices.shape), type(split_train_indices), split_train_indices.dtype))
 
         testdata = full_dataset[split_test_indices, :]
         traindata = full_dataset[split_train_indices, :]
@@ -94,20 +94,64 @@ def data_generator(obj_config: AttrDict, numbered=True) -> \
     generator = _generate_test_splits_from_local_dataset(**dataloader_args[dname], splits=obj_config.splits)
     return enumerate(generator, start=obj_config.splits[0]) if numbered else generator
 
+# ################### emukit-benchmarking data utils ########################
 
-from sklearn.model_selection import train_test_split
-from emukit.core.loop.loop_state import create_loop_state
-
+Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
+RNG_Input = Union[int, np.random.RandomState, None]
 
 class Data:
-    def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                 evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
-                 iterate_evals: bool = False):
+    def __init__(self, emukit_map_func: Callable, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
+                 source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
+                 iterate_evals: bool = False, rng: Union[int, np.random.RandomState, None] = None,
+                 train_frac: float = None, train_size: int = None):
         data = Data.read_hpolib_benchmark_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
-                                                 evals_per_config=evals_per_config, rng_seed=rng_seed)
+                                               evals_per_config=evals_per_config, rng_seed=source_rng_seed,
+                                               extension=extension)
         self.X_full, self.y_full, self.meta_full = data[:3]
         self.features, self.outputs, self.meta_headers = data[3:]
+        # We are more interested in keeping the configurations in an emukit-compatible format
+        self.X_full = emukit_map_func(self.X_full.reshape((-1, self.X_full.shape[2]))).reshape(self.X_full.shape)
 
+        if rng is None or isinstance(rng, int):
+            self.rng = np.random.RandomState(rng)
+        else:
+            self.rng = rng
+
+        # By default, generate a new split for every update
+        self._conf_splits = self._iterate_dataset_configurations(train_frac=train_frac, train_size=train_size,
+                                                                 rng=self.rng.randint(0, 1_000_000_000))
+        self._eval_splits = None  # Only becomes relevant if iterate_confs is False
+
+        if not iterate_confs:
+            _log.debug("Disabling iteration over configuration subsets. Test set will now remain static.")
+            train_set, test_set = next(self._conf_splits)
+            self._conf_splits = None
+            self.train_X, self.train_Y, self.train_meta = None, None, None
+            self.test_X, self.test_Y, self.test_meta = test_set
+            if iterate_evals:
+                _log.debug("Enabling iteration over evaluation subsets. Training set will now iterate over evaluation "
+                           "subsets.")
+                self._eval_splits = self._generate_evaluation_subsets(rng=self.rng)
+            else:
+                _log.debug("Disabling iteration over evaluation subsets. Training set is now also static.")
+                self.train_X, self.train_Y, self.train_meta = next(Data._generate_evaluation_subsets(dataset=train_set,
+                                                                                                     rng=self.rng))
+
+    def update(self):
+        """ Update the current data splits. """
+        if self._eval_splits is not None:
+            # The test split is fixed, and we are only going to iterate over evaluation subsets for train set.
+            self.train_X, self.train_Y, self.train_meta = next(self._eval_splits)
+        else:
+            if self._conf_splits is not None:
+                # The train/test splits are not fixed.
+                train_data, test_data = next(self._conf_splits)
+                self.train_X, self.train_Y, self.train_meta = next(Data._generate_evaluation_subsets(dataset=train_data,
+                                                                                                     rng=self.rng))
+                self.test_X, self.test_Y, self.test_meta = test_data
+            else:
+                # Train/test splits are static.
+                pass
 
     @staticmethod
     def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
@@ -157,7 +201,6 @@ class Data:
             meta_indices = [int(ind) for ind in fp.readlines()]
 
         full_dataset = pd.read_csv(data_file, sep=" ", names=headers)
-        # full_dataset = np.genfromtxt(data_file)
         return full_dataset.iloc[:, feature_indices].to_numpy().reshape((-1, evals_per_config, len(feature_indices))), \
                full_dataset.iloc[:, output_indices].to_numpy().reshape((-1, evals_per_config, len(output_indices))), \
                full_dataset.iloc[:, meta_indices].to_numpy().reshape((-1, evals_per_config, len(meta_indices))), \
@@ -165,7 +208,7 @@ class Data:
                full_dataset.columns[meta_indices].to_numpy()
 
     def _iterate_dataset_configurations(self, train_frac: float = None, train_size: int = None,
-                                       rng: RNG_Input = None, return_indices: bool = False) -> \
+                                        rng: RNG_Input = None, return_indices: bool = False) -> \
             Tuple[Dataset, Dataset, Optional[Tuple[np.ndarray, np.ndarray]]]:
         """
         Given a dataset consisting of input features of shape [N, i, Dx], output targets of shape [N, i, Dy] and meta
@@ -194,7 +237,7 @@ class Data:
         :return: training set, test set, (optional) train and test indices
         """
 
-        X_full, y_full, meta_full = all_data
+        X_full, y_full, meta_full = self.X_full, self.y_full, self.meta_full
         if rng is None or isinstance(rng, int):
             rng = np.random.RandomState(rng)
 
@@ -215,7 +258,8 @@ class Data:
             else:
                 yield train_set, test_set
 
-    def _generate_evaluation_subsets(self, rng: RNG_Input = None) -> Dataset:
+    @staticmethod
+    def _generate_evaluation_subsets(dataset: Dataset, rng: RNG_Input = None) -> Dataset:
         """
         Given a dataset consisting of the input features, outputs and metadata of shapes [N, i, Dx], [N, i, Dy] and
         [N, i, Dz] respectively, generates subsets that randomly select one of i possible evaluations for each of the
@@ -237,9 +281,9 @@ class Data:
         assert N == y.shape[0] and i == y.shape[
             1], "Shape mismatch between input features array of shape %s and output " \
                 "array of shape %s." % (str(X.shape), str(y.shape))
-        assert N == meta.shape[0] and i == meta.shape[1], "Shape mismatch between input features array of shape %s and " \
-                                                          "metadata array of shape %s." % (
-                                                          str(X.shape), str(meta.shape))
+        assert N == meta.shape[0] and i == meta.shape[1], "Shape mismatch between input features array of shape %s " \
+                                                          "and  metadata array of shape %s." % \
+                                                          (str(X.shape), str(meta.shape))
         indices = list(range(i))
 
         while True:
@@ -247,44 +291,6 @@ class Data:
             yield np.take_along_axis(X, choices, axis=1).reshape((N, Dx)), \
                   np.take_along_axis(y, choices, axis=1).reshape((N, Dy)), \
                   np.take_along_axis(meta, choices, axis=1).reshape((N, Dz))
-
-
-def get_mean_output_per_config(arr: np.ndarray, evals_per_config: int) -> np.ndarray:
-    """ Generates mean output values from an array containing tiled outputs for multiple evaluations per
-    configuration. The input array must of shape [N, d], where N is the total number of evaluations and should be
-    divisible by evals_per_config. """
-
-    nconfigs = int(arr.shape[0] / evals_per_config)
-    assert arr.shape[0] % evals_per_config == 0, f"For {evals_per_config} evaluations per configuration, the math " \
-                                                 f"doesn't add up, since {arr.shape[0]} total evaluations were read."
-
-    tmp = arr.reshape((nconfigs, evals_per_config, -1))
-    return np.mean(tmp, axis=1)
-
-
-def split_data_indices(npoints: int, train_frac: float = None, train_size: int = None,
-                       rng: Union[int, np.random.RandomState, None] = None, return_test_indices: bool = True) -> \
-    Tuple[np.ndarray, Optional[np.ndarray]]:
-    """ Generate array indices to allow a dataset to be split into a training (and test) set. Either train_frac or
-    train_size must be given. train_size takes priority over train_frac. """
-
-    if train_frac is None and train_size is None:
-        raise RuntimeError("The size of the training set must be specified as either a fraction (train_frac) or as an "
-                           "integer (train_size).")
-
-    if rng is None or isinstance(rng, int):
-        rng = np.random.RandomState(seed=rng)
-
-    trainset_size = floor(npoints * train_frac) if train_size is None else train_size
-    all_idx = np.arange(npoints, dtype=int)
-    train_idx = rng.choice(all_idx, size=trainset_size, replace=False)
-    if return_test_indices:
-        test_idx = np.repeat(True, repeats=npoints)
-        test_idx[train_idx] = False
-        return train_idx, all_idx[test_idx]
-    else:
-        return train_idx
-
 
 def exclude_indices(npoints: int, indices: Sequence) -> Sequence:
     """ Helper function to generate a sequence of indices that excludes the given indices for a given maximum number of
