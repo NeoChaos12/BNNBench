@@ -33,7 +33,7 @@ class TargetEvaluationDurationMetric(metrics.Metric):
             starts: np.ndarray = loop_state.query_timestamp[-1]
             ends: np.ndarray = loop_state.response_timestamp[-1]
 
-            # logger.debug("Generating durations for %d timestamps." % starts.shape[0])
+            # _log.debug("Generating durations for %d timestamps." % starts.shape[0])
         except ValueError as e:
             # Most likely a model which does not have the corresponding timestamps
             logger.debug("No matching timestamps founds for the given loop state, skipping metric %s calculation." %
@@ -117,7 +117,7 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         from scipy.stats import norm
         variances = np.clip(variances, a_min=1e-6, a_max=None)
         ll = norm.logpdf(self.y_test, loc=means, scale=np.sqrt(variances))
-        ll = np.mean(ll, axis=0).squeeze()
+        ll = np.mean(ll).reshape(-1)
         logger.debug("Generated mean NLL value(s): %s." % str(ll))
         return ll
 

@@ -39,7 +39,9 @@ parser = argparse.ArgumentParser(description="Run a benchmarking experiment for 
 parser.add_argument("-i", "--iterations", type=int, required=True, help="The number of iterations that each BO loop is "
                                                                         "run for using any given model.")
 parser.add_argument("-t", "--task_id", type=int, default=189909, help="The OpenML task id to be used by HPOlib.")
-parser.add_argument("--seed", type=int, default=1, help="An RNG seed for generating repeatable results.")
+parser.add_argument("--rng", type=int, default=1, help="An RNG seed for generating repeatable results.")
+parser.add_argument("--source_seed", type=int, default=1, help="The value of the RNG seed used for generating the "
+                                                               "source data being used as a reference.")
 parser.add_argument("-n", "--num_repeats", type=int, default=10, help="The number of times the benchmarking process is "
                                                                       "to be repeated and averaged over for each model "
                                                                       "type.")
@@ -70,10 +72,11 @@ pybnn_log.setLevel(logging.DEBUG if args.debug else logging.INFO)
 # Global constants
 NUM_LOOP_ITERS = args.iterations
 TASK_ID = args.task_id
-SOURCE_RNG_SEED = args.seed
+SOURCE_RNG_SEED = args.source_seed
 NUM_INITIAL_DATA = None
 NUM_REPEATS = args.num_repeats
 SOURCE_DATA_TILE_FREQ = args.source_data_tile_freq
+rng = np.random.RandomState(seed=args.rng)
 
 # data_dir = Path().home() / 'master_project' / 'pybnn' / 'local_scripts' / 'xgboost_data'
 data_dir = Path().cwd() if args.sdir is None else Path(args.sdir).expanduser().resolve()
@@ -84,58 +87,22 @@ save_dir.mkdir(exist_ok=True, parents=True)
 
 
 data = dutils.read_hpolib_benchmark_data(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID,
-                                                  rng_seed=SOURCE_RNG_SEED)
+                                         evals_per_config=SOURCE_DATA_TILE_FREQ, rng_seed=SOURCE_RNG_SEED)
 X_full, y_full, meta_full = data[:3]
 features, outputs, meta_headers = data[3:]
-
-if X_full.ndim == 1:
-    X_full = X_full[:, np.newaxis]
-
-if y_full.ndim == 1:
-    y_full = y_full[:, np.newaxis]
-
-if meta_full.ndim == 1:
-    # Only 1d metadata is supported for the sake of convenience.
-    meta_full = meta_full[:, np.newaxis]
-
-X_detiled, tile_index = dutils.get_single_configs(X_full, evals_per_config=SOURCE_DATA_TILE_FREQ, return_indices=True,
-                                                  rng_seed=SOURCE_RNG_SEED)
-# y_detiled = y_full[tile_index]
-# meta = meta_full[tile_index]
-
-# SANITY CHECKS
-bins = list(range(0, X_full.shape[0] + SOURCE_DATA_TILE_FREQ, SOURCE_DATA_TILE_FREQ))
-assert all(map(lambda i: bins[i] <= tile_index[i] and tile_index[i] < bins[i+1], range(len(tile_index))))
 
 # SETUP TARGET FUNCTION
 target_function = HPOlibBenchmarkObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED, 
         use_local=args.use_local)
 
-X_emu_full = target_function.map_configurations_to_emukit(X_full)
-NUM_INITIAL_DATA = 10 * X_detiled.shape[1]
+X_emu_full = target_function.map_configurations_to_emukit(X_full.reshape((-1, X_full.shape[2]))).reshape(X_full.shape)
+NUM_INITIAL_DATA = 10 * X_emu_full.shape[2]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 
-# train_ind, test_ind = dutils.split_data_indices(npoints=X_detiled.shape[0], train_size=NUM_INITIAL_DATA,
-#                                       rng_seed=SOURCE_RNG_SEED, return_test_indices=True)
-# train_X, train_Y, train_meta = X_emu_full[tile_index, :][train_ind, :], y_full[tile_index, :][train_ind, :], \
-#                                meta_full[tile_index, :][train_ind, :]
-# test_X, test_Y, test_meta = X_emu_full[tile_index, :][test_ind, :], y_full[tile_index, :][test_ind, :], \
-#                             meta_full[tile_index, :][train_ind, :]
-train_ind, test_ind = dutils.split_data_indices(npoints=X_emu_full.shape[0], train_size=NUM_INITIAL_DATA,
-                                      rng_seed=SOURCE_RNG_SEED, return_test_indices=True)
-train_X, train_Y, train_meta = X_emu_full[train_ind, :], y_full[train_ind, :], meta_full[train_ind, :]
-test_X, test_Y, test_meta = X_emu_full[test_ind, :], y_full[test_ind, :], meta_full[train_ind, :]
-X_rmse_test = X_detiled
-Y_rmse_test = np.mean(y_full.reshape((-1, SOURCE_DATA_TILE_FREQ, len(outputs))), axis=1)
-assert X_rmse_test.shape[0] == Y_rmse_test.shape[0]
+# This generator keeps spawning train/test splits on the original dataset
+data_splits = dutils.iterate_dataset_configurations(all_data=(X_emu_full, y_full, meta_full),
+                                                    train_size=NUM_INITIAL_DATA, rng=rng, return_indices=False)
 
-# Hack to manually set up an initial loop state for model training
-initial_loop_state = create_loop_state(
-    x_init=train_X,
-    y_init=train_Y,
-    # We only support 1d metadata
-    **{key: train_meta[:, idx].reshape(-1, 1) for idx, key in enumerate(meta_headers)}
-)
 
 # ############# SETUP MODELS ###########################################################################################
 
@@ -147,27 +114,30 @@ model_params = model.modelParamsContainer()._replace(dataset_size=NUM_DATA_POINT
 # model_params = model.modelParamsContainer()._replace(hidden_layer_sizes=[50])
 
 loops = [
-    (
-        'Random Search',
-        lambda loop_state: RandomSearch(
-            # space=target_function.emukit_space, x_init=loop_state.X, y_init=loop_state.Y,
-            space=target_function.emukit_space, x_init=initial_loop_state.X, y_init=initial_loop_state.Y,
-            cost_init=initial_loop_state.cost
-        )
-    ),
-    (
-        'MCDropout',
-        lambda loop_state: create_pybnn_bo_loop(
-            model_type=ModelType.MCDROPOUT, model_params=model_params, space=target_function.emukit_space,
-            # initial_state=loop_state
-            initial_state=initial_loop_state
-        )
-    ),
+    # (
+    #     'Random Search',
+    #     lambda loop_state: RandomSearch(
+    #         # space=target_function.emukit_space, x_init=loop_state.X, y_init=loop_state.Y,
+    #         space=target_function.emukit_space, x_init=initial_loop_state.X, y_init=initial_loop_state.Y,
+    #         cost_init=initial_loop_state.cost
+    #     )
+    # ),
+    # (
+    #     'MCDropout',
+    #     lambda loop_state: create_pybnn_bo_loop(
+    #         model_type=ModelType.MCDROPOUT, model_params=model_params, space=target_function.emukit_space,
+    #         # initial_state=loop_state
+    #         initial_state=initial_loop_state
+    #     )
+    # ),
     (
         'Gaussian Process',
         lambda loop_state: create_gp_bo_loop(
             # space=target_function.emukit_space, initial_state=loop_state, acquisition_type=AcquisitionType.EI,
-            space=target_function.emukit_space, initial_state=initial_loop_state, acquisition_type=AcquisitionType.EI,
+            space=target_function.emukit_space,
+            initial_state=create_initial_loop_state(
+                loop_state, dataset=next(dutils.generate_evaluation_subsets(next(data_splits)), rng)),
+            acquisition_type=AcquisitionType.EI,
             noiseless=True
         )
     )

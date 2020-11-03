@@ -99,59 +99,154 @@ from sklearn.model_selection import train_test_split
 from emukit.core.loop.loop_state import create_loop_state
 
 
-def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                               evals_per_config: int, extension: str = "csv") -> \
-        Tuple[np.ndarray, np.ndarray, np.ndarray, Sequence[str], Sequence[str], Sequence[str]]:
-    """
-    Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
-    :param data_folder: Path or string
-        The folder containing all relevant data files.
-    :param benchmark_name: string
-        The name of the benchmark.
-    :param task_id: int
-        The task id used for generating the required data,used to select the correct data file.
-    :param rng_seed: int
-        The seed that was used for generating the data, used to select the correct data file.
-    :param evals_per_config: int
-        The number of times each configuration was evaluated.
-    :param extension: string
-        The file extension.
-    :return: X, Y, metadata, feature_names, target_names, meta_headers
-        X, Y and metadata will have shapes [N, evals_per_config, Dx], [N, evals_per_config, Dy] and
-        [N, evals_per_config, Dz] respectively, whereas feature_names, target_names and meta_headers will have the
-        shapes [Nx,], [Ny,] and [Nz,] respectively.
-    """
+class Data:
+    def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
+                 evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
+                 iterate_evals: bool = False):
+        data = Data.read_hpolib_benchmark_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
+                                                 evals_per_config=evals_per_config, rng_seed=rng_seed)
+        self.X_full, self.y_full, self.meta_full = data[:3]
+        self.features, self.outputs, self.meta_headers = data[3:]
 
-    full_benchmark_name = f"{benchmark_name}_{task_id}_rng{rng_seed}"
 
-    if not isinstance(data_folder, Path):
-        data_folder = Path(data_folder).expanduser().resolve()
+    @staticmethod
+    def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
+                                   evals_per_config: int, extension: str = "csv") -> \
+            Tuple[np.ndarray, np.ndarray, np.ndarray, Sequence[str], Sequence[str], Sequence[str]]:
+        """
+        Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
+        :param data_folder: Path or string
+            The folder containing all relevant data files.
+        :param benchmark_name: string
+            The name of the benchmark.
+        :param task_id: int
+            The task id used for generating the required data,used to select the correct data file.
+        :param rng_seed: int
+            The seed that was used for generating the data, used to select the correct data file.
+        :param evals_per_config: int
+            The number of times each configuration was evaluated.
+        :param extension: string
+            The file extension.
+        :return: X, Y, metadata, feature_names, target_names, meta_headers
+            X, Y and metadata will have shapes [N, evals_per_config, Dx], [N, evals_per_config, Dy] and
+            [N, evals_per_config, Dz] respectively, whereas feature_names, target_names and meta_headers will have the
+            shapes [Nx,], [Ny,] and [Nz,] respectively.
+        """
 
-    data_file = data_folder /  (full_benchmark_name + f"_data.{extension}")
-    headers_file = data_folder / (full_benchmark_name + f"_headers.{extension}")
-    feature_ind_file = data_folder / (full_benchmark_name + f"_feature_indices.{extension}")
-    output_ind_file = data_folder / (full_benchmark_name + f"_output_indices.{extension}")
-    meta_ind_file = data_folder / (full_benchmark_name + f"_meta_indices.{extension}")
+        full_benchmark_name = f"{benchmark_name}_{task_id}_rng{rng_seed}"
 
-    with open(headers_file) as fp:
-        headers = [line.strip() for line in fp.readlines()]
+        if not isinstance(data_folder, Path):
+            data_folder = Path(data_folder).expanduser().resolve()
 
-    with open(feature_ind_file) as fp:
-        feature_indices = [int(ind) for ind in fp.readlines()]
+        data_file = data_folder /  (full_benchmark_name + f"_data.{extension}")
+        headers_file = data_folder / (full_benchmark_name + f"_headers.{extension}")
+        feature_ind_file = data_folder / (full_benchmark_name + f"_feature_indices.{extension}")
+        output_ind_file = data_folder / (full_benchmark_name + f"_output_indices.{extension}")
+        meta_ind_file = data_folder / (full_benchmark_name + f"_meta_indices.{extension}")
 
-    with open(output_ind_file) as fp:
-        output_indices = [int(ind) for ind in fp.readlines()]
+        with open(headers_file) as fp:
+            headers = [line.strip() for line in fp.readlines()]
 
-    with open(meta_ind_file) as fp:
-        meta_indices = [int(ind) for ind in fp.readlines()]
+        with open(feature_ind_file) as fp:
+            feature_indices = [int(ind) for ind in fp.readlines()]
 
-    full_dataset = pd.read_csv(data_file, sep=" ", names=headers)
-    # full_dataset = np.genfromtxt(data_file)
-    return full_dataset.iloc[:, feature_indices].to_numpy().reshape((-1, evals_per_config, len(feature_indices))), \
-           full_dataset.iloc[:, output_indices].to_numpy().reshape((-1, evals_per_config, len(output_indices))), \
-           full_dataset.iloc[:, meta_indices].to_numpy().reshape((-1, evals_per_config, len(meta_indices))), \
-           full_dataset.columns[feature_indices].to_numpy(), full_dataset.columns[output_indices].to_numpy(), \
-           full_dataset.columns[meta_indices].to_numpy()
+        with open(output_ind_file) as fp:
+            output_indices = [int(ind) for ind in fp.readlines()]
+
+        with open(meta_ind_file) as fp:
+            meta_indices = [int(ind) for ind in fp.readlines()]
+
+        full_dataset = pd.read_csv(data_file, sep=" ", names=headers)
+        # full_dataset = np.genfromtxt(data_file)
+        return full_dataset.iloc[:, feature_indices].to_numpy().reshape((-1, evals_per_config, len(feature_indices))), \
+               full_dataset.iloc[:, output_indices].to_numpy().reshape((-1, evals_per_config, len(output_indices))), \
+               full_dataset.iloc[:, meta_indices].to_numpy().reshape((-1, evals_per_config, len(meta_indices))), \
+               full_dataset.columns[feature_indices].to_numpy(), full_dataset.columns[output_indices].to_numpy(), \
+               full_dataset.columns[meta_indices].to_numpy()
+
+    def _iterate_dataset_configurations(self, train_frac: float = None, train_size: int = None,
+                                       rng: RNG_Input = None, return_indices: bool = False) -> \
+            Tuple[Dataset, Dataset, Optional[Tuple[np.ndarray, np.ndarray]]]:
+        """
+        Given a dataset consisting of input features of shape [N, i, Dx], output targets of shape [N, i, Dy] and meta
+        information of shape [N, i, Dz], where N is the number of configurations, i is the number of evaluations per
+        configuration, and Dx, Dy and Dz are the dimensionality of the inputs, targets, and metadata respectively,
+        returns a generator that generates a training and a test dataset tuple by choosing distinct configurations.
+        Each training dataset contains train_frac * N configurations and all i evaluations, whereas the test dataset
+        contains all the evaluations of all remaining configurations. Thus, for a training set containing Nt
+        configurations, the input and output arrays would have shapes [Nt, i, Dx] and [Nt, i, Dy] whereas for the
+        corresponding test set, they would have shapes [N-Nt, i, Dx] and [N-Nt, i, Dy] respectively.
+
+        :param all_data: (np.ndarray, np.ndarray, np.ndarray)
+            The full dataset of input features, output values and meta data, of shapes [N, i, Dx], [N, i, Dy] and
+            [N, i, Dz] respectively.
+        :param train_frac: float
+            The fraction of the total number of configurations N to be used for the training set. All remaining
+            configurations are used for the test set. Supercedes train_size.
+        :param train_size: int
+            The number of configurations to be used for the training dataset. If train_frac is also provided, this is
+            ignored.
+        :param rng: RandomState, int or None
+            A seed for a random number generator or an instance of np.random.RandomState. If None, a random seed value
+            is used.
+        :param return_indices: bool
+            If True, also returns the indices used to construct the training and test sets.
+        :return: training set, test set, (optional) train and test indices
+        """
+
+        X_full, y_full, meta_full = all_data
+        if rng is None or isinstance(rng, int):
+            rng = np.random.RandomState(rng)
+
+        if train_frac is None and train_size is None:
+            raise RuntimeError("Either 'train_frac' or 'train_size' must be provided.")
+
+        if train_frac is not None:
+            train_size = floor(train_frac * X_full.shape[0])
+
+        while (True):
+            train_ind = rng.choice(range(X_full.shape[0]), size=train_size, replace=False)
+            test_ind = exclude_indices(X_full.shape[0], train_ind)
+            train_set = X_full[train_ind, :, :], y_full[train_ind, :, :], meta_full[train_ind, :, :]
+            test_set = X_full[test_ind, :, :], y_full[test_ind, :, :], meta_full[test_ind, :, :]
+
+            if return_indices:
+                yield train_set, test_set, (train_ind, test_ind)
+            else:
+                yield train_set, test_set
+
+    def _generate_evaluation_subsets(self, rng: RNG_Input = None) -> Dataset:
+        """
+        Given a dataset consisting of the input features, outputs and metadata of shapes [N, i, Dx], [N, i, Dy] and
+        [N, i, Dz] respectively, generates subsets that randomly select one of i possible evaluations for each of the
+        N configurations. Thus, the generator yields a tuple containing 3 arrays of shapes [N, Dx], [N, Dy] and [N, Dz]
+        respectively.
+
+        :param dataset:
+        :param rng:
+        :return:
+        """
+
+        X, y, meta = dataset
+        if rng is None or isinstance(rng, int):
+            rng = np.random.RandomState(rng)
+
+        N, i, Dx = X.shape
+        Dy = y.shape[2]
+        Dz = meta.shape[2]
+        assert N == y.shape[0] and i == y.shape[
+            1], "Shape mismatch between input features array of shape %s and output " \
+                "array of shape %s." % (str(X.shape), str(y.shape))
+        assert N == meta.shape[0] and i == meta.shape[1], "Shape mismatch between input features array of shape %s and " \
+                                                          "metadata array of shape %s." % (
+                                                          str(X.shape), str(meta.shape))
+        indices = list(range(i))
+
+        while True:
+            choices = rng.choice(indices, size=(X.shape[0], 1, 1), replace=True)
+            yield np.take_along_axis(X, choices, axis=1).reshape((N, Dx)), \
+                  np.take_along_axis(y, choices, axis=1).reshape((N, Dy)), \
+                  np.take_along_axis(meta, choices, axis=1).reshape((N, Dz))
 
 
 def get_mean_output_per_config(arr: np.ndarray, evals_per_config: int) -> np.ndarray:
@@ -189,84 +284,6 @@ def split_data_indices(npoints: int, train_frac: float = None, train_size: int =
         return train_idx, all_idx[test_idx]
     else:
         return train_idx
-
-
-def iterate_dataset_configurations(all_data: Dataset, train_frac: float = None, train_size: int = None,
-                                   rng: RNG_Input = None, return_indices: bool = False) -> \
-        Tuple[Dataset, Dataset, Optional[Tuple[np.ndarray, np.ndarray]]]:
-    """
-    Given a dataset consisting of input features of shape [N, i, Dx], output targets of shape [N, i, Dy] and meta
-    information of shape [N, i, Dz], where N is the number of configurations, i is the number of evaluations per
-    configuration, and Dx, Dy and Dz are the dimensionality of the inputs, targets, and metadata respectively, returns
-    a generator that generates a training and a test dataset tuple by choosing distinct configurations. Each training
-    dataset contains train_frac * N configurations and all i evaluations, whereas the test dataset contains all the
-    evaluations of all remaining configurations. Thus, for a training set containing Nt configurations, the input
-    and output arrays would have shapes [Nt, i, Dx] and [Nt, i, Dy] whereas for the corresponding test set, they would
-    have shapes [N-Nt, i, Dx] and [N-Nt, i, Dy] respectively.
-
-    :param all_data: (np.ndarray, np.ndarray, np.ndarray)
-        The full dataset of input features, output values and meta data, of shapes [N, i, Dx], [N, i, Dy] and
-        [N, i, Dz] respectively.
-    :param train_frac: float
-        The fraction of the total number of configurations N to be used for the training set. All remaining
-        configurations are used for the test set. Supercedes train_size.
-    :param train_size: int
-        The number of configurations to be used for the training dataset. If train_frac is also provided, this is
-        ignored.
-    :param rng: RandomState, int or None
-        A seed for a random number generator or an instance of np.random.RandomState. If None, a random seed value is
-        used.
-    :param return_indices: bool
-        If True, also returns the indices used to construct the training and test sets.
-    :return: training set, test set, (optional) train and test indices
-    """
-
-    X_full, y_full, meta_full = all_data
-    if rng is None or isinstance(rng, int):
-        rng = np.random.RandomState(rng)
-
-    if train_frac is None and train_size is None:
-        raise RuntimeError("Either 'train_frac' or 'train_size' must be provided.")
-
-    if train_frac is not None:
-        train_size = floor(train_frac * X_full.shape[0])
-
-    while(True):
-        train_ind = rng.choice(range(X_full.shape[0]), size=train_size, replace=False)
-        test_ind = exclude_indices(X_full.shape[0], train_ind)
-        train_set = X_full[train_ind, :, :], y_full[train_ind, :, :], meta_full[train_ind, :, :]
-        test_set = X_full[test_ind, :, :], y_full[test_ind, :, :], meta_full[test_ind, :, :]
-
-        if return_indices:
-            yield train_set, test_set, (train_ind, test_ind)
-        else:
-            yield train_set, test_set
-
-
-def generate_evaluation_subsets(dataset: Dataset, rng: RNG_Input = None) -> Dataset:
-    """ Given a dataset consisting of the input features, outputs and metadata of shapes [N, i, Dx], [N, i, Dy] and
-        [N, i, Dz] respectively, generates subsets that randomly select one of i possible evaluations for each of the
-        N configurations. Thus, the generator yields a tuple containing 3 arrays of shapes [N, Dx], [N, Dy] and [N, Dz]
-        respectively. """
-
-    X, y, meta = dataset
-    if rng is None or isinstance(rng, int):
-        rng = np.random.RandomState(rng)
-
-    N, i, Dx = X.shape
-    Dy = y.shape[2]
-    Dz = meta.shape[2]
-    assert N == y.shape[0] and i == y.shape[1], "Shape mismatch between input features array of shape %s and output " \
-                                                "array of shape %s." % (str(X.shape), str(y.shape))
-    assert N == meta.shape[0] and i == meta.shape[1], "Shape mismatch between input features array of shape %s and " \
-                                                      "metadata array of shape %s." % (str(X.shape), str(meta.shape))
-    indices = list(range(i))
-
-    while True:
-        choices = rng.choice(indices, size=(X.shape[0], 1, 1), replace=True)
-        yield np.take_along_axis(X, choices, axis=1).reshape((N, Dx)), \
-              np.take_along_axis(y, choices, axis=1).reshape((N, Dy)), \
-              np.take_along_axis(meta, choices, axis=1).reshape((N, Dz))
 
 
 def exclude_indices(npoints: int, indices: Sequence) -> Sequence:
