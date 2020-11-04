@@ -1,6 +1,7 @@
 import emukit.benchmarking.loop_benchmarking.metrics as metrics
 from emukit.core.loop.loop_state import LoopState
 from emukit.core.loop import OuterLoop
+from pybnn.utils.data_utils import Data
 from typing import Tuple
 import logging
 
@@ -50,10 +51,6 @@ class TargetEvaluationDurationMetric(metrics.Metric):
         logger.debug("Generated durations(s): %s." % str(durations))
         return durations
 
-    # def reset(self) -> None:
-    #     self.last_observed_iter = 0
-    #     return
-
 
 class AcquisitionValueMetric(metrics.Metric):
     """ Records the acquisition function values used in each iteration. """
@@ -81,20 +78,16 @@ class AcquisitionValueMetric(metrics.Metric):
             return vals
         return np.array([self.nan_value])
 
-    # def reset(self) -> None:
-        # self.last_observed_iter = 0
 
 class NegativeLogLikelihoodMetric(metrics.Metric):
     """ Records the average negative log likelihood of the model prediction. """
 
-    def __init__(self, x_test: np.ndarray, y_test: np.ndarray, name: str='avg_nll'):
+    def __init__(self, data: Data, name: str='avg_nll'):
         """
         :param x_test: Input locations of test data
         :param y_test: Test targets
         """
-
-        self.x_test = x_test
-        self.y_test = y_test
+        self.data = data
         self.name = name
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
@@ -105,19 +98,24 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         :param loop_state: Object containing history of the loop that we add results to
         """
 
+        from scipy.stats import norm
+        x_test: np.ndarray = self.data.test_X
+        y_test: np.ndarray = self.data.test_Y
+        x_test = x_test.reshape(-1, x_test.shape[2])
+        y_test = y_test.reshape(-1, y_test.shape[2])
+
         try:
             logger.debug("Generating mean and variance predictions for NLL calculation on %d test configurations." %
-                         self.x_test.shape[0])
-            means, variances = loop.model_updaters[0].model.predict(self.x_test)
+                         x_test.shape[0])
+            means, variances = loop.model_updaters[0].model.predict(x_test)
         except AttributeError:
             # This is probably a dummy loop with no acquisition function
             logger.debug("No model found. Skipping metric %s calculation." % self.name)
             return np.array([0])
 
-        from scipy.stats import norm
         variances = np.clip(variances, a_min=1e-6, a_max=None)
-        ll = norm.logpdf(self.y_test, loc=means, scale=np.sqrt(variances))
-        ll = np.mean(ll).reshape(-1)
+        ll = norm.logpdf(y_test, loc=means, scale=np.sqrt(variances))
+        ll = np.mean(ll).reshape(1)
         logger.debug("Generated mean NLL value(s): %s." % str(ll))
         return ll
 
@@ -129,14 +127,13 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
     Root-mean-squared error metric stored in loop state metric dictionary with key "mean_squared_error".
     """
 
-    def __init__(self, x_test: np.ndarray, y_test: np.ndarray, name: str = 'mean_squared_error'):
+    def __init__(self, data: Data, name: str = 'mean_squared_error'):
         """
         :param x_test: Input locations of test data
         :param y_test: Test targets
         """
 
-        self.x_test = x_test
-        self.y_test = y_test
+        self.data = data
         self.name = name
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
@@ -147,31 +144,28 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         :param loop_state: Object containing history of the loop that we add results to
         """
 
+        x_test: np.ndarray = self.data.test_X
+        y_test: np.ndarray = self.data.test_Y
+
+        x_test = x_test[:, 0, :]
+        y_test = np.mean(y_test, axis=1, keepdims=False)
+
+        assert x_test.ndim == 2
+        assert y_test.ndim == 2
+
         try:
             logger.debug("Generating mean and variance predictions for RMSE calculation on %d test configurations." %
-                         self.x_test.shape[0])
-            predictions = loop.model_updaters[0].model.predict(self.x_test)[0]
+                         x_test.shape[0])
+            predictions = loop.model_updaters[0].model.predict(x_test)[0]
         except AttributeError as e:
             # Most likely a Random model that has no model attribute.
             logger.debug("No model found. Skipping metric %s calculation." % self.name)
             return np.array([0])
 
-        rmse = np.sqrt(np.mean(np.square(self.y_test - predictions), axis=0)).squeeze()
+        if isinstance(predictions, tuple):
+            # Assume that the model is predicting means and variances, discard variances for RMSE
+            predictions = predictions[0]
+
+        rmse = np.sqrt(np.mean(np.square(y_test - predictions), axis=0)).squeeze()
         logger.debug("Generated RMSE value(s): %s" % str(rmse))
         return rmse
-
-def _add_value_to_metrics_dict_corrected(loop_state, value, key_name):
-    """
-    A corrected version for the default function provided in emukit.benchmarking.loop_benchmarks.benchmarker.
-    """
-
-    new_value = np.asarray(value)
-    if new_value.ndim == 0:
-        new_value = new_value.reshape((-1))
-
-    if key_name in loop_state.metrics:
-        # Array already exists - append new value
-        loop_state.metrics[key_name] = np.concatenate([loop_state.metrics[key_name], new_value], axis=0)
-    else:
-        # Initialise array
-        loop_state.metrics[key_name] = new_value

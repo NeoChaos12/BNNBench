@@ -103,7 +103,7 @@ class Data:
     def __init__(self, emukit_map_func: Callable, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
                  source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
                  iterate_evals: bool = False, rng: Union[int, np.random.RandomState, None] = None,
-                 train_frac: float = None, train_size: int = None):
+                 train_set_multiplier: int = 10):
         data = Data.read_hpolib_benchmark_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
                                                evals_per_config=evals_per_config, rng_seed=source_rng_seed,
                                                extension=extension)
@@ -118,7 +118,7 @@ class Data:
             self.rng = rng
 
         # By default, generate a new split for every update
-        self._conf_splits = self._iterate_dataset_configurations(train_frac=train_frac, train_size=train_size,
+        self._conf_splits = self._iterate_dataset_configurations(train_size=train_set_multiplier * self.X_full[2],
                                                                  rng=self.rng.randint(0, 1_000_000_000))
         self._eval_splits = None  # Only becomes relevant if iterate_confs is False
 
@@ -138,7 +138,7 @@ class Data:
                                                                                                      rng=self.rng))
 
     def update(self):
-        """ Update the current data splits. """
+        """ Update the current data splits. Ideally called in synchrony with Benchmarker's loops. """
         if self._eval_splits is not None:
             # The test split is fixed, and we are only going to iterate over evaluation subsets for train set.
             self.train_X, self.train_Y, self.train_meta = next(self._eval_splits)
