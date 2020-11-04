@@ -100,17 +100,18 @@ Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
 RNG_Input = Union[int, np.random.RandomState, None]
 
 class Data:
-    def __init__(self, emukit_map_func: Callable, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
+    def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
                  source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
-                 iterate_evals: bool = False, rng: Union[int, np.random.RandomState, None] = None,
+                 iterate_evals: bool = False, emukit_map_func: Callable = None, rng: Union[int, np.random.RandomState, None] = None,
                  train_set_multiplier: int = 10):
         data = Data.read_hpolib_benchmark_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
                                                evals_per_config=evals_per_config, rng_seed=source_rng_seed,
                                                extension=extension)
         self.X_full, self.y_full, self.meta_full = data[:3]
         self.features, self.outputs, self.meta_headers = data[3:]
-        # We are more interested in keeping the configurations in an emukit-compatible format
-        self.X_full = emukit_map_func(self.X_full.reshape((-1, self.X_full.shape[2]))).reshape(self.X_full.shape)
+        if emukit_map_func is not None:
+            # We are more interested in keeping the configurations in an emukit-compatible format
+            self.X_full = emukit_map_func(self.X_full.reshape((-1, self.X_full.shape[2]))).reshape(self.X_full.shape)
 
         if rng is None or isinstance(rng, int):
             self.rng = np.random.RandomState(rng)
@@ -118,7 +119,7 @@ class Data:
             self.rng = rng
 
         # By default, generate a new split for every update
-        self._conf_splits = self._iterate_dataset_configurations(train_size=train_set_multiplier * self.X_full[2],
+        self._conf_splits = self._iterate_dataset_configurations(train_size=train_set_multiplier * self.X_full.shape[2],
                                                                  rng=self.rng.randint(0, 1_000_000_000))
         self._eval_splits = None  # Only becomes relevant if iterate_confs is False
 
@@ -131,26 +132,28 @@ class Data:
             if iterate_evals:
                 _log.debug("Enabling iteration over evaluation subsets. Training set will now iterate over evaluation "
                            "subsets.")
-                self._eval_splits = self._generate_evaluation_subsets(rng=self.rng)
+                self._eval_splits = self._generate_evaluation_subsets(dataset=train_set, rng=self.rng)
             else:
                 _log.debug("Disabling iteration over evaluation subsets. Training set is now also static.")
                 self.train_X, self.train_Y, self.train_meta = next(Data._generate_evaluation_subsets(dataset=train_set,
                                                                                                      rng=self.rng))
+        else:
+            _log.debug("Training and test sets will iterate over configuration subsets.")
 
     def update(self):
         """ Update the current data splits. Ideally called in synchrony with Benchmarker's loops. """
         if self._eval_splits is not None:
-            # The test split is fixed, and we are only going to iterate over evaluation subsets for train set.
+            _log.debug("Updating training set by iterating over evaluation subsets. Test set is static.")
             self.train_X, self.train_Y, self.train_meta = next(self._eval_splits)
         else:
             if self._conf_splits is not None:
-                # The train/test splits are not fixed.
+                _log.debug("Updating training and test sets by iterating over configuration subsets.")
                 train_data, test_data = next(self._conf_splits)
                 self.train_X, self.train_Y, self.train_meta = next(Data._generate_evaluation_subsets(dataset=train_data,
                                                                                                      rng=self.rng))
                 self.test_X, self.test_Y, self.test_meta = test_data
             else:
-                # Train/test splits are static.
+                _log.debug("Training and test sets are static.")
                 pass
 
     @staticmethod
