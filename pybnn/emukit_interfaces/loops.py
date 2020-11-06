@@ -2,8 +2,12 @@ from pybnn.models import BaseModel, MCDropout, MCBatchNorm, DeepEnsemble, DNGO
 from pybnn.utils.data_utils import Data
 import logging
 from enum import IntEnum
+
 from pybnn.emukit_interfaces.models import PyBNNModel
 import numpy as np
+from emukit.core.loop.model_updaters import NoopModelUpdater
+from emukit.core.loop.candidate_point_calculators import RandomSampling
+from emukit.core.loop import OuterLoop
 from emukit.bayesian_optimization.loops.bayesian_optimization_loop import BayesianOptimizationLoop
 from emukit.core import ParameterSpace
 from emukit.core.loop.loop_state import LoopState, create_loop_state, UserFunctionResult
@@ -20,6 +24,17 @@ class ModelType(IntEnum):
     ENSEMBLE = 3
 
 model_classes = [MCDropout, MCBatchNorm, DNGO, DeepEnsemble]
+
+
+def create_random_search_loop(space: ParameterSpace, initial_state: LoopState) -> OuterLoop:
+    _log.debug("Generating new random search loop.")
+
+    return OuterLoop(
+        candidate_point_calculator=RandomSampling(parameter_space=space),
+        model_updaters=NoopModelUpdater(),
+        loop_state=initial_state
+    )
+
 
 def create_pybnn_bo_loop(model_type: ModelType, model_params: BaseModel.modelParamsContainer, space: ParameterSpace,
                          initial_state: LoopState) -> BayesianOptimizationLoop:
@@ -38,6 +53,7 @@ def create_gp_bo_loop(space: ParameterSpace, initial_state: LoopState, acquisiti
                       **kwargs) -> BayesianOptimizationLoop:
     """ Creates a Bayesian Optimization Loop using a GP model. The keyword arguments are passed as is to
     emukit.examples.gp_bayesian_optimization.single_objective_bayesian_optimization.GPBayesianOptimization. """
+    _log.debug("Generating new GP BO Loop with %s acquisition function." % str(acquisition_type))
     loop = GPBayesianOptimization(variables_list=space.parameters, X=initial_state.X, Y=initial_state.Y,
                                   acquisition_type=acquisition_type, **kwargs)
     loop.loop_state = LoopState(initial_results=initial_state.results[:])
@@ -59,37 +75,27 @@ class LoopGenerator:
             A data holder object that will be used to coordinate the current training/test splits.
         """
 
-        self.n_loops = len(loops)
-        self.loops = loops
+        self._loops = loops
         self.data = data
-        self._counter = -1
+
+        def loop_cycle():
+            nonlocal self
+            while True:
+                _log.debug("Starting new iteration of loop initializers.")
+                self.data.update()
+                for loop in self._loops:
+                    yield loop
+
+        self._loop_cycle = loop_cycle()
+        self.loop_list = [(l[0], self.generate_next_loop) for l in self._loops]
         _log.info("Initialized LoopGenerator object for %d loops: %s" %
-                   (self.n_loops, ", ".join(l[0] for l in self.loops)))
-
-    @property
-    def counter(self):
-        return self._counter
-
-    @counter.setter
-    def counter(self, val):
-        if val % self.n_loops == 0:
-            # Start iterating over the loop sequence from the beginning, update the current training/test splits as
-            # dictated by the Data object
-            _log.debug("Updating data at the beginning of new iteration of loops list.")
-            self.data.update()
-            self._counter = 0
-        else:
-            self._counter = val
+                  (len(self._loops), ", ".join(l[0] for l in self._loops)))
 
     def generate_next_loop(self, benchmarker_state: LoopState):
         """ Expected to be passed to the initializer of Benchmarker, will iteratively generate up-to-date Loop
         objects. """
 
-        self.counter += 1
-        # Doing this operation at this point rather than later has the advantage that the data object used by every
-        # n-th loop is still in memory until the (n+1)-th loop is generated.
-
-        loop_name, loop_init, loop_kwargs = self.loops[self.counter]
+        loop_name, loop_init, loop_kwargs = next(self._loop_cycle)
         _log.debug("Generating loop %s" % loop_name)
         init_state = self._create_initial_loop_state(benchmarker_loop_state=benchmarker_state)
         loop = loop_init(initial_state=init_state, **loop_kwargs)

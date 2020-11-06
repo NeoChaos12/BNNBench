@@ -19,11 +19,14 @@ import pybnn.utils.data_utils as dutils
 from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 
 from pybnn.models import MCDropout, MCBatchNorm
-from pybnn.emukit_interfaces.loops import create_pybnn_bo_loop, ModelType, create_gp_bo_loop, LoopGenerator
+from pybnn.emukit_interfaces.loops import (
+    LoopGenerator,
+    create_pybnn_bo_loop, ModelType,
+    create_gp_bo_loop,
+    create_random_search_loop)
 from pybnn.emukit_interfaces import metrics as pybnn_metrics
 
 from emukit.benchmarking.loop_benchmarking import benchmarker
-from emukit.benchmarking.loop_benchmarking.random_search import RandomSearch
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
 from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
@@ -65,6 +68,9 @@ parser.add_argument("--iterate_evals", action="store_true", default=False,
                     help="Only useful when --iterate_confs is not given. Enable generation of new training datasets by "
                          "iterating through random selections of the available evaluations of each configuration "
                          "before every model training iteration for a fixed selection of configurations.")
+parser.add_argument("--models", type=str, default="001", help="Bit-string denoting which models should be enabled for "
+                                                              "benchmarking. The bits correspond to the sequence: "
+                                                              "[MCDropout, GP, RandomSearch]")
 args = parser.parse_args()
 
 # Logging setup
@@ -85,6 +91,7 @@ NUM_INITIAL_DATA = None
 NUM_REPEATS = args.num_repeats
 SOURCE_DATA_TILE_FREQ = args.source_data_tile_freq
 rng = np.random.RandomState(seed=args.rng)
+model_selection = int("0b" + args.models, 2)
 
 data_dir = Path().cwd() if args.sdir is None else Path(args.sdir).expanduser().resolve()
 save_dir = Path(data_dir) if args.odir is None else Path(args.odir).expanduser().resolve()
@@ -101,7 +108,7 @@ data = dutils.Data(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_
                    iterate_evals=args.iterate_evals, emukit_map_func=target_function.map_configurations_to_emukit,
                    rng=rng, train_set_multiplier=args.training_pts_per_dim)
 
-NUM_INITIAL_DATA = args.traububg_pts_per_dim * data.X_full.shape[2]
+NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[2]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 
 # ############# SETUP MODELS ###########################################################################################
@@ -113,23 +120,14 @@ model_params = model.modelParamsContainer()._replace(dataset_size=NUM_DATA_POINT
 # model = MCBatchNorm
 # model_params = model.modelParamsContainer()._replace(hidden_layer_sizes=[50])
 
-loops = [
-    # (
-    #     'Random Search',
-    #     lambda loop_state: RandomSearch(
-    #         # space=target_function.emukit_space, x_init=loop_state.X, y_init=loop_state.Y,
-    #         space=target_function.emukit_space, x_init=initial_loop_state.X, y_init=initial_loop_state.Y,
-    #         cost_init=initial_loop_state.cost
-    #     )
-    # ),
-    # (
-    #     'MCDropout',
-    #     lambda loop_state: create_pybnn_bo_loop(
-    #         model_type=ModelType.MCDROPOUT, model_params=model_params, space=target_function.emukit_space,
-    #         # initial_state=loop_state
-    #         initial_state=initial_loop_state
-    #     )
-    # ),
+all_loops = [
+    (
+        'Random Search',
+        create_random_search_loop,
+        dict(
+            space=target_function.emukit_space
+        )
+    ),
     (
         'Gaussian Process',
         create_gp_bo_loop,
@@ -138,10 +136,19 @@ loops = [
             acquisition_type=AcquisitionType.EI,
             noiseless=True
         )
-    )
+    ),
+    (
+        'MCDropout',
+        create_pybnn_bo_loop,
+        dict(
+            model_type=ModelType.MCDROPOUT,
+            model_params=model_params,
+            space=target_function.emukit_space,
+        )
+    ),
 ]
 
-loop_gen = LoopGenerator(loops=loops, data=data)
+loop_gen = LoopGenerator(loops=[loop for i, loop in enumerate(all_loops) if (1 << i) & model_selection], data=data)
 
 # ############# RUN BENCHMARKS #########################################################################################
 
@@ -150,14 +157,14 @@ metrics = [emukit_metrics.TimeMetric(), emukit_metrics.CumulativeCostMetric(), p
            emukit_metrics.MinimumObservedValueMetric(), pybnn_metrics.TargetEvaluationDurationMetric(),
            pybnn_metrics.NegativeLogLikelihoodMetric(data)]
 
-benchmarkers = benchmarker.Benchmarker(loop_gen.generate_next_loop, target_function, target_function.emukit_space,
+benchmarkers = benchmarker.Benchmarker(loop_gen.loop_list, target_function, target_function.emukit_space,
                                        metrics=metrics)
 benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_initial_data=1,
                                                n_repeats=NUM_REPEATS)
 
 # Save results
 # Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
-results_array = np.empty(shape=(len(loops), len(metrics), NUM_REPEATS, NUM_LOOP_ITERS + 1))
+results_array = np.empty(shape=(len(loop_gen._loops), len(metrics), NUM_REPEATS, NUM_LOOP_ITERS + 1))
 for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
     for metric_idx, metric_name in enumerate(benchmark_results.metric_names):
         results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
@@ -178,16 +185,18 @@ np.save(results_npy_file, arr=results_array, allow_pickle=False)
 initial_state_file = save_dir / "initial_loop_state.json"
 # with open(initial_state_file, 'w+b') as fp:
 #     pickle.dump(initial_loop_state, file=fp)
-try:
-    with open(initial_state_file, 'w') as fp:
-        json.dump(dict(
-            x_init=train_X,
-            y_init=train_Y,
-            **{key: train_meta[:, idx] for idx, key in enumerate(meta_headers)}
-        ), fp)
-except (ValueError, TypeError) as e:
-    logger.info("Could not save initial loop state due to error: %s\nInitial loop state may be recovered using the "
-                "following selection indices: %s" % (repr(e), str(train_ind)))
+
+# TODO: Check if this can be made to work, or if it's even still needed
+# try:
+#     with open(initial_state_file, 'w') as fp:
+#         json.dump(dict(
+#             x_init=train_X,
+#             y_init=train_Y,
+#             **{key: train_meta[:, idx] for idx, key in enumerate(meta_headers)}
+#         ), fp)
+# except (ValueError, TypeError) as e:
+#     logger.info("Could not save initial loop state due to error: %s\nInitial loop state may be recovered using the "
+#                 "following selection indices: %s" % (repr(e), str(train_ind)))
 
 
 # TODO: Handle initial metric values, since the default code simply flattens the entire array of results for each
@@ -201,14 +210,14 @@ n_metrics = len(plots_against_iterations.metrics_to_plot)
 plt.rcParams['figure.figsize'] = (6.4, 4.8 * (n_metrics + 1))
 plots_against_iterations.make_plot()
 plt.tight_layout()
-plt.savefig(save_dir / "vs_iter.pdf")
-# plt.show()
+# plt.savefig(save_dir / "vs_iter.pdf")
+plt.show()
 
 plots_against_time = BenchmarkPlot(benchmark_results=benchmark_results, x_axis_metric_name='time')
 n_metrics = len(plots_against_time.metrics_to_plot)
 plt.rcParams['figure.figsize'] = (6.4, 4.8 * (n_metrics + 1))
 plots_against_time.make_plot()
 plt.tight_layout()
-plt.savefig(save_dir / "vs_time.pdf")
-# plt.show()
+# plt.savefig(save_dir / "vs_time.pdf")
+plt.show()
 # breakpoint()

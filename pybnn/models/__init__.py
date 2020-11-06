@@ -1,7 +1,7 @@
 import logging
 
 _log = logging.getLogger(__name__)
-_log.setLevel(logging.WARNING)
+# _log.setLevel(logging.WARNING)
 
 from .base_model import BaseModel
 from .bayesian_linear_regression import BayesianLinearRegression
