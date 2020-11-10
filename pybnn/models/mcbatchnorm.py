@@ -296,7 +296,7 @@ class MCBatchNorm(MLP):
         :param y_test: (N, 1)
             Array of expected output values.
         :param nsamples: int
-            Number of stochastic forward passes to use for generating the MC-Dropout predictions.
+            Number of stochastic forward passes to use for generating the model predictions.
         :return: mc_rmse, log_likelihood
         """
 

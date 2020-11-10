@@ -65,11 +65,11 @@ class Learner(MLP):
 
     def predict(self, X_test):
         """
-        Returns the predictive mean and std dev at the given test points. Overwrites the MLP predict method which
+        Returns the predictive mean and variance at the given test points. Overwrites the MLP predict method which
         is unsuitable for handling two output neurons.
         :param X_test: np.ndarray (N, d)
             Test set of input features, containing N data points each having d features.
-        :return: (mean, std_dev)
+        :return: (mean, var)
             Models the output of each data point as a normal distribution's parameters.
         """
 
@@ -89,9 +89,9 @@ class Learner(MLP):
 
         if self.normalize_output:
             return (zero_mean_unit_var_denormalization(means, mean=self.y_mean, std=self.y_std),
-                    stds * self.y_std)
+                    (stds * self.y_std) ** 2)
         else:
-            return means, stds
+            return means, stds ** 2
 
     def evaluate(self, X_test, y_test):
         return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test)
@@ -237,7 +237,7 @@ class DeepEnsemble(MLP):
 
     def predict(self, X_test):
         r"""
-        Returns the predictive mean and standard deviation of the objective function at the given test points.
+        Returns the predictive mean and variance of the objective function at the given test points.
 
         Parameters
         ----------
@@ -249,28 +249,27 @@ class DeepEnsemble(MLP):
         np.array(N,)
             predictive mean
         np.array(N,)
-            predictive std_dev
+            predictive variance
 
         """
         logging.info("Using Deep Ensembles model to predict.")
 
         learner_means = np.zeros(shape=(X_test.shape[0], self.n_learners))
-        learner_stds = np.ones(shape=(X_test.shape[0], self.n_learners))
+        learner_vars = np.ones(shape=(X_test.shape[0], self.n_learners))
 
         for idx, learner in enumerate(self._learners):
-            learner_means[:, idx], learner_stds[:, idx] = learner.predict(X_test)
+            learner_means[:, idx], learner_vars[:, idx] = learner.predict(X_test)
 
         model_means = np.mean(learner_means, axis=1)
         # \sigma_*^2 = M^{-1} * (\Sum_m (\sigma_m^2 + \mu_m^2)) - \mu_*^2
-        model_stds = np.abs(np.sqrt(np.mean(np.square(learner_stds) + np.square(learner_means), axis=1) -
-                                    np.square(model_means)))
+        model_vars = np.mean(learner_vars + np.square(learner_means), axis=1) - np.square(model_means)
 
-        return model_means, model_stds
+        return model_means, model_vars
 
     def evaluate(self, X_test, y_test, **kwargs) -> dict:
         """
         Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE and
-        Log-Likelihood of the MC-Dropout prediction.
+        Log-Likelihood of the model prediction.
         :param X_test: (N, d)
             Array of input features.
         :param y_test: (N, 1)
@@ -279,19 +278,3 @@ class DeepEnsemble(MLP):
         """
 
         return evaluate_rmse_ll(model_obj=self, X_test=X_test, y_test=y_test)
-
-        # means, stds = self.predict(X_test=X_test)
-        # logger.debug("Generated final mean values of shape %s" % str(means.shape))
-        #
-        # if not isinstance(y_test, np.ndarray):
-        #     y_test = np.array(y_test)
-        #
-        # rmse = np.mean((means.squeeze() - y_test.squeeze()) ** 2) ** 0.5
-        #
-        # if len(y_test.shape) == 1:
-        #     y_test = y_test[:, None]
-        #
-        # stds = np.clip(stds, a_min=1e-3, a_max=None)
-        # ll = np.mean(norm.logpdf(y_test, loc=means, scale=stds))
-        # self.analytics_headers = ('RMSE', 'Log-Likelihood')
-        # return rmse, ll
