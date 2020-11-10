@@ -18,7 +18,7 @@ from pybnn.bin import _default_log_format
 import pybnn.utils.data_utils as dutils
 from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 
-from pybnn.models import MCDropout, MCBatchNorm, DeepEnsemble
+from pybnn.models import MCDropout, MCBatchNorm, DeepEnsemble, _log as pybnn_model_log
 from pybnn.emukit_interfaces.loops import (
     LoopGenerator,
     create_pybnn_bo_loop, ModelType,
@@ -71,6 +71,11 @@ parser.add_argument("--iterate_evals", action="store_true", default=False,
 parser.add_argument("--models", type=str, default="00001",
                     help="Bit-string denoting which models should be enabled for benchmarking. The bits correspond "
                          "directly to the sequence: [DeepEnsemble, MCBatchNorm, MCDropout, GP, RandomSearch]")
+parser.add_argument("--seed-offset", type=int, default=0,
+                    help="By default, the given RNG seed is used for seeding the RNG for the data iteration as well as "
+                         "another sequence of seeds, one of which is used as the global numpy seed for model training. "
+                         "The seed offset determines the index position in this sequence the value at which is used "
+                         "for the latter purpose. Offset range: [0, 1e9)")
 args = parser.parse_args()
 
 # Logging setup
@@ -82,6 +87,8 @@ logger = logging.getLogger(__name__)
 benchmarker_logger = benchmarker._log
 benchmarker_logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
 pybnn_log.setLevel(logging.DEBUG if args.debug else logging.INFO)
+if not args.debug:
+    pybnn_model_log.setLevel(logging.WARNING)
 
 # Global constants
 NUM_LOOP_ITERS = args.iterations
@@ -90,7 +97,7 @@ SOURCE_RNG_SEED = args.source_seed
 NUM_INITIAL_DATA = None
 NUM_REPEATS = args.num_repeats
 SOURCE_DATA_TILE_FREQ = args.source_data_tile_freq
-rng = np.random.RandomState(seed=args.rng)
+global_seed = np.random.RandomState(seed=args.rng).randint(0, 1_000_000_000, size=args.seed_offset + 1)[-1]
 model_selection = int("0b" + args.models, 2)
 
 data_dir = Path().cwd() if args.sdir is None else Path(args.sdir).expanduser().resolve()
@@ -106,7 +113,7 @@ target_function = HPOlibBenchmarkObjective(benchmark=Benchmarks.XGBOOST, task_id
 data = dutils.Data(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID, source_rng_seed=SOURCE_RNG_SEED,
                    evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
                    iterate_evals=args.iterate_evals, emukit_map_func=target_function.map_configurations_to_emukit,
-                   rng=rng, train_set_multiplier=args.training_pts_per_dim)
+                   rng=args.rng, train_set_multiplier=args.training_pts_per_dim)
 
 NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[2]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
@@ -166,7 +173,8 @@ all_loops = [
     )
 ]
 
-loop_gen = LoopGenerator(loops=[loop for i, loop in enumerate(all_loops) if (1 << i) & model_selection], data=data)
+loop_gen = LoopGenerator(loops=[loop for i, loop in enumerate(all_loops) if (1 << i) & model_selection], data=data,
+                         seed=global_seed)
 
 # ############# RUN BENCHMARKS #########################################################################################
 
@@ -225,17 +233,17 @@ import matplotlib.pyplot as plt
 
 plots_against_iterations = BenchmarkPlot(benchmark_results=benchmark_results)
 n_metrics = len(plots_against_iterations.metrics_to_plot)
-plt.rcParams['figure.figsize'] = (6.4, 4.8 * (n_metrics + 1))
+plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics * 1.2)
 plots_against_iterations.make_plot()
 plt.tight_layout()
-# plt.savefig(save_dir / "vs_iter.pdf")
-plt.show()
+plt.savefig(save_dir / "vs_iter.pdf")
+# plt.show()
 
 plots_against_time = BenchmarkPlot(benchmark_results=benchmark_results, x_axis_metric_name='time')
 n_metrics = len(plots_against_time.metrics_to_plot)
-plt.rcParams['figure.figsize'] = (6.4, 4.8 * (n_metrics + 1))
+plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics * 1.2)
 plots_against_time.make_plot()
 plt.tight_layout()
-# plt.savefig(save_dir / "vs_time.pdf")
-plt.show()
+plt.savefig(save_dir / "vs_time.pdf")
+# plt.show()
 # breakpoint()

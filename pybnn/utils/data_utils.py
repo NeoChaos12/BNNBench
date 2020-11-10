@@ -102,7 +102,7 @@ RNG_Input = Union[int, np.random.RandomState, None]
 class Data:
     def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
                  source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
-                 iterate_evals: bool = False, emukit_map_func: Callable = None, rng: Union[int, np.random.RandomState, None] = None,
+                 iterate_evals: bool = False, emukit_map_func: Callable = None, rng: RNG_Input = None,
                  train_set_multiplier: int = 10):
         data = Data.read_hpolib_benchmark_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
                                                evals_per_config=evals_per_config, rng_seed=source_rng_seed,

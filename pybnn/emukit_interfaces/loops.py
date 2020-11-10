@@ -45,7 +45,7 @@ def create_pybnn_bo_loop(model_type: ModelType, model_params: BaseModel.modelPar
     pybnn_model.set_data(initial_state.X, initial_state.Y)
     boloop = BayesianOptimizationLoop(space=space, model=pybnn_model)
     boloop.loop_state = LoopState(initial_results=initial_state.results[:])
-    _log.info("BOLoop for PyBNN model initialized.")
+    _log.info("BOLoop for PyBNN model of type %s initialized." % str(model_type).split('.')[-1])
     return boloop
 
 
@@ -64,7 +64,7 @@ class LoopGenerator:
     """ Generates a new Loop instance for use with Benchmarker by iterating over an internal data generator. Useful to
     substitute for a missing initialization hook in Benchmarker. """
 
-    def __init__(self, loops: Sequence[Tuple[str, Callable, Dict]], data: Data):
+    def __init__(self, loops: Sequence[Tuple[str, Callable, Dict]], data: Data, seed: int):
         """
         :param loops: Array of 3-tuples (name, func, kwargs)
             Each tuple corresponds to the requirements for initializing a different Loop object. 'name' is a string,
@@ -73,10 +73,13 @@ class LoopGenerator:
             keyword arguments passed to func.
         :param data: Data
             A data holder object that will be used to coordinate the current training/test splits.
+        :param seed: int
+            An integer value used to re-seed the global numpy RNG before generating every new Loop.
         """
 
         self._loops = loops
         self.data = data
+        self.seed = seed
 
         def loop_cycle():
             nonlocal self
@@ -95,6 +98,7 @@ class LoopGenerator:
         """ Expected to be passed to the initializer of Benchmarker, will iteratively generate up-to-date Loop
         objects. """
 
+        np.random.seed(self.seed)
         loop_name, loop_init, loop_kwargs = next(self._loop_cycle)
         _log.debug("Generating loop %s" % loop_name)
         init_state = self._create_initial_loop_state(benchmarker_loop_state=benchmarker_state)
