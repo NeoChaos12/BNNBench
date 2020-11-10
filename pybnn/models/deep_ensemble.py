@@ -218,6 +218,13 @@ class DeepEnsemble(MLP):
         for learner in self._learners:
             learner.preprocess_training_data(X, y)
 
+        self.X = self._learners[0].X
+        self.X_mean = self._learners[0].X_mean
+        self.X_std = self._learners[0].X_std
+        self.y = self._learners[0].y
+        self.y_mean = self._learners[0].y_mean
+        self.y_std = self._learners[0].y_std
+
     def validation_loss(self, Xval, yval):
         return -self.evaluate(Xval, yval)["LogLikelihood"]
 
@@ -263,6 +270,10 @@ class DeepEnsemble(MLP):
         model_means = np.mean(learner_means, axis=1)
         # \sigma_*^2 = M^{-1} * (\Sum_m (\sigma_m^2 + \mu_m^2)) - \mu_*^2
         model_vars = np.mean(learner_vars + np.square(learner_means), axis=1) - np.square(model_means)
+        if model_means.ndim == 1:
+            model_means = model_means[:, np.newaxis]
+        if model_vars.ndim == 1:
+            model_vars = model_vars[:, np.newaxis]
 
         return model_means, model_vars
 

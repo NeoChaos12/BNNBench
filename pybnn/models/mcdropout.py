@@ -313,6 +313,10 @@ class MCDropout(MLP):
         mc_pred = self._predict_mc(X_test=X_test, nsamples=nsamples)
         mean = np.mean(mc_pred, axis=0)
         var = (1 / self.precision) + np.var(mc_pred, axis=0)
+        if mean.ndim == 1:
+            mean = mean[:, np.newaxis]
+        if var.ndim == 1:
+            var = var[:, np.newaxis]
         return mean, var
 
 
