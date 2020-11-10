@@ -100,20 +100,8 @@ class PyBNNModel(IModel):
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         # TODO: Ensure all models return either variance or standard deviation, and there is no mix-up.
+        # PyBNN models are expected to always return 2D arrays.
         mean, var = self.model.predict(X_test=X)
-
-        if X.ndim == 1:
-            if mean.ndim == 1:
-                mean = mean[:, np.newaxis]
-            if var.ndim == 1:
-                var = var[:, np.newaxis]
-        else:
-            assert X.ndim == mean.ndim, f"There is a discrepancy between the dimensionality of input data {X.ndim}, " \
-                                        f"an array of shape {X.shape} and the dimensionality of the returned array " \
-                                        f"of predicted means {mean.ndim} of shape {mean.shape}."
-            assert X.ndim == var.ndim, f"There is a discrepancy between the dimensionality of input data {X.ndim}, " \
-                                       f"an array of shape {X.shape} and the dimensionality of the returned array " \
-                                       f"of predicted variances {var.ndim} of shape {var.shape}."
 
         return mean, var
 

@@ -18,7 +18,7 @@ from pybnn.bin import _default_log_format
 import pybnn.utils.data_utils as dutils
 from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
 
-from pybnn.models import MCDropout, MCBatchNorm
+from pybnn.models import MCDropout, MCBatchNorm, DeepEnsemble
 from pybnn.emukit_interfaces.loops import (
     LoopGenerator,
     create_pybnn_bo_loop, ModelType,
@@ -68,9 +68,9 @@ parser.add_argument("--iterate_evals", action="store_true", default=False,
                     help="Only useful when --iterate_confs is not given. Enable generation of new training datasets by "
                          "iterating through random selections of the available evaluations of each configuration "
                          "before every model training iteration for a fixed selection of configurations.")
-parser.add_argument("--models", type=str, default="001", help="Bit-string denoting which models should be enabled for "
-                                                              "benchmarking. The bits correspond to the sequence: "
-                                                              "[MCDropout, GP, RandomSearch]")
+parser.add_argument("--models", type=str, default="00001",
+                    help="Bit-string denoting which models should be enabled for benchmarking. The bits correspond "
+                         "directly to the sequence: [DeepEnsemble, MCBatchNorm, MCDropout, GP, RandomSearch]")
 args = parser.parse_args()
 
 # Logging setup
@@ -114,11 +114,11 @@ NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 # ############# SETUP MODELS ###########################################################################################
 
 
-model = MCDropout
-model_params = model.modelParamsContainer()._replace(dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50])
+mcdropout_model_params = MCDropout.modelParamsContainer()._replace(
+    dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50])
+mcbatchnorm_model_params = MCBatchNorm.modelParamsContainer()._replace(hidden_layer_sizes=[50])
+ensemble_model_params = DeepEnsemble.modelParamsContainer()._replace(hidden_layer_sizes=[50], n_learners=5)
 
-# model = MCBatchNorm
-# model_params = model.modelParamsContainer()._replace(hidden_layer_sizes=[50])
 
 all_loops = [
     (
@@ -142,10 +142,28 @@ all_loops = [
         create_pybnn_bo_loop,
         dict(
             model_type=ModelType.MCDROPOUT,
-            model_params=model_params,
+            model_params=mcdropout_model_params,
             space=target_function.emukit_space,
         )
     ),
+    (
+        'MCBatchNorm',
+        create_pybnn_bo_loop,
+        dict(
+            model_type=ModelType.MCBATCHNORM,
+            model_params=mcbatchnorm_model_params,
+            space=target_function.emukit_space,
+        )
+    ),
+    (
+        'DeepEnsemble',
+        create_pybnn_bo_loop,
+        dict(
+            model_type=ModelType.ENSEMBLE,
+            model_params=ensemble_model_params,
+            space=target_function.emukit_space,
+        )
+    )
 ]
 
 loop_gen = LoopGenerator(loops=[loop for i, loop in enumerate(all_loops) if (1 << i) & model_selection], data=data)
