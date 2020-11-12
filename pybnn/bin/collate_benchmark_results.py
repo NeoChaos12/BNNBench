@@ -31,25 +31,24 @@ logging.basicConfig(format=_default_log_format)
 JSON_RESULTS_FILE = "benchmark_results.json"
 NUMPY_RESULTS_FILE = "benchmark_results.npy"
 
-parser = argparse.ArgumentParser(add_help="Collate the results from multiple benchmarking runs into a single pandas "
-                                          "DataFrame object and store it as a Feather file.")
-parser.add_argument("-d", "--dir", type=Path, help="The source directory to be crawled for benchmark result JSON "
-                                                   "files. It is assumed that the name of every leaf directory "
-                                                   "corresponds to the task_id to be used for that set of results.")
-parser.add_argument("-t", "--target", type=Path, help="The target directory where the results will be stored.")
-parser.add_argument("-m", "--mode", type=int, help="The mode of operation to be used for collating the results.",
-                    choices=[1, 2])
-parser.add_argument("--debug", action="store_true", default=False, help="When given, switches debug mode logging on.")
-args = parser.parse_args()
 
-source_dir: Path = args.dir.expanduser().resolve()
-target_dir: Path = args.target.expanduser().resolve()
-mode = args.mode
+def handle_cli():
+    parser = argparse.ArgumentParser(add_help="Collate the results from multiple benchmarking runs into a single pandas "
+                                              "DataFrame object and store it as a Feather file.")
+    parser.add_argument("-s", "--source", type=Path, help="The source directory to be crawled for benchmark result JSON "
+                                                       "files. It is assumed that the name of every leaf directory "
+                                                       "corresponds to the task_id to be used for that set of results.")
+    parser.add_argument("-t", "--target", type=Path, help="The target directory where the results will be stored.")
+    parser.add_argument("-m", "--mode", type=int, help="The mode of operation to be used for collating the results.",
+                        choices=[1, 2])
+    parser.add_argument("--plot", default=False, type=bool, help="Enables generating plots of the collated data. Reads "
+                                                                 "data from the target dir and saves plots to the "
+                                                                 "target dir as well.")
+    parser.add_argument("--collate", default=True, type=bool, help="Enables collating the given data.")
+    parser.add_argument("--debug", action="store_true", default=False, help="When given, switches debug mode logging on.")
+    args = parser.parse_args()
 
-if args.debug:
-    _log.setLevel(logging.DEBUG)
-
-_log.info("Crawling directory %s" % str(source_dir))
+    return args
 
 
 def is_leaf_dir(dir: Path):
@@ -83,37 +82,33 @@ def read_result_files(source: Path):
 class Mode1:
     """ A simple collection of functions for Mode 1 operations i.e. collate data cross tasks """
 
-    def __init__(self):
-        pass
+    def __init__(self, target_dir: Path):
+        self.target_dir = target_dir
 
-    @staticmethod
-    def initiate_base_jdata(jdata: dict):
+    def initiate_base_jdata(self, jdata: dict):
         base = dict(jdata)
         base["tasks"] = []
         base["array_orderings"] = ["tasks"] + base["array_orderings"]
         return base
 
-    @staticmethod
-    def update_base_jdata(base: dict, dir: Path, jdata: dict, ndata: np.ndarray):
+    def update_base_jdata(self, base: dict, dir: Path, jdata: dict, ndata: np.ndarray):
         """ Updates the base jdata dict assuming that the name of the directory dir is a task name. """
 
         base["tasks"].append(dir.name)
 
-    @staticmethod
-    def collate(arr: list, base: dict):
+    def collate(self, arr: list, base: dict):
         """" Collate the data stored in arr assuming mode 1. """
 
         axis = base["array_orderings"].index("tasks")
         full_array = np.stack(arr, axis=axis)   # Create new axis dimension
-        _log.info("Saving collated data in %s" % str(target_dir))
-        np.save(file=target_dir / NUMPY_RESULTS_FILE, arr=full_array, allow_pickle=False)
-        with open(target_dir / JSON_RESULTS_FILE, 'w') as fp:
+        _log.info("Saving collated data in %s" % str(self.target_dir))
+        np.save(file=self.target_dir / NUMPY_RESULTS_FILE, arr=full_array, allow_pickle=False)
+        with open(self.target_dir / JSON_RESULTS_FILE, 'w') as fp:
             json_tricks.dump(base, fp, indent=4)
         _log.info("Generated final data array of shape %s with base configuration %s" %
                    (str(full_array.shape), json_tricks.dumps(base, indent=4)))
 
-    @staticmethod
-    def is_jdata_valid(base_jdata: dict, jdata: dict):
+    def is_jdata_valid(self, base_jdata: dict, jdata: dict):
 
         _log.debug("Comparing base_jdata \n%s\n\n and jdata\n%s" %
                    (json_tricks.dumps(base_jdata, indent=4), json_tricks.dumps(jdata, indent=4)))
@@ -132,34 +127,38 @@ class Mode2:
     """ A simple collection of functions for Mode 2 operations i.e. across more repeats of the
     same configurations. """
 
-    def __init__(self):
-        pass
+    def __init__(self, target_dir: Path):
+        self.target_dir = target_dir
 
-    @staticmethod
-    def initiate_base_jdata(jdata: dict):
+    def initiate_base_jdata(self, jdata: dict):
         base = dict(jdata)
         base["n_repeats"] = 0
         return base
 
-    @staticmethod
-    def update_base_jdata(base: dict, dir: Path, jdata: dict, ndata: np.ndarray):
+    def update_base_jdata(self, base: dict, dir: Path, jdata: dict, ndata: np.ndarray):
         base["n_repeats"] += jdata["n_repeats"]
 
-    @staticmethod
-    def collate(arr: list, base: list):
+    def collate(self, arr: list, base: dict):
         """ Collate the data stored in arr assuming mode 2. """
+
+        if not arr:
+            _log.info("Received empty array of data. No data written to %s." % self.target_dir)
+            return
+
+        if not base:
+            _log.info("Received empty base JSON dictionary. No data written to %s." % self.target_dir)
+            return
 
         axis = base["array_orderings"].index("n_repeats")
         full_array = np.concatenate(arr, axis=axis)
-        _log.info("Saving collated data in %s" % str(target_dir))
-        np.save(file=target_dir / NUMPY_RESULTS_FILE, arr=full_array, allow_pickle=False)
-        with open(target_dir / JSON_RESULTS_FILE, 'w') as fp:
+        _log.info("Saving collated data in %s" % str(self.target_dir))
+        np.save(file=self.target_dir / NUMPY_RESULTS_FILE, arr=full_array, allow_pickle=False)
+        with open(self.target_dir / JSON_RESULTS_FILE, 'w') as fp:
             json_tricks.dump(base, fp, indent=4)
         _log.info("Generated final data array of shape %s with base configuration %s" %
                    (str(full_array.shape), json_tricks.dumps(base, indent=4)))
 
-    @staticmethod
-    def is_jdata_valid(base_jdata: dict, jdata: dict):
+    def is_jdata_valid(self, base_jdata: dict, jdata: dict):
 
         _log.debug("Comparing base_jdata \n%s\n\n and jdata\n%s" %
                    (json_tricks.dumps(base_jdata, indent=4), json_tricks.dumps(jdata, indent=4)))
@@ -174,41 +173,115 @@ class Mode2:
         return key_check and item_check
 
 
-data_arrays = []
-base_jdata = None
-modes = {
-    1: Mode1,
-    2: Mode2
-}
+def collate_data(source_dir: Path, target_dir: Path, mode: int, debug: bool):
 
-for leaf_dir in dfs(source_dir):
-    # leaf_dir will always be a leaf directory i.e. it will not contain any sub directories
-    if (leaf_dir / JSON_RESULTS_FILE).exists() and (leaf_dir / NUMPY_RESULTS_FILE).exists():
-        jdata, ndata = read_result_files(leaf_dir)
-        if base_jdata is None:
-            _log.info("Using %s for the base benchmark settings." % str(leaf_dir))
-            base_jdata = modes[mode].initiate_base_jdata(jdata)
+    source_dir: Path = source_dir.expanduser().resolve()
+    target_dir: Path = target_dir.expanduser().resolve()
+    mode = mode
 
-        elif not modes[mode].is_jdata_valid(base_jdata=base_jdata, jdata=jdata):
-            _log.info("Skipping directory %s due to inconsistent benchmark settings. Base settings are %s" %
-                      (str(leaf_dir), str(base_jdata)))
+    if debug:
+        _log.setLevel(logging.DEBUG)
+
+    _log.info("Crawling directory %s for source data." % str(source_dir))
+    _log.info("Saving collated results to directory %s" % str(source_dir))
+
+    data_arrays = []
+    base_jdata = None
+    modes = {
+        1: Mode1,
+        2: Mode2
+    }
+
+    mode_obj = modes[mode](target_dir)
+
+    for leaf_dir in dfs(source_dir):
+        # leaf_dir will always be a leaf directory i.e. it will not contain any sub directories
+        if (leaf_dir / JSON_RESULTS_FILE).exists() and (leaf_dir / NUMPY_RESULTS_FILE).exists():
+            jdata, ndata = read_result_files(leaf_dir)
+            if base_jdata is None:
+                _log.info("Using %s for the base benchmark settings." % str(leaf_dir))
+                base_jdata = mode_obj.initiate_base_jdata(jdata)
+
+            elif not mode_obj.is_jdata_valid(base_jdata=base_jdata, jdata=jdata):
+                _log.info("Skipping directory %s due to inconsistent benchmark settings. Base settings are %s" %
+                          (str(leaf_dir), str(base_jdata)))
+                continue
+
+            data_arrays.append(ndata)
+            mode_obj.update_base_jdata(base_jdata, leaf_dir, jdata, ndata)
+            # base_jdata["tasks"].append(leaf_dir.name)
+            _log.info("Successfully included benchmark results from directory %s" % str(leaf_dir))
+        else:
+            _log.info("Could not find %s and %s in the leaf directory %s. Skipping leaf directory." %
+                      (JSON_RESULTS_FILE, NUMPY_RESULTS_FILE, str(leaf_dir)))
             continue
 
-        data_arrays.append(ndata)
-        modes[mode].update_base_jdata(base_jdata, leaf_dir, jdata, ndata)
-        # base_jdata["tasks"].append(leaf_dir.name)
-        _log.info("Successfully included benchmark results from directory %s" % str(leaf_dir))
+    try:
+        target_dir.mkdir(parents=True)
+    except FileExistsError:
+        _log.warning("Found existing data in output directory. Attempting to backup existing data to %s.bak." %
+                     str(target_dir))
+        backup_dir = target_dir.rename(target_dir.parent / f"{target_dir.name}.bak")
+        _log.info("Successfully created backup directory %s" % backup_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+    mode_obj.collate(data_arrays, base_jdata)
+
+
+def plot_results(source_dir: Path, save_dir: Path = None):
+    from emukit.benchmarking.loop_benchmarking import benchmarker
+    from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
+    import matplotlib.pyplot as plt
+
+    if (source_dir / JSON_RESULTS_FILE).exists() and (source_dir / NUMPY_RESULTS_FILE).exists():
+        jdata, ndata = read_result_files(source_dir)
+        if not jdata:
+            _log.warning("Found no JSON data in %s. Skipping." % source_dir)
+            return
+
+        if ndata is None:
+            _log.warning("Found no numpy data in %s. Skipping." % source_dir)
+            return
+        else:
+            _log.info("Read numpy data of shape %s" % str(ndata.shape))
+
+        benchmark_results = benchmarker.BenchmarkResult(loop_names=jdata["loop_names"], n_repeats=jdata["n_repeats"],
+                                            metric_names=jdata["metric_names"])
+        for idx, loop in enumerate(benchmark_results.loop_names):
+            for idy, metric in enumerate(benchmark_results.metric_names):
+                benchmark_results._results[loop][metric] = ndata[idx, idy, ::]
+
+        plots_against_iterations = BenchmarkPlot(benchmark_results=benchmark_results)
+        n_metrics = len(plots_against_iterations.metrics_to_plot)
+        plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics * 1.2)
+        plots_against_iterations.make_plot()
+        plots_against_iterations.fig_handle.set_tight_layout(True)
+        if save_dir is not None:
+            plots_against_iterations.fig_handle.savefig(save_dir / "vs_iter.pdf")
+        # else:
+        #     plt.show()
+
+        del(plots_against_iterations)
+
+        plots_against_time = BenchmarkPlot(benchmark_results=benchmark_results, x_axis_metric_name='time')
+        n_metrics = len(plots_against_time.metrics_to_plot)
+        plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics * 1.2)
+        plots_against_time.make_plot()
+        plots_against_time.fig_handle.set_tight_layout(True)
+        if save_dir is not None:
+            plots_against_time.fig_handle.savefig(save_dir / "vs_time.pdf")
+        # else:
+        #     plt.show()
+
+        del(plots_against_time)
+
     else:
-        _log.info("Could not find %s and %s in the leaf directory %s. Skipping leaf directory." %
-                  (JSON_RESULTS_FILE, NUMPY_RESULTS_FILE, str(leaf_dir)))
-        continue
+        _log.info("Could not read data from %s" % source_dir)
 
-try:
-    target_dir.mkdir(parents=True)
-except FileExistsError:
-    _log.warning("Found existing data in output directory. Attempting to backup existing data to %s.bak." %
-                 str(target_dir))
-    backup_dir = target_dir.rename(target_dir.parent / f"{target_dir.name}.bak")
-    target_dir.mkdir(parents=True, exist_ok=True)
 
-modes[mode].collate(data_arrays, base_jdata)
+if __name__ == "__main__":
+    args = handle_cli()
+    if args.collate:
+        collate_data(source_dir=args.source, target_dir=args.target, mode=args.mode, debug=args.debug)
+    if args.plot:
+        plot_results(source_dir=args.target, save_dir=args.target)
