@@ -101,6 +101,10 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         from scipy.stats import norm
         x_test: np.ndarray = self.data.test_X
         y_test: np.ndarray = self.data.test_Y
+
+        # The internal data arrangement always follows the ordering (configuration, sample, other_data_dimensions)
+        # Therefore, selections of single samples of individual configurations will have the shape
+        # (num_configs, sample_id, other_data_dimensions) and will have to be reshaped accordingly.
         x_test = x_test.reshape(-1, x_test.shape[2])
         y_test = y_test.reshape(-1, y_test.shape[2])
 
@@ -115,7 +119,7 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
 
         variances = np.clip(variances, a_min=1e-6, a_max=None)
         ll = norm.logpdf(y_test, loc=means, scale=np.sqrt(variances))
-        ll = np.mean(ll).reshape(1)
+        ll = -np.mean(ll).reshape(1)
         logger.debug("Generated mean NLL value(s): %s." % str(ll))
         return ll
 
@@ -147,8 +151,11 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         x_test: np.ndarray = self.data.test_X
         y_test: np.ndarray = self.data.test_Y
 
-        x_test = x_test[:, 0, :]
-        y_test = np.mean(y_test, axis=1, keepdims=False)
+        # The internal data arrangement always follows the ordering (configuration, sample, other_data_dimensions)
+        # Therefore, selections of multiple samples of individual configurations will have the shape
+        # (number_of_configs, number_of_samples, other_data_dimensions)
+        x_test = x_test[:, 0, :]    # Just extract the configurations themselves
+        y_test = np.mean(y_test, axis=1, keepdims=False)    # Average over multiple samples of each configuration
 
         assert x_test.ndim == 2
         assert y_test.ndim == 2
