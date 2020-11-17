@@ -324,7 +324,7 @@ class MLP(BaseModel):
         :return: ConfigurationSpace
         """
 
-        cs = ConfigurationSpace(name="PyBNN MLP Benchmark")
+        cs = ConfigurationSpace(name="PyBNN MLP Benchmark", seed=self.rng.randint(0, 1_000_000_000))
         cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
         cs.add_hyperparameter(Constant(name="num_epochs", value=self.num_epochs // 10))
         return cs

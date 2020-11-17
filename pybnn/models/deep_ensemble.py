@@ -8,8 +8,7 @@ from pybnn.config import globalConfig
 from pybnn.models.mlp import BaseModel, MLP
 from pybnn.models.auxiliary_funcs import evaluate_rmse_ll
 from pybnn.utils.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from collections import namedtuple, OrderedDict
-from scipy.stats import norm
+from collections import namedtuple
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +233,7 @@ class DeepEnsemble(MLP):
         :return: ConfigurationSpace
         """
 
-        cs = ConfigurationSpace(name="PyBNN DeepEnsemble")
+        cs = ConfigurationSpace(name="PyBNN DeepEnsemble", seed=self.rng.randint(0, 1_000_000_000))
         cs.add_hyperparameter(UniformFloatHyperparameter(name="weight_decay", lower=1e-6, upper=1e-1, log=True))
         return cs
 

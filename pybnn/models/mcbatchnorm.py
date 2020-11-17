@@ -134,7 +134,7 @@ class MCBatchNorm(MLP):
 
         logger.info("Fitting MC-BatchNorm model to the given data.")
 
-        cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark")
+        cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark", seed=self.rng.randint(0, 1_000_000_000))
         # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
         inv_var_y = 1. / np.var(y)  # Assume y is 1-D
@@ -148,7 +148,7 @@ class MCBatchNorm(MLP):
         confs = cs.sample_configuration(self.num_confs)
         logger.debug("Generated %d random configurations." % self.num_confs)
 
-        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
+        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True, random_state=self.rng)
         logger.debug("Generated validation set.")
 
         optim = None

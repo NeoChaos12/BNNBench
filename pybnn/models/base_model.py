@@ -130,7 +130,8 @@ class BaseModel(object):
         normalize_output: bool
             Whether or not the outputs to the MLP should be normalized first before use for training. Default is True.
         rng: None or int or np.random.RandomState
-            The random number generator to be used for all stochastic operations that rely on np.random.
+            The random number generator to be used for all stochastic operations that rely on np.random. Setting this
+            re-seeds the global PyTorch seed to a random integer value generated using the new NumPy RNG.
         kwargs: dict
             A keyword argument 'model_params' can be passed to specify all necessary model parameters either as a dict
             or a modelParamsContainer object. If this argument is specified, all other arguments are ignored.
@@ -169,6 +170,7 @@ class BaseModel(object):
             self.__rng = np.random.RandomState(new_rng)
         else:
             self.__rng = new_rng
+        torch.manual_seed(self.__rng.randint(0, 1_000_000_000))
 
     @abc.abstractmethod
     def _generate_network(self):
