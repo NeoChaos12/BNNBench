@@ -121,10 +121,9 @@ NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 # ############# SETUP MODELS ###########################################################################################
 
 
-mcdropout_model_params = MCDropout.modelParamsContainer()._replace(
-    dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50])
-mcbatchnorm_model_params = MCBatchNorm.modelParamsContainer()._replace(hidden_layer_sizes=[50])
-ensemble_model_params = DeepEnsemble.modelParamsContainer()._replace(hidden_layer_sizes=[50], n_learners=5)
+mcdropout_model_params = dict(dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50])
+mcbatchnorm_model_params = dict(hidden_layer_sizes=[50])
+ensemble_model_params = dict(hidden_layer_sizes=[50], n_learners=5)
 
 
 all_loops = [

@@ -26,7 +26,7 @@ class ModelType(IntEnum):
 model_classes = [MCDropout, MCBatchNorm, DNGO, DeepEnsemble]
 
 
-def create_random_search_loop(space: ParameterSpace, initial_state: LoopState) -> OuterLoop:
+def create_random_search_loop(space: ParameterSpace, initial_state: LoopState, **kwargs) -> OuterLoop:
     _log.debug("Generating new random search loop.")
 
     return OuterLoop(
@@ -36,12 +36,14 @@ def create_random_search_loop(space: ParameterSpace, initial_state: LoopState) -
     )
 
 
-def create_pybnn_bo_loop(model_type: ModelType, model_params: BaseModel.modelParamsContainer, space: ParameterSpace,
-                         initial_state: LoopState) -> BayesianOptimizationLoop:
+def create_pybnn_bo_loop(model_type: ModelType, model_params: dict, space: ParameterSpace, initial_state: LoopState,
+                         rng: Union[None, int, np.random.RandomState] = None, **kwargs) -> BayesianOptimizationLoop:
 
     _log.debug("Creating Bayesian Optimization Loop for PyBNN model of type %s, parameter space %s, and an initial "
                  "loop state containing %d points." % (model_type, space, initial_state.X.shape[0]))
-    pybnn_model = PyBNNModel(model=model_classes[model_type], model_params=model_params)
+    model_type = model_classes[model_type]
+    model_params = model_type.modelParamsContainer()._replace(**model_params, rng=rng)
+    pybnn_model = PyBNNModel(model=model_type, model_params=model_params)
     pybnn_model.set_data(initial_state.X, initial_state.Y)
     boloop = BayesianOptimizationLoop(space=space, model=pybnn_model)
     boloop.loop_state = LoopState(initial_results=initial_state.results[:])
@@ -54,6 +56,7 @@ def create_gp_bo_loop(space: ParameterSpace, initial_state: LoopState, acquisiti
     """ Creates a Bayesian Optimization Loop using a GP model. The keyword arguments are passed as is to
     emukit.examples.gp_bayesian_optimization.single_objective_bayesian_optimization.GPBayesianOptimization. """
     _log.debug("Generating new GP BO Loop with %s acquisition function." % str(acquisition_type))
+    kwargs.pop("rng") # This isn't compatible
     loop = GPBayesianOptimization(variables_list=space.parameters, X=initial_state.X, Y=initial_state.Y,
                                   acquisition_type=acquisition_type, **kwargs)
     loop.loop_state = LoopState(initial_results=initial_state.results[:])
@@ -99,10 +102,10 @@ class LoopGenerator:
         objects. """
 
         np.random.seed(self.seed)
-        loop_name, loop_init, loop_kwargs = next(self._loop_cycle)
+        loop_name, loop_init_func, loop_kwargs = next(self._loop_cycle)
         _log.debug("Generating loop %s" % loop_name)
         init_state = self._create_initial_loop_state(benchmarker_loop_state=benchmarker_state)
-        loop = loop_init(initial_state=init_state, **loop_kwargs)
+        loop = loop_init_func(initial_state=init_state, **loop_kwargs, rng=np.random.randint(0, 1_000_000_000))
         return loop
 
     def _create_initial_loop_state(self, benchmarker_loop_state: LoopState):
