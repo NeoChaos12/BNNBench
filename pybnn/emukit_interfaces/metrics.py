@@ -55,7 +55,7 @@ class TargetEvaluationDurationMetric(metrics.Metric):
 class AcquisitionValueMetric(metrics.Metric):
     """ Records the acquisition function values used in each iteration. """
 
-    def __init__(self, name: str = "acquisition_value", nan_value=-1):
+    def __init__(self, name: str = "acquisition_value", nan_value=-0.1):
 
         self.name = name
         self.nan_value = nan_value
@@ -176,3 +176,35 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         rmse = np.sqrt(np.mean(np.square(y_test - predictions), axis=0)).squeeze()
         logger.debug("Generated RMSE value(s): %s" % str(rmse))
         return rmse
+
+
+class ConfigHistoryMetric(metrics.Metric):
+    """ Records the history of explored configurations and their evaluation values in each iteration. """
+
+    def __init__(self, name: str = "config_history"):
+
+        self.name = name
+
+    def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
+        if loop_state.X[-1] is not None:
+            new_config = loop_state.X[-1, :]
+            logger.debug("Recorded new configuration: %s." % str(new_config))
+            return np.array(new_config)
+        else:
+            raise RuntimeError("Could not find any data history to record.")
+
+
+class OutputHistoryMetric(metrics.Metric):
+    """ Records the history of explored configurations and their evaluation values in each iteration. """
+
+    def __init__(self, name: str = "output_history"):
+
+        self.name = name
+
+    def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
+        if loop_state.X[-1] is not None:
+            new_output = loop_state.Y[-1, :]
+            logger.debug("Recorded new configuration: %s." % str(new_output))
+            return np.array(new_output)
+        else:
+            raise RuntimeError("Could not find any data history to record.")

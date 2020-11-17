@@ -89,8 +89,8 @@ class LoopGenerator:
                 for loop in self._loops:
                     yield loop
 
-        self._loop_cycle = loop_cycle()
-        self.loop_list = [(l[0], self.generate_next_loop) for l in self._loops]
+        self._loop_cycle = loop_cycle() # Actually responsible for properly iterating over the loops
+        self.loop_list = [(l[0], self.generate_next_loop) for l in self._loops] # Sole Purpose: Expose to Benchmarker
         _log.info("Initialized LoopGenerator object for %d loops: %s" %
                   (len(self._loops), ", ".join(l[0] for l in self._loops)))
 
