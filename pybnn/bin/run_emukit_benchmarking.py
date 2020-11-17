@@ -177,12 +177,16 @@ loop_gen = LoopGenerator(loops=[loop for i, loop in enumerate(all_loops) if (1 <
 
 # ############# RUN BENCHMARKS #########################################################################################
 
+num_loops = len(loop_gen.loop_list)
+outx = np.empty(shape=(num_loops, NUM_REPEATS, NUM_DATA_POINTS, len(data.features)))
+outy = np.empty(shape=(num_loops, NUM_REPEATS, NUM_DATA_POINTS, len(data.outputs)))
+
 metrics = [emukit_metrics.TimeMetric(), emukit_metrics.CumulativeCostMetric(), pybnn_metrics.AcquisitionValueMetric(),
            pybnn_metrics.RootMeanSquaredErrorMetric(data),
            emukit_metrics.MinimumObservedValueMetric(), pybnn_metrics.TargetEvaluationDurationMetric(),
            pybnn_metrics.NegativeLogLikelihoodMetric(data),
-           pybnn_metrics.ConfigHistoryMetric(),
-           pybnn_metrics.OutputHistoryMetric()]
+           pybnn_metrics.HistoryMetricHack(num_loops=num_loops, num_repeats=NUM_REPEATS,
+                                           num_iters=NUM_LOOP_ITERS, outx=outx, outy=outy)]
 
 benchmarkers = benchmarker.Benchmarker(loop_gen.loop_list, target_function, target_function.emukit_space,
                                        metrics=metrics)
@@ -196,57 +200,25 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
 
 # Save results
 # Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
-results_array = np.empty(shape=(len(loop_gen._loops), len(metrics), NUM_REPEATS, NUM_LOOP_ITERS + 1))
-# This array only contains the history of the configurations and the outputs of target function evaluation
-history_array = np.empty(
-    shape=(len(loop_gen._loops), NUM_REPEATS, NUM_LOOP_ITERS + 1, len(data.features) + len(data.outputs)))
+results_array = np.empty(shape=(len(loop_gen._loops), len(metrics)-1, NUM_REPEATS, NUM_LOOP_ITERS + 1))
 
 for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
-    for metric_idx, metric_name in enumerate(benchmark_results.metric_names[:-2]):
+    for metric_idx, metric_name in enumerate(benchmark_results.metric_names[:-1]):
         results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
-    config_metric = benchmark_results.metric_names[-2]
-    output_metric = benchmark_results.metric_names[-1]
-    history_array[loop_idx, :, :] = np.concatenate(
-        [benchmark_results.extract_metric_as_array(loop_name, m) for m in (config_metric, output_metric)],
-        axis=-1
-    ).reshape(history_array.shape[1:])
-    
 
 results_json_file = save_dir / "benchmark_results.json"
 with open(results_json_file, 'w') as fp:
     json.dump({
         "loop_names": benchmark_results.loop_names,
         "n_repeats": benchmark_results.n_repeats,
-        "metric_names": benchmark_results.metric_names,
+        "metric_names": benchmark_results.metric_names[:-1],
         "array_orderings": ["loop_names", "metric_names", "n_repeats", "n_iterations"]
-        # "results": benchmark_results._results
         }, fp, indent=4)
 
 results_npy_file = save_dir / "benchmark_results.npy"
 np.save(results_npy_file, arr=results_array, allow_pickle=False)
 
-history_npy_file = save_dir / "benchmark_runhistory.npy"
-np.save(history_npy_file, arr=history_array, allow_pickle=False)
-
-# TODO: Handle initial metric values, since the default code simply flattens the entire array of results for each
-#  iteration at the time of plotting. Suggestion: Store these values separately during initialization and augment the
-#  plotting routines and results accordingly afterwards.
-
-# import matplotlib.pyplot as plt
-
-# plots_against_iterations = BenchmarkPlot(benchmark_results=benchmark_results)
-# n_metrics = len(plots_against_iterations.metrics_to_plot)
-# plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics * 1.2)
-# plots_against_iterations.make_plot()
-# plt.tight_layout()
-# plt.savefig(save_dir / "vs_iter.pdf")
-# plt.show()
-
-# plots_against_time = BenchmarkPlot(benchmark_results=benchmark_results, x_axis_metric_name='time')
-# n_metrics = len(plots_against_time.metrics_to_plot)
-# plt.rcParams['figure.figsize'] = (6.4, 4.8 * n_metrics * 1.2)
-# plots_against_time.make_plot()
-# plt.tight_layout()
-# plt.savefig(save_dir / "vs_time.pdf")
-# plt.show()
-# breakpoint()
+config_npy_file = save_dir / "benchmark_runhistory_X.npy"
+np.save(config_npy_file, arr=outx, allow_pickle=False)
+output_npy_file = save_dir / "benchmark_runhistory_Y.npy"
+np.save(output_npy_file, arr=outy, allow_pickle=False)

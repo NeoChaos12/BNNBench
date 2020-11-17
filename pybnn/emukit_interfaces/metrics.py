@@ -178,33 +178,49 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         return rmse
 
 
-class ConfigHistoryMetric(metrics.Metric):
+class HistoryMetricHack(metrics.Metric):
     """ Records the history of explored configurations and their evaluation values in each iteration. """
 
-    def __init__(self, name: str = "config_history"):
+    def __init__(self, num_loops: int, num_repeats: int, num_iters: int, outx: np.ndarray, outy: np.ndarray,
+                 name: str = "config_history_hack"):
 
         self.name = name
+        self._num_loops = num_loops
+        self._max_repeats = num_repeats
+        self._max_iters = num_iters # In reality, there will be one extra iteration due to loop initialization
+        self._loops = 0
+        self._repeats = 0
+        self._iters = 0
+        self._outx = outx
+        self._outy = outy
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
-        if loop_state.X[-1] is not None:
-            new_config = loop_state.X[-1, :]
-            logger.debug("Recorded new configuration: %s." % str(new_config))
-            return np.array(new_config)
+        if self._iters >= 0 and self._iters < self._max_iters:
+            self._iters += 1 # Update the internal count of how many iterations have been processed thus far.
+        elif self._iters == self._max_iters:
+            # This is the last of a loop's iterations, i.e. the num_iters+1'th iteration (includes the init iter)
+            self._iters = 0 # Start the cycle all over again
+            if self._loops >= 0 and self._loops < self._num_loops:
+                # There are more loops to go, but one loop just ended, so it's loop state should be recorded
+                self._outx[self._loops, self._repeats, :] = loop.loop_state.X
+                self._outy[self._loops, self._repeats, :] = loop.loop_state.Y
+                self._loops += 1
+            else:
+                # The loop counter should never reach a value that permits this branch to execute!
+                raise RuntimeError("Invalid loop counter value %d - should not have exceeded %d" %
+                                   (self._loops, self._num_loops))
+            if self._loops == self._num_loops:
+                # We just finished evaluating the last loop in the sequence, end of one repetition
+                self._loops = 0 # Start the cycle all over again
+                if self._repeats >= 0 and self._repeats < self._max_repeats:
+                    # There are more repetitions to go, but one just ended. This is mainly a sanity check.
+                    self._repeats += 1
+                else:
+                    # Again, this should theoretically never be reached.
+                    raise RuntimeError("Invalid repetition counter value %d - should not have exceeded %d" %
+                                       (self._repeats, self._max_repeats))
         else:
-            raise RuntimeError("Could not find any data history to record.")
-
-
-class OutputHistoryMetric(metrics.Metric):
-    """ Records the history of explored configurations and their evaluation values in each iteration. """
-
-    def __init__(self, name: str = "output_history"):
-
-        self.name = name
-
-    def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
-        if loop_state.X[-1] is not None:
-            new_output = loop_state.Y[-1, :]
-            logger.debug("Recorded new configuration: %s." % str(new_output))
-            return np.array(new_output)
-        else:
-            raise RuntimeError("Could not find any data history to record.")
+            # Hey, this should never execute!
+            raise RuntimeError("Invalid iteration counter value %d - should not have exceeded %d" %
+                               (self._iters, self._max_iters))
+        return [0]
