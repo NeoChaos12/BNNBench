@@ -1,5 +1,5 @@
 from pybnn.models import BaseModel, MCDropout, MCBatchNorm, DeepEnsemble, DNGO
-from pybnn.utils.data_utils import Data
+from pybnn.utils.data_utils import HPOBenchData
 import logging
 from enum import IntEnum
 
@@ -67,14 +67,14 @@ class LoopGenerator:
     """ Generates a new Loop instance for use with Benchmarker by iterating over an internal data generator. Useful to
     substitute for a missing initialization hook in Benchmarker. """
 
-    def __init__(self, loops: Sequence[Tuple[str, Callable, Dict]], data: Data, seed: int):
+    def __init__(self, loops: Sequence[Tuple[str, Callable, Dict]], data: HPOBenchData, seed: int):
         """
         :param loops: Array of 3-tuples (name, func, kwargs)
             Each tuple corresponds to the requirements for initializing a different Loop object. 'name' is a string,
             'func' is a function that returns the relevant loop object and should accept a keyword argument
             'initial_state' for a LoopState object used to initialize the Loop, and kwargs is a dictionary of fixed
             keyword arguments passed to func.
-        :param data: Data
+        :param data: HPOBenchData
             A data holder object that will be used to coordinate the current training/test splits.
         :param seed: int
             An integer value used to re-seed the global numpy RNG before generating every new Loop.

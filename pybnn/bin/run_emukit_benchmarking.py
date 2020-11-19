@@ -110,10 +110,10 @@ save_dir.mkdir(exist_ok=True, parents=True)
 target_function = HPOBenchObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED,
                                     use_local=args.use_local)
 
-data = dutils.Data(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID, source_rng_seed=SOURCE_RNG_SEED,
-                   evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
-                   iterate_evals=args.iterate_evals, emukit_map_func=target_function.map_configurations_to_emukit,
-                   rng=args.rng, train_set_multiplier=args.training_pts_per_dim)
+data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID, source_rng_seed=SOURCE_RNG_SEED,
+                           evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
+                           iterate_evals=args.iterate_evals, emukit_map_func=target_function.map_configurations_to_emukit,
+                           rng=args.rng, train_set_multiplier=args.training_pts_per_dim)
 
 NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[2]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS

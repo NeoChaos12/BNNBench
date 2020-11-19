@@ -99,14 +99,14 @@ def data_generator(obj_config: AttrDict, numbered=True) -> \
 Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
 RNG_Input = Union[int, np.random.RandomState, None]
 
-class Data:
+class HPOBenchData:
     def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
                  source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
                  iterate_evals: bool = False, emukit_map_func: Callable = None, rng: RNG_Input = None,
                  train_set_multiplier: int = 10):
-        data = Data.read_hpobench_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
-                                       evals_per_config=evals_per_config, rng_seed=source_rng_seed,
-                                       extension=extension)
+        data = HPOBenchData.read_hpobench_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
+                                               evals_per_config=evals_per_config, rng_seed=source_rng_seed,
+                                               extension=extension)
         self.X_full, self.y_full, self.meta_full = data[:3]
         self.features, self.outputs, self.meta_headers = data[3:]
         if emukit_map_func is not None:
@@ -135,8 +135,8 @@ class Data:
                 self._eval_splits = self._generate_evaluation_subsets(dataset=train_set, rng=self.rng)
             else:
                 _log.debug("Disabling iteration over evaluation subsets. Training set is now also static.")
-                self.train_X, self.train_Y, self.train_meta = next(Data._generate_evaluation_subsets(dataset=train_set,
-                                                                                                     rng=self.rng))
+                self.train_X, self.train_Y, self.train_meta = next(HPOBenchData._generate_evaluation_subsets(dataset=train_set,
+                                                                                                             rng=self.rng))
         else:
             _log.debug("Training and test sets will iterate over configuration subsets.")
 
@@ -149,8 +149,8 @@ class Data:
             if self._conf_splits is not None:
                 _log.debug("Updating training and test sets by iterating over configuration subsets.")
                 train_data, test_data = next(self._conf_splits)
-                self.train_X, self.train_Y, self.train_meta = next(Data._generate_evaluation_subsets(dataset=train_data,
-                                                                                                     rng=self.rng))
+                self.train_X, self.train_Y, self.train_meta = next(HPOBenchData._generate_evaluation_subsets(dataset=train_data,
+                                                                                                             rng=self.rng))
                 self.test_X, self.test_Y, self.test_meta = test_data
             else:
                 _log.debug("Training and test sets are static.")

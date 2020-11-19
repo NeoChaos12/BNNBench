@@ -1,7 +1,7 @@
 import emukit.benchmarking.loop_benchmarking.metrics as metrics
 from emukit.core.loop.loop_state import LoopState
 from emukit.core.loop import OuterLoop
-from pybnn.utils.data_utils import Data
+from pybnn.utils.data_utils import HPOBenchData
 from typing import Tuple
 import logging
 
@@ -82,7 +82,7 @@ class AcquisitionValueMetric(metrics.Metric):
 class NegativeLogLikelihoodMetric(metrics.Metric):
     """ Records the average negative log likelihood of the model prediction. """
 
-    def __init__(self, data: Data, name: str='avg_nll'):
+    def __init__(self, data: HPOBenchData, name: str= 'avg_nll'):
         """
         :param x_test: Input locations of test data
         :param y_test: Test targets
@@ -131,7 +131,7 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
     Root-mean-squared error metric stored in loop state metric dictionary with key "mean_squared_error".
     """
 
-    def __init__(self, data: Data, name: str = 'mean_squared_error'):
+    def __init__(self, data: HPOBenchData, name: str = 'mean_squared_error'):
         """
         :param x_test: Input locations of test data
         :param y_test: Test targets
