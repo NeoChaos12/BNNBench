@@ -34,10 +34,10 @@ if __name__ == "__main__":
     extension = args.extension
 
     if args.use_local:
-        from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
+        from hpobench.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
         benchmark = Bench(task_id=task_id, rng=rng_seed)
     else:
-        from hpolib.container.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
+        from hpobench.container.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as Bench
         benchmark = Bench(task_id=task_id, container_source=container_source, rng=rng_seed)
 
     cspace = benchmark.get_configuration_space()

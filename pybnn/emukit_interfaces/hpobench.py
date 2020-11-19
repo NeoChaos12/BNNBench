@@ -15,22 +15,22 @@ class Benchmarks(Enum):
     SVM = 2
 
 
-class HPOlibBenchmarkObjective(UserFunctionWrapper):
-    """ An emukit compatible objective function generated from an HPOlib Benchmark instance. """
+class HPOBenchObjective(UserFunctionWrapper):
+    """ An emukit compatible objective function generated from an HPOBench Benchmark instance. """
 
     def __init__(self, benchmark: Enum, task_id: int, rng: int = 1, use_local=False):
         if benchmark == Benchmarks.XGBOOST:
             logger.debug("Setting up XGBoost benchmark as objective.")
             if use_local:
-                from hpolib.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
+                from hpobench.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
             else:   
-                from hpolib.container.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
+                from hpobench.container.benchmarks.ml.xgboost_benchmark import XGBoostBenchmark as bench
         elif benchmark == Benchmarks.SVM:
             logger.debug("Setting up SVM benchmark as objective.")
             if use_local:
-                from hpolib.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
+                from hpobench.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
             else:   
-                from hpolib.container.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
+                from hpobench.container.benchmarks.ml.svm_benchmark import SupportVectorMachine as bench
         else:
             raise RuntimeError("Unexpected input %s of type %s, no corresponding benchmarks are known." %
                                (str(benchmark), str(type(benchmark))))
@@ -59,17 +59,17 @@ class HPOlibBenchmarkObjective(UserFunctionWrapper):
                 fvals.append([res["function_value"]])
                 costs.append([res["cost"]])
 
-            logger.debug("For %d input configuration(s), HPOLib benchmark objective generated:\nFunction value(s):\t%s\n"
+            logger.debug("For %d input configuration(s), HPOBench objective generated:\nFunction value(s):\t%s\n"
                          "Costs:\t%s\nQuery timestamps:\t%s\nResponse timestamps:\t%s" %
                          (X.shape[0], fvals, costs, starts, ends))
 
             return np.asarray(fvals), np.asarray(costs), np.asarray(starts), np.asarray(ends)
 
-        super(HPOlibBenchmarkObjective, self).__init__(
+        super(HPOBenchObjective, self).__init__(
             f=benchmark_wrapper,
             extra_output_names=extra_output_names
         )
-        logger.info("HPOLib Benchmark successfully initialized as objective function.")
+        logger.info("Successfully initialized HPOBench objective function.")
 
     def map_configurations_to_emukit(self, configs: np.ndarray) -> np.ndarray:
         """ Given a sequence of ConfigSpace.Configuration objects, map the configurations to a sequence of values in

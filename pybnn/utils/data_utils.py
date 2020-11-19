@@ -104,9 +104,9 @@ class Data:
                  source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
                  iterate_evals: bool = False, emukit_map_func: Callable = None, rng: RNG_Input = None,
                  train_set_multiplier: int = 10):
-        data = Data.read_hpolib_benchmark_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
-                                               evals_per_config=evals_per_config, rng_seed=source_rng_seed,
-                                               extension=extension)
+        data = Data.read_hpobench_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
+                                       evals_per_config=evals_per_config, rng_seed=source_rng_seed,
+                                       extension=extension)
         self.X_full, self.y_full, self.meta_full = data[:3]
         self.features, self.outputs, self.meta_headers = data[3:]
         if emukit_map_func is not None:
@@ -157,11 +157,11 @@ class Data:
                 pass
 
     @staticmethod
-    def read_hpolib_benchmark_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                                   evals_per_config: int, extension: str = "csv") -> \
+    def read_hpobench_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
+                           evals_per_config: int, extension: str = "csv") -> \
             Tuple[np.ndarray, np.ndarray, np.ndarray, Sequence[str], Sequence[str], Sequence[str]]:
         """
-        Reads the relevant data of the given hpolib benchmark from the given folder and returns it as numpy arrays.
+        Reads the relevant data of the given hpobench objective from the given folder and returns it as numpy arrays.
         :param data_folder: Path or string
             The folder containing all relevant data files.
         :param benchmark_name: string

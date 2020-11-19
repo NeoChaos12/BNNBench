@@ -16,7 +16,7 @@ except (ImportError, ModuleNotFoundError):
 
 from pybnn.bin import _default_log_format
 import pybnn.utils.data_utils as dutils
-from pybnn.emukit_interfaces import HPOlibBenchmarkObjective, Benchmarks
+from pybnn.emukit_interfaces import HPOBenchObjective, Benchmarks
 
 from pybnn.models import MCDropout, MCBatchNorm, DeepEnsemble, _log as pybnn_model_log
 from pybnn.emukit_interfaces.loops import (
@@ -40,7 +40,7 @@ parser = argparse.ArgumentParser(description="Run a benchmarking experiment for 
 
 parser.add_argument("-i", "--iterations", type=int, required=True,
                     help="The number of iterations that each BO loop is run for using any given model.")
-parser.add_argument("-t", "--task_id", type=int, default=189909, help="The OpenML task id to be used by HPOlib.")
+parser.add_argument("-t", "--task_id", type=int, default=189909, help="The OpenML task id to be used by HPOBench.")
 parser.add_argument("--rng", type=int, default=1, help="An RNG seed for generating repeatable results.")
 parser.add_argument("--source_seed", type=int, default=1,
                     help="The value of the RNG seed used for generating the source data being used as a reference.")
@@ -51,15 +51,15 @@ parser.add_argument("-n", "--num_repeats", type=int, default=10,
                     help="The number of times the benchmarking process is to be repeated and averaged over for each "
                          "model type.")
 parser.add_argument("--source_data_tile_freq", type=int, default=10,
-                    help="The number of times each configuration was queried when benchmarking the HPOlib objective "
+                    help="The number of times each configuration was queried when benchmarking the HPOBench objective "
                          "benchmark.")
 parser.add_argument("-s", "--sdir", type=str, default=None,
-                    help="The path to the directory where all HPOlib data files are to be read from. Default: Current "
+                    help="The path to the directory where all HPOBench data files are to be read from. Default: Current "
                          "working directory.")
 parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files are "
                                                                 "to be stored. Default: same as sdir.")
 parser.add_argument("--use_local", action="store_true", default=False,
-                    help="Use a local version of the HPOlib benchmark objective instead of the container.")
+                    help="Use a local version of the HPOBench benchmark objective instead of the container.")
 parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode logging.")
 parser.add_argument("--iterate_confs", action="store_true", default=False,
                     help="Enable generation of new training and testing datasets by iterating through random "
@@ -107,8 +107,8 @@ save_dir.mkdir(exist_ok=True, parents=True)
 # ############# LOAD DATA ##############################################################################################
 
 # SETUP TARGET FUNCTION
-target_function = HPOlibBenchmarkObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED,
-        use_local=args.use_local)
+target_function = HPOBenchObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED,
+                                    use_local=args.use_local)
 
 data = dutils.Data(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID, source_rng_seed=SOURCE_RNG_SEED,
                    evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
@@ -204,6 +204,7 @@ results_array = np.empty(shape=(len(loop_gen._loops), len(metrics)-1, NUM_REPEAT
 
 for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
     for metric_idx, metric_name in enumerate(benchmark_results.metric_names[:-1]):
+        # Notice the metric_names[:-1]. This is done to ignore the last metric - the hack for recording runhistory
         results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
 
 results_json_file = save_dir / "benchmark_results.json"
@@ -212,6 +213,7 @@ with open(results_json_file, 'w') as fp:
         "loop_names": benchmark_results.loop_names,
         "n_repeats": benchmark_results.n_repeats,
         "metric_names": benchmark_results.metric_names[:-1],
+        # Notice the metric_names[:-1]. This is done to ignore the last metric - the hack for recording runhistory
         "array_orderings": ["loop_names", "metric_names", "n_repeats", "n_iterations"]
         }, fp, indent=4)
 
