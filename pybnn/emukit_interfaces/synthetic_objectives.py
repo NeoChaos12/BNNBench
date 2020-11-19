@@ -9,10 +9,12 @@ _log = logging.getLogger(__name__)
 
 
 class SyntheticObjective(UserFunctionWrapper):
-    def __init__(self, space: ParameterSpace, f: Callable, extra_output_names: Optional[List[str]] = None,
-                 name: Optional[str] = "Synthetic Objective", ):
+    def __init__(self, space: ParameterSpace, f: Callable, name: Optional[str] = "Synthetic Objective",
+                 output_dims: int = 1):
 
         self.name = name
+        self.emukit_space = space
+        extra_output_names = ["query_timestamp", "response_timestamp"]
 
         def wrapper(X: np.ndarray) -> np.ndarray:
             nonlocal self, f
@@ -23,7 +25,7 @@ class SyntheticObjective(UserFunctionWrapper):
             starts = []
             ends = []
 
-            for idx in X.shape[0]:
+            for idx in range(X.shape[0]):
                 starts.append([time.time()]),  # Timestamp for query
                 fvals.append(f(X[idx, :]))
                 ends.append([time.time()])  # Timestamp for response
@@ -32,10 +34,10 @@ class SyntheticObjective(UserFunctionWrapper):
                        "Query timestamps:\t%s\nResponse timestamps:\t%s" %
                        (X.shape[0], self.name, fvals, starts, ends))
 
-            return np.asarray(fvals), np.asarray(starts), np.asarray(ends)
+            return np.asarray(fvals).reshape((-1, output_dims)), np.asarray(starts).reshape((-1, 1)), \
+                   np.asarray(ends).reshape((-1, 1))
 
-        super().__init__(wrapper, extra_output_names)
-        self.emukit_space = space
+        super().__init__(f=wrapper, extra_output_names=extra_output_names)
 
 
 # Branin function definitions code adapted from dragonfly: https://github.com/dragonfly/dragonfly
@@ -74,7 +76,7 @@ __branin_parameter_space = ParameterSpace([
 ])
 
 
-branin = SyntheticObjective(space=__branin_parameter_space, f=__branin, name="Branin Objective")
+branin = SyntheticObjective(space=__branin_parameter_space, f=__branin, name="Branin")
 
 
 # Hartmann3_2 function definitions code adapted from dragonfly: https://github.com/dragonfly/dragonfly
@@ -106,7 +108,7 @@ __hartmann_parameter_space = ParameterSpace([
 ])
 
 
-hartmann3_2 = SyntheticObjective(space=__hartmann_parameter_space, f=__hartmann3_2, name="Hartmann3_2 Objective")
+hartmann3_2 = SyntheticObjective(space=__hartmann_parameter_space, f=__hartmann3_2, name="Hartmann3_2")
 
 
 # Borehole_6 function definitions code adapted from dragonfly: https://github.com/dragonfly/dragonfly
@@ -133,7 +135,7 @@ def __borehole_6_z(x, z):
   return f2 * z[0] + (1-z[0]) * f1
 
 
-__borehole_parameter_space = [
+__borehole_parameter_space = ParameterSpace([
     ContinuousParameter("rw", min_value=0.05, max_value=0.15),
     ContinuousParameter("L", min_value=0, max_value=1),
     ContinuousParameter("Kw", min_value=0, max_value=1),
@@ -142,6 +144,6 @@ __borehole_parameter_space = [
     DiscreteParameter("Hu", domain=list(range(0, 240))),
     DiscreteParameter("Hl", domain=list(range(0, 240))),
     ContinuousParameter("r", min_value=100, max_value=50000),
-]
+])
 
 borehole_6 = SyntheticObjective(space=__borehole_parameter_space, f=__borehole_6, name="Borehole_6")
