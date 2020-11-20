@@ -16,9 +16,9 @@ except (ImportError, ModuleNotFoundError):
 
 from pybnn.bin import _default_log_format
 import pybnn.utils.data_utils as dutils
-from pybnn.emukit_interfaces import HPOBenchObjective, Benchmarks
+from pybnn.emukit_interfaces.synthetic_objectives import branin, borehole_6, hartmann3_2, SyntheticObjective
 
-from pybnn.models import MCDropout, MCBatchNorm, DeepEnsemble, _log as pybnn_model_log
+from pybnn.models import _log as pybnn_model_log
 from pybnn.emukit_interfaces.loops import (
     LoopGenerator,
     create_pybnn_bo_loop, ModelType,
@@ -29,45 +29,37 @@ from pybnn.emukit_interfaces import metrics as pybnn_metrics
 from emukit.benchmarking.loop_benchmarking import benchmarker
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
-from emukit.benchmarking.loop_benchmarking.benchmark_plot import BenchmarkPlot
 
 # ############# SETUP ENVIRONMENT ######################################################################################
 
 # CLI setup
+
+known_objectives = [branin, borehole_6, hartmann3_2]
+known_objectives = {obj.name: obj for obj in known_objectives}
 
 parser = argparse.ArgumentParser(description="Run a benchmarking experiment for comparing the performances of various "
                                              "models")
 
 parser.add_argument("-i", "--iterations", type=int, required=True,
                     help="The number of iterations that each BO loop is run for using any given model.")
-parser.add_argument("-t", "--task_id", type=int, default=189909, help="The OpenML task id to be used by HPOBench.")
 parser.add_argument("--rng", type=int, default=1, help="An RNG seed for generating repeatable results.")
 parser.add_argument("--source_seed", type=int, default=1,
-                    help="The value of the RNG seed used for generating the source data being used as a reference.")
+                    help="The value of the RNG seed to be used for generating the randomly sampled source data.")
 parser.add_argument("--training_pts_per_dim", type=int, default=10,
                     help="The number of initial data samples to use per input feature for warm starting model "
                          "training.")
 parser.add_argument("-n", "--num_repeats", type=int, default=10,
                     help="The number of times the benchmarking process is to be repeated and averaged over for each "
                          "model type.")
-parser.add_argument("--source_data_tile_freq", type=int, default=10,
-                    help="The number of times each configuration was queried when benchmarking the HPOBench objective "
-                         "benchmark.")
 parser.add_argument("-s", "--sdir", type=str, default=None,
-                    help="The path to the directory where all HPOBench data files are to be read from. Default: Current "
-                         "working directory.")
+                    help="The path to the directory where all Synthetic Benchmark data files are to be read from. "
+                         "Default: Current working directory.")
 parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files are "
                                                                 "to be stored. Default: same as sdir.")
-parser.add_argument("--use_local", action="store_true", default=False,
-                    help="Use a local version of the HPOBench benchmark objective instead of the container.")
 parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode logging.")
 parser.add_argument("--iterate_confs", action="store_true", default=False,
                     help="Enable generation of new training and testing datasets by iterating through random "
                          "selections of the available configurations before every model training iteration.")
-parser.add_argument("--iterate_evals", action="store_true", default=False,
-                    help="Only useful when --iterate_confs is not given. Enable generation of new training datasets by "
-                         "iterating through random selections of the available evaluations of each configuration "
-                         "before every model training iteration for a fixed selection of configurations.")
 parser.add_argument("--models", type=str, default="00001",
                     help="Bit-string denoting which models should be enabled for benchmarking. The bits correspond "
                          "directly to the sequence: [DeepEnsemble, MCBatchNorm, MCDropout, GP, RandomSearch]")
@@ -76,6 +68,8 @@ parser.add_argument("--seed-offset", type=int, default=0,
                          "another sequence of seeds, one of which is used as the global numpy seed for model training. "
                          "The seed offset determines the index position in this sequence the value at which is used "
                          "for the latter purpose. Offset range: [0, 1e9)")
+parser.add_argument("--benchmark", type=str, choices=known_objectives.keys(),
+                    help=f"The synthetic benchmark to be used. Must be one of {known_objectives.keys()}")
 args = parser.parse_args()
 
 # Logging setup
@@ -92,11 +86,9 @@ if not args.debug:
 
 # Global constants
 NUM_LOOP_ITERS = args.iterations
-TASK_ID = args.task_id
 SOURCE_RNG_SEED = args.source_seed
 NUM_INITIAL_DATA = None
 NUM_REPEATS = args.num_repeats
-SOURCE_DATA_TILE_FREQ = args.source_data_tile_freq
 global_seed = np.random.RandomState(seed=args.rng).randint(0, 1_000_000_000, size=args.seed_offset + 1)[-1]
 model_selection = int("0b" + args.models, 2)
 
@@ -107,15 +99,13 @@ save_dir.mkdir(exist_ok=True, parents=True)
 # ############# LOAD DATA ##############################################################################################
 
 # SETUP TARGET FUNCTION
-target_function = HPOBenchObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED,
-                                    use_local=args.use_local)
+target_function: SyntheticObjective = known_objectives[args.benchmark]
 
-data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID, source_rng_seed=SOURCE_RNG_SEED,
-                           evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
-                           iterate_evals=args.iterate_evals, emukit_map_func=target_function.map_configurations_to_emukit,
-                           rng=args.rng, train_set_multiplier=args.training_pts_per_dim)
+data = dutils.SyntheticData(data_folder=data_dir, benchmark_name=args.benchmark, source_rng_seed=SOURCE_RNG_SEED,
+                            extension="csv", iterate_confs=args.iterate_confs, rng=args.rng,
+                            train_set_multiplier=args.training_pts_per_dim)
 
-NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[2]
+NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[1]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 
 # ############# SETUP MODELS ###########################################################################################
@@ -181,10 +171,15 @@ num_loops = len(loop_gen.loop_list)
 outx = np.empty(shape=(num_loops, NUM_REPEATS, NUM_DATA_POINTS, len(data.features)))
 outy = np.empty(shape=(num_loops, NUM_REPEATS, NUM_DATA_POINTS, len(data.outputs)))
 
-metrics = [emukit_metrics.TimeMetric(), emukit_metrics.CumulativeCostMetric(), pybnn_metrics.AcquisitionValueMetric(),
-           pybnn_metrics.RootMeanSquaredErrorMetric(data),
-           emukit_metrics.MinimumObservedValueMetric(), pybnn_metrics.TargetEvaluationDurationMetric(),
-           pybnn_metrics.NegativeLogLikelihoodMetric(data),
+
+# TODO: Fix the RMSE and NLL metrics for synthetic benchmarks
+metrics = [emukit_metrics.TimeMetric(),
+           # emukit_metrics.CumulativeCostMetric(),
+           pybnn_metrics.AcquisitionValueMetric(),
+           # pybnn_metrics.RootMeanSquaredErrorMetric(data),
+           emukit_metrics.MinimumObservedValueMetric(),
+           pybnn_metrics.TargetEvaluationDurationMetric(),
+           # pybnn_metrics.NegativeLogLikelihoodMetric(data),
            pybnn_metrics.HistoryMetricHack(num_loops=num_loops, num_repeats=NUM_REPEATS,
                                            num_iters=NUM_LOOP_ITERS, outx=outx, outy=outy)]
 

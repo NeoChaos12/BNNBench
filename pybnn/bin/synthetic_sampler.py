@@ -6,8 +6,7 @@ import argparse
 import logging
 import time
 from pathlib import Path
-from pybnn.emukit_interfaces import branin, borehole_6, hartmann3_2
-from pybnn.emukit_interfaces.synthetic_objectives import SyntheticObjective
+from pybnn.emukit_interfaces.synthetic_objectives import SyntheticObjective, branin, borehole_6, hartmann3_2
 
 known_objectives = [branin, borehole_6, hartmann3_2]
 known_objectives = {obj.name: obj for obj in known_objectives}
@@ -22,7 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--samples_per_dim", type=int, default=1000,
                         help="Number of samples to be generated per dimension of the configuration space of the chosen "
                              "synthetic objective.")
-    parser.add_argument("--obj", type=str, choices=known_objectives,
+    parser.add_argument("--obj", type=str, choices=known_objectives.keys(),
                         help=f"The synthetic objective to be used. Must be one of {known_objectives.keys()}")
     parser.add_argument("-d", "--output_dir", type=str, default=".")
     parser.add_argument("-e", "--extension", type=str, default="csv")
