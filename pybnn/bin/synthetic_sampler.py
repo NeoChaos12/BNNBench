@@ -71,7 +71,7 @@ if __name__ == "__main__":
         fp.write(str(default_output_header_index))
 
     with open(meta_ind_file, 'w') as fp:
-        fp.write(str(default_meta_header_indices))
+        fp.write("\n".join(default_meta_header_indices))
 
     for idx, (conf, row) in enumerate(zip(configs, data.iterrows())):
         logger.debug(f"Evaluating configuration {idx + 1}/{total_rows}")

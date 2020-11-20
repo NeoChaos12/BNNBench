@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Union, Optional, Tuple, Sequence, Callable
 from math import floor
-import itertools
+from abc import ABC
 
 from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
@@ -99,7 +99,36 @@ def data_generator(obj_config: AttrDict, numbered=True) -> \
 Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
 RNG_Input = Union[int, np.random.RandomState, None]
 
-class HPOBenchData:
+
+class BenchmarkData(ABC):
+    # The complete dataset
+    X_full: np.ndarray
+    Y_full: np.ndarray
+    meta_full: np.ndarray
+    features: np.ndarray
+    outputs: np.ndarray
+    meta_headers: np.ndarray
+
+    # The current training set
+    train_X: np.ndarray
+    train_Y: np.ndarray
+    train_meta: np.ndarray
+
+    # The current test set
+    test_X: np.ndarray
+    test_Y: np.ndarray
+    test_meta: np.ndarray
+
+    # A random number generator
+    rng: np.random.RandomState
+
+    def update(self):
+        """ Every time this method is called, the train/test sets should be appropriately updated. It is to be assumed
+        that until this function is called at least once, the training/testing sets haven't been generated. """
+        raise NotImplementedError
+
+
+class HPOBenchData(BenchmarkData):
     def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
                  source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
                  iterate_evals: bool = False, emukit_map_func: Callable = None, rng: RNG_Input = None,
@@ -107,7 +136,7 @@ class HPOBenchData:
         data = HPOBenchData.read_hpobench_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
                                                evals_per_config=evals_per_config, rng_seed=source_rng_seed,
                                                extension=extension)
-        self.X_full, self.y_full, self.meta_full = data[:3]
+        self.X_full, self.Y_full, self.meta_full = data[:3]
         self.features, self.outputs, self.meta_headers = data[3:]
         if emukit_map_func is not None:
             # We are more interested in keeping the configurations in an emukit-compatible format
@@ -135,8 +164,8 @@ class HPOBenchData:
                 self._eval_splits = self._generate_evaluation_subsets(dataset=train_set, rng=self.rng)
             else:
                 _log.debug("Disabling iteration over evaluation subsets. Training set is now also static.")
-                self.train_X, self.train_Y, self.train_meta = next(HPOBenchData._generate_evaluation_subsets(dataset=train_set,
-                                                                                                             rng=self.rng))
+                self.train_X, self.train_Y, self.train_meta = next(HPOBenchData._generate_evaluation_subsets(
+                    dataset=train_set, rng=self.rng))
         else:
             _log.debug("Training and test sets will iterate over configuration subsets.")
 
@@ -149,8 +178,8 @@ class HPOBenchData:
             if self._conf_splits is not None:
                 _log.debug("Updating training and test sets by iterating over configuration subsets.")
                 train_data, test_data = next(self._conf_splits)
-                self.train_X, self.train_Y, self.train_meta = next(HPOBenchData._generate_evaluation_subsets(dataset=train_data,
-                                                                                                             rng=self.rng))
+                self.train_X, self.train_Y, self.train_meta = next(HPOBenchData._generate_evaluation_subsets(
+                    dataset=train_data, rng=self.rng))
                 self.test_X, self.test_Y, self.test_meta = test_data
             else:
                 _log.debug("Training and test sets are static.")
@@ -240,7 +269,7 @@ class HPOBenchData:
         :return: training set, test set, (optional) train and test indices
         """
 
-        X_full, y_full, meta_full = self.X_full, self.y_full, self.meta_full
+        X_full, y_full, meta_full = self.X_full, self.Y_full, self.meta_full
         if rng is None or isinstance(rng, int):
             rng = np.random.RandomState(rng)
 
@@ -303,3 +332,100 @@ def exclude_indices(npoints: int, indices: Sequence) -> Sequence:
     req_idx = np.repeat(True, repeats=npoints)
     req_idx[indices] = False
     return all_idx[req_idx]
+
+
+class SyntheticData(BenchmarkData):
+    def __init__(self, data_folder: Union[str, Path], benchmark_name: str, source_rng_seed: int, extension: str = "csv",
+                 iterate_confs: bool = True, rng: RNG_Input = None, train_set_multiplier: int = 10):
+        data = SyntheticData.read_data(data_folder, benchmark_name, source_rng_seed, extension)
+        self.X_full, self.Y_full, self.meta_full = data[:3]
+        self.features, self.outputs, self.meta_headers = data[3:]
+
+        # We expect the stored synthetic benchmark data to be in an emukit-compatible format from the get-go.
+
+        if rng is None or isinstance(rng, int):
+            self.rng = np.random.RandomState(rng)
+        else:
+            self.rng = rng
+
+        # If iterate_confs were False, the train/test splits should be generated exactly once and only once.
+        # If it were True, it doesn't matter anyways
+        self.__iterate_confs = True
+        self.__split_generator = self._index_split_generator(split_size=train_set_multiplier * self.X_full.shape[1])
+        self.update()
+        self.__iterate_confs = iterate_confs
+
+    def _index_split_generator(self, split_frac: float = None, split_size: int = None) -> np.ndarray:
+        """
+        Generates a split on the indices along the first dimension of the full dataset.
+        :param split_frac: float
+            The fraction of all indices to be included in the generated split. Takes priority over split_size
+        :param split_size: int
+            The number of indices to be included in the generated split. Either this or 'split_frac' must be
+            provided.
+        :return: numpy.ndarray, numpy.ndarray
+            Two arrays of indices of sizes split_size and (N - split_size) respectively, where N = self.X_full.shape[0].
+        """
+
+        assert split_frac is not None or split_size is not None, "Either 'split_frac' or 'split_size' must be given."
+
+        N = self.X_full.shape[0]
+
+        if split_frac is not None:
+            split_size = N * split_frac
+
+        indices = np.arange(N)
+        train_idx = None
+        test_idx = None
+        while True:
+            if self.__iterate_confs:
+                train_idx = self.rng.choice(a=indices, size=split_size, replace=False)
+                test_idx = exclude_indices(N, train_idx)
+            yield train_idx, test_idx
+
+    def update(self):
+        if self.__iterate_confs:
+            train_idx, test_idx = next(self.__split_generator)
+
+            self.train_X = self.X_full[train_idx, :]
+            self.train_Y = self.Y_full[train_idx, :]
+            self.train_meta = self.meta_full[train_idx, :]
+
+            self.test_X = self.X_full[test_idx, :]
+            self.test_Y = self.Y_full[test_idx, :]
+            self.test_meta = self.meta_full[test_idx, :]
+
+    @staticmethod
+    def read_data(data_folder: Union[str, Path], benchmark_name: str, source_rng_seed: int,
+                  extension: Optional[str] = "csv") -> \
+            Tuple[np.ndarray, np.ndarray, np.ndarray, Sequence[str], Sequence[str], Sequence[str]]:
+
+        full_benchmark_name = f"{benchmark_name}_rng{source_rng_seed}"
+
+        if not isinstance(data_folder, Path):
+            data_folder = Path(data_folder).expanduser().resolve()
+
+        data_file = data_folder /  (full_benchmark_name + f"_data.{extension}")
+        headers_file = data_folder / (full_benchmark_name + f"_headers.{extension}")
+        feature_ind_file = data_folder / (full_benchmark_name + f"_feature_indices.{extension}")
+        output_ind_file = data_folder / (full_benchmark_name + f"_output_indices.{extension}")
+        meta_ind_file = data_folder / (full_benchmark_name + f"_meta_indices.{extension}")
+
+        with open(headers_file) as fp:
+            headers = [line.strip() for line in fp.readlines()]
+
+        with open(feature_ind_file) as fp:
+            feature_indices = [int(ind) for ind in fp.readlines()]
+
+        with open(output_ind_file) as fp:
+            output_indices = [int(ind) for ind in fp.readlines()]
+
+        with open(meta_ind_file) as fp:
+            meta_indices = [int(ind) for ind in fp.readlines()]
+
+        full_dataset = pd.read_csv(data_file, sep=" ", names=headers)
+        return full_dataset.iloc[:, feature_indices].to_numpy().reshape((-1, len(feature_indices))), \
+               full_dataset.iloc[:, output_indices].to_numpy().reshape((-1, len(output_indices))), \
+               full_dataset.iloc[:, meta_indices].to_numpy().reshape((-1, len(meta_indices))), \
+               full_dataset.columns[feature_indices].to_numpy(), full_dataset.columns[output_indices].to_numpy(), \
+               full_dataset.columns[meta_indices].to_numpy()
