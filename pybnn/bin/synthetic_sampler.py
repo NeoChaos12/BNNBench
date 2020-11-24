@@ -6,16 +6,26 @@ import argparse
 import logging
 import time
 from pathlib import Path
+try:
+    from pybnn import _log as pybnn_log
+    from pybnn.bin import _default_log_format
+except (ImportError, ModuleNotFoundError):
+    import sys
+    import os.path
+    sys.path.append(os.path.expandvars('$PYBNNPATH'))
+    from pybnn import _log as pybnn_log
+    from pybnn.bin import _default_log_format
+
 from pybnn.emukit_interfaces.synthetic_objectives import SyntheticObjective, branin, borehole_6, hartmann3_2
 
 known_objectives = [branin, borehole_6, hartmann3_2]
 known_objectives = {obj.name: obj for obj in known_objectives}
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    logging.basicConfig(level=logging.INFO, format=_default_log_format)
+    _log = logging.getLogger(__name__)
     start = time.time()
-    logger.info(f"Started collecting Synthetic Benchmark data samples at {time.ctime(start)}")
+    _log.info(f"Started collecting Synthetic Benchmark data samples at {time.ctime(start)}")
     parser = argparse.ArgumentParser()
     parser.add_argument("--rng_seed", type=int, default=1)
     parser.add_argument("-n", "--samples_per_dim", type=int, default=1000,
@@ -73,13 +83,13 @@ if __name__ == "__main__":
         fp.write("\n".join(default_meta_header_indices))
 
     for idx, (conf, row) in enumerate(zip(configs, data.iterrows())):
-        logger.debug(f"Evaluating configuration {idx + 1}/{total_rows}")
+        _log.debug(f"Evaluating configuration {idx + 1}/{total_rows}")
         res = objective.evaluate(np.asarray(conf).reshape((1, -1)))
         row[1][params] = res[0].X
         row[1][results] = np.asarray([res[0].Y, *(res[0].extra_outputs.values())]).squeeze()
 
     write_data_to_file()
-    logger.info(f"Saved {total_rows} evaluation results.")
+    _log.info(f"Saved {total_rows} evaluation results.")
     end = time.time()
     duration = time.strftime('%H:%M:%S', time.gmtime(end - start))
-    logger.info(f"Data collection finished at {time.ctime(end)}.\nTotal duration: {duration}.")
+    _log.info(f"Data collection finished at {time.ctime(end)}.\nTotal duration: {duration}.")
