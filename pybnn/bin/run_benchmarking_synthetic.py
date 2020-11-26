@@ -176,10 +176,10 @@ outy = np.empty(shape=(num_loops, NUM_REPEATS, NUM_DATA_POINTS, len(data.outputs
 metrics = [emukit_metrics.TimeMetric(),
            # emukit_metrics.CumulativeCostMetric(),
            pybnn_metrics.AcquisitionValueMetric(),
-           # pybnn_metrics.RootMeanSquaredErrorMetric(data),
+           pybnn_metrics.RootMeanSquaredErrorMetric(data),
            emukit_metrics.MinimumObservedValueMetric(),
            pybnn_metrics.TargetEvaluationDurationMetric(),
-           # pybnn_metrics.NegativeLogLikelihoodMetric(data),
+           pybnn_metrics.NegativeLogLikelihoodMetric(data),
            pybnn_metrics.HistoryMetricHack(num_loops=num_loops, num_repeats=NUM_REPEATS,
                                            num_iters=NUM_LOOP_ITERS, outx=outx, outy=outy)]
 

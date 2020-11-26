@@ -1,7 +1,7 @@
 import emukit.benchmarking.loop_benchmarking.metrics as metrics
 from emukit.core.loop.loop_state import LoopState
 from emukit.core.loop import OuterLoop
-from pybnn.utils.data_utils import HPOBenchData
+from pybnn.utils.data_utils import HPOBenchData, SyntheticData
 from typing import Tuple
 import logging
 
@@ -88,6 +88,10 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         :param y_test: Test targets
         """
         self.data = data
+        if isinstance(self.data, SyntheticData):
+            self.synthetic_data = True
+        else:
+            self.synthetic_data = False
         self.name = name
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
@@ -102,11 +106,15 @@ class NegativeLogLikelihoodMetric(metrics.Metric):
         x_test: np.ndarray = self.data.test_X
         y_test: np.ndarray = self.data.test_Y
 
-        # The internal data arrangement always follows the ordering (configuration, sample, other_data_dimensions)
-        # Therefore, selections of single samples of individual configurations will have the shape
-        # (num_configs, sample_id, other_data_dimensions) and will have to be reshaped accordingly.
-        x_test = x_test.reshape(-1, x_test.shape[2])
-        y_test = y_test.reshape(-1, y_test.shape[2])
+        if self.synthetic_data:
+            # The SyntheticData has a simple structure and requires no extra processing
+            pass
+        else:
+            # The internal data arrangement always follows the ordering (configuration, sample, other_data_dimensions)
+            # Therefore, selections of single samples of individual configurations will have the shape
+            # (num_configs, sample_id, other_data_dimensions) and will have to be reshaped accordingly.
+            x_test = x_test.reshape(-1, x_test.shape[2])
+            y_test = y_test.reshape(-1, y_test.shape[2])
 
         try:
             logger.debug("Generating mean and variance predictions for NLL calculation on %d test configurations." %
@@ -138,6 +146,10 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         """
 
         self.data = data
+        if isinstance(self.data, SyntheticData):
+            self.synthetic_data = True
+        else:
+            self.synthetic_data = False
         self.name = name
 
     def evaluate(self, loop: OuterLoop, loop_state: LoopState) -> np.ndarray:
@@ -154,8 +166,13 @@ class RootMeanSquaredErrorMetric(metrics.Metric):
         # The internal data arrangement always follows the ordering (configuration, sample, other_data_dimensions)
         # Therefore, selections of multiple samples of individual configurations will have the shape
         # (number_of_configs, number_of_samples, other_data_dimensions)
-        x_test = x_test[:, 0, :]    # Just extract the configurations themselves
-        y_test = np.mean(y_test, axis=1, keepdims=False)    # Average over multiple samples of each configuration
+        if self.synthetic_data:
+            # SyntheticData has a simpler structure and requires no processing
+            pass
+        else:
+            x_test = x_test[:, 0, :]    # We need to extract the configurations
+            y_test = np.mean(y_test, axis=1, keepdims=False)    # Average over multiple samples of each configuration
+
 
         assert x_test.ndim == 2
         assert y_test.ndim == 2
