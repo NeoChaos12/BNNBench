@@ -147,3 +147,9 @@ __borehole_parameter_space = ParameterSpace([
 ])
 
 borehole_6 = SyntheticObjective(space=__borehole_parameter_space, f=__borehole_6, name="Borehole_6")
+
+all_known_objectives = [
+    branin,
+    hartmann3_2,
+    borehole_6
+]
