@@ -1,121 +1,147 @@
 import numpy as np
 import pandas as pd
-import itertools
 import json
 from pathlib import Path
-from typing import Union, List, Dict
+from typing import Union, Sequence
 from emukit.benchmarking.loop_benchmarking.benchmark_result import BenchmarkResult
 from emukit.core import ParameterSpace
 import logging
-import functools
 
 _log = logging.getLogger(__name__)
 
-class BenchmarkData():
-    '''
+
+class BenchmarkData:
+    """
     Acts as a container, complete with all required interfaces, for the final results of performing a benchmarking
     operation.
+    """
 
-    Attributes
-    ----------
-    results
-
-    Parameters
-    ----------
-
-    '''
-
-    model_names: List[str]
-    metric_names: List[str]
+    model_names: Sequence[str]
+    metric_names: Sequence[str]
     n_repeats: int
     n_iters: int
-    df: pd.DataFrame
+    
+    metric_df: pd.DataFrame
+    metric_row_index_labels: Sequence[str] = ("model", "metric", "repetition", "iteration")
+    metric_col_labels: Sequence[str] = ("metric_value")
+    
+    runhistory_df: pd.DataFrame
+    runhistory_col_labels: Sequence[str]
+    runhistory_row_index_labels: Sequence[str] = ("model", "repetition", "iteration")
 
     def __init__(self):
         self.model_names = None
         self.metric_names = None
         self.n_repeats = None
         self.n_iters = None
-        self.df = None
+        self.metric_df = None
+        self.runhistory_df = None
+        self.runhistory_col_labels = None
 
     @property
-    def n_loops(self):
+    def n_models(self):
         return len(self.model_names)
 
     @property
     def n_metrics(self):
         return len(self.metric_names)
 
-    def read_results_from_emukit(self, results: BenchmarkResult, include_runhistories: bool = True,
-                                 emukit_space: ParameterSpace = None, outx: np.ndarray = None, outy: np.ndarray = None):
-        '''
+    @classmethod
+    def from_emutkit_results(cls, results: BenchmarkResult, include_runhistories: bool = True,
+                             emukit_space: ParameterSpace = None, outx: np.ndarray = None, outy: np.ndarray = None):
+        """
         Given the results of an emukit benchmarking operation stored within a BenchmarkResult object, reads the data
         and prepares it for use within PyBNN's data analysis and visualizatino pipeline.
 
         :param results: emukit.benchmarking.loop_benchmarking.benchmark_result.BenchmarkResult
-        :param n_iters: int
-            Number of iterations performed on each model during this benchmark.
         :param include_runhistories: bool
             Flag to indicate that the BenchmarkResults include a pseudo-metric for tracking the run history that should
             be handled appropriately. This should be the last metric in the sequence of metrics.
+        :param emukit_space: emukit.core.ParameterSpace
+            An emukit ParameterSpace object used to extract some metadata for storing the runhistory. Not necessary
+            unless include_runhistories = True.
         :param outx: np.ndarray
-            The run history of the configurations.
+            The run history of the configurations. Not necessary unless include_runhistories = True.
         :param outy: np.ndarray
-            The run history of the function evaluations.
+            The run history of the function evaluations. Not necessary unless include_runhistories = True.
         :return: None
-        '''
+        """
 
         # Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
 
-        self.model_names = results.loop_names
-        self.metric_names = results.metric_names
+        obj = cls()
+        obj.model_names = results.loop_names
+        obj.metric_names = results.metric_names
         if include_runhistories:
             # Exclude the pseudo-metric for tracking run histories
-            self.metric_names = self.metric_names[:-1]
+            obj.metric_names = obj.metric_names[:-1]
             assert outx is not None and outy is not None, "Expected run histories to be provided in parameters " \
                                                           "'outx' and 'outy', received %s and %s respectively." % \
                                                           (str(type(outx)), str(type(outy)))
 
-        self.n_repeats = results.n_repeats
-        self.n_iters = results.extract_metric_as_array(self.model_names[0], self.metric_names[0]).shape[-1]
+        obj.n_repeats = results.n_repeats
+        obj.n_iters = results.extract_metric_as_array(obj.model_names[0], obj.metric_names[0]).shape[-1]
+        _log.debug("Reading data for %d models and %d metrics, over %d repetitions of %d iterations each." %
+                   (obj.n_models, obj.n_metrics, obj.n_repeats, obj.n_iters))
 
-        self.row_index_labels = ["model", "metric", "repetition", "iteration"]
-        self.col_labels = ["metric_value"] + emukit_space.parameter_names + ["objective_value"]
-
-        all_indices = [self.model_names, self.metric_names, np.arange(self.n_repeats), np.arange(self.n_iters)]
-        assert  len(self.row_index_labels) == len(all_indices)
-        indices = [pd.MultiIndex.from_product(all_indices[i:], names=self.row_index_labels[i:])
+        all_indices = [obj.model_names, obj.metric_names, np.arange(obj.n_repeats), np.arange(obj.n_iters)]
+        assert len(obj.metric_row_index_labels) == len(all_indices), \
+            "This is unexpected. The number of row index labels %d should be exactly equal to the number of index " \
+            "arrays %d." % (len(obj.metric_row_index_labels), len(all_indices))
+        indices = [pd.MultiIndex.from_product(all_indices[i:], names=obj.metric_row_index_labels[i:])
                    for i in range(len(all_indices)-2, -1, -1)]
-
+        _log.debug("Generated indices of lengths %s" % str([len(i) for i in indices]))
         model_dfs = []
-        for model_idx, model_name in enumerate(self.model_names):
+        for model_idx, model_name in enumerate(obj.model_names):
             metric_dfs = []
-            for metric_idx, metric_name in enumerate(self.metric_names):
+            for metric_idx, metric_name in enumerate(obj.metric_names):
                 metric_vals = pd.DataFrame(results.extract_metric_as_array(model_name, metric_name).reshape(-1, 1),
-                                           columns=self.col_labels[0])
-                X = pd.DataFrame(data=outx.reshape(-1, emukit_space.dimensionality),
-                                 columns=self.col_labels[1:-1])
-                Y = pd.DataFrame(data=outy.reshape(-1, 1), columns=self.col_labels[-1])
-                metric_dfs.append(pd.concat((metric_vals, X, Y), axis=1).set_index(indices[0]))
+                                           columns=(obj.metric_col_labels[0],))
+                _log.debug("Read data for model %s and metric %s with %s values" %
+                           (model_name, metric_name, metric_vals.shape))
+                metric_dfs.append(metric_vals.set_index(indices[0]))
             model_dfs.append(pd.concat(metric_dfs, axis=0).set_index(indices[1]))
 
-        self.df = pd.concat(model_dfs, axis=0).set_index(indices[2])
+        obj.metric_df = pd.concat(model_dfs, axis=0).set_index(indices[2])
+        _log.debug("Generated final metrics dataframe of shape %s" % str(obj.metric_df.shape))
 
-    @classmethod
-    @functools.wraps(read_results_from_emukit)
-    def from_emutkit_results(cls, **kwargs):
-        '''
-        Convenience function to one-line initialization using an emukit BenchmarkResults object.
-        :param kwargs:
-        :return:
-        '''
-        return cls().read_results_from_emukit(**kwargs)
+        if include_runhistories:
+            obj.runhistory_col_labels = emukit_space.parameter_names + ["objective_value"]
+            # Extract run history. Remember that the run history works a bit differently. Given N_i initial evaluations,
+            # and N_iter iterations, each repetition for each model generates N_i + N_iter points, where
+            # N_iter=n_iters - 1. This is because n_iters includes an extra metric evaluation at the initialization
+            # step, which is replaced by N_i in the case of run histories.
+            # Therefore, the runhistory is indexed as n_models x n_repetitions x (N_i + N_iter). We expect outx and
+            # outy themselves to have the shape [n_models, n_repeats, N_i + N_iter, *], where * stands for an optional
+            # extra dimension that may be used by the run history of configurations or outputs.
 
-    def save(self, dir: Union[Path, str], **kwargs):
-        '''
+            X = pd.DataFrame(data=outx.reshape(-1, emukit_space.dimensionality),
+                             columns=obj.runhistory_col_labels[:-1])
+            Y = pd.DataFrame(data=outy.reshape(-1, 1), columns=(obj.runhistory_col_labels[-1],))
+            n_i = outy.shape[-2] - (obj.n_iters - 1)
+            runhistory_indices = pd.MultiIndex.from_product(
+                [all_indices[0], all_indices[2], np.arange(-n_i + 1, obj.n_iters)],
+                names=obj.runhistory_row_index_labels
+            )
+            # Therefore, all initialization points will be assigned non-positive indices. This will help in aligning the
+            # runhistory dataframe with the metrics dataframe.
+            _log.debug("Read run histories of configurations and objective evaluations of shapes %s and %s "
+                       "respectively. The will be re-indexed to indices of shape %s" %
+                       (X.shape, Y.shape, runhistory_indices.shape))
+            X = X.set_index(runhistory_indices)
+            Y = Y.set_index(runhistory_indices)
+            obj.runhistory_df = pd.concat((X, Y), axis=1)
+            _log.debug("Generated final runhistory dataframe of shape %s" % str(obj.runhistory_df.shape))
+
+            return obj
+
+    def save(self, path: Union[Path, str], no_runhistory: bool = False, **kwargs):
+        """
         Save the contents of this object to disk.
-        :param dir: str or Path
+        :param path: str or Path
             The location where all the relevant files should be stored.
+        :param no_runhistory: bool
+            When True, does not attempt to save a run history. Default is False.
         :param kwargs: dict
             A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "pd_kwargs" and their
             values should be keyword-argument dictionaries corresponding to arguments that are passed on to the
@@ -123,45 +149,58 @@ class BenchmarkData():
             json_kwargs={"indent": 4} and pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two
             dictionaries are merged, with values in kwargs overwriting the defaults.
         :return: None
-        '''
+        """
 
-        if not isinstance(dir, Path):
-            dir = Path(dir)
+        if not isinstance(path, Path):
+            path = Path(path)
 
-        if not dir.exists():
-            dir.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
 
-        _log.info("Saving results of benchmark evaluation in directory %s" % dir)
+        _log.info("Saving results of benchmark evaluation in directory %s" % path)
 
         json_kwargs = {"indent": 4}
         json_kwargs = {**json_kwargs, **kwargs.get("json_kwargs", {})}
         pd_kwargs = {"compression": "gzip"}
         pd_kwargs = {**pd_kwargs, **(kwargs.get("pd_kwargs", {}))}
 
-        metadata_file = dir / "metadata.json"
-        with open(metadata_file, 'w') as fp:
-            json.dump({
+        metadata_file = path / "metadata.json"
+        metadata = {
                 "model_names": self.model_names,
                 "metric_names": self.metric_names,
                 "n_repeats": self.n_repeats,
                 "n_iters": self.n_iters,
                 "data_structure": {
-                    "index_labels": self.row_index_labels,
-                    "column_labels": self.col_labels
+                    "metric_index_labels": self.metric_row_index_labels,
+                    "metric_column_labels": self.metric_col_labels
                 }
-            }, fp, **json_kwargs)
+            }
+        if not no_runhistory:
+            metadata["data_structure"]["runhistory_row_index_labels"] = self.runhistory_row_index_labels
+            metadata["data_structure"]["runhistory_col_labels"] = self.runhistory_col_labels
+        
+        with open(metadata_file, 'w') as fp:
+            json.dump(metadata, fp, **json_kwargs)
         _log.debug("Saved metadata in %s" % metadata_file)
 
-        df_file = dir / "benchmark_results"
-        self.df.to_pickle(path=df_file, **pd_kwargs)
-        _log.debug("Saved benchmark results in %s" % df_file)
+        metric_df_file = path / "metrics.pkl.compressed"
+        self.metric_df.to_pickle(path=metric_df_file, **pd_kwargs)
+        _log.debug("Saved metrics in %s" % metric_df_file)
+
+        runhistory_df_file = path / "runhistory.pkl.compressed"
+        self.runhistory_df.to_pickle(path=runhistory_df_file, **pd_kwargs)
+        _log.debug("Saved run history in %s" % runhistory_df_file)
         _log.info("Finished saving to disk.")
 
-    def load(self, dir: Union[Path, str], **kwargs):
-        '''
+    def load(self, path: Union[Path, str], no_runhistory: bool = False, disable_verification: bool = False, **kwargs):
+        """
         Load the contents of this object from disk.
-        :param dir: str or Path
+        :param path: str or Path
             The location where all the relevant files should be stored.
+        :param no_runhistory: bool
+            When True, does not attempt to load a run history. Default is False.
+        :param disable_verification: bool
+            When True, does not verify metadata of the loaded dataframes. Default is False.
         :param kwargs: dict
             A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "pd_kwargs" and their
             values should be keyword-argument dictionaries corresponding to arguments that are passed on to the
@@ -169,64 +208,137 @@ class BenchmarkData():
             json_kwargs={} and pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two
             dictionaries are merged, with values in kwargs overwriting the defaults.
         :return: None
-        '''
+        """
 
-        if not isinstance(dir, Path):
-            dir = Path(dir)
+        if not isinstance(path, Path):
+            path = Path(path)
 
-        if not dir.exists():
-            dir.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
 
-        _log.info("Loading results of benchmark evaluation from directory %s" % dir)
+        _log.info("Loading results of benchmark evaluation from directory %s" % path)
 
         json_kwargs = {}
         json_kwargs = {**json_kwargs, **kwargs.get("json_kwargs", {})}
         pd_kwargs = {"compression": "gzip"}
         pd_kwargs = {**pd_kwargs, **(kwargs.get("pd_kwargs", {}))}
 
-        metadata_file = dir / "metadata.json"
+        metadata_file = path / "metadata.json"
         with open(metadata_file) as fp:
             jdata = json.load(fp, **json_kwargs)
         _log.debug("Loaded metadata from %s" % metadata_file)
 
-        df_file = dir / "benchmark_results"
-        self.df = pd.read_pickle(df_file, **pd_kwargs)
-        _log.debug("Loaded benchmark results from %s" % df_file)
+        metric_df_file = path / "metrics.pkl.compressed"
+        self.metric_df = pd.read_pickle(metric_df_file, **pd_kwargs)
+        _log.debug("Loaded metrics from %s" % metric_df_file)
 
-        # Verify data for consistency
-        # {
-        #     "model_names": self.model_names,
-        #     "metric_names": self.metric_names,
-        #     "n_repeats": self.n_repeats,
-        #     "n_iters": self.n_iters,
-        #     "data_structure": {
-        #         "index_labels": self.row_index_labels,
-        #         "column_labels": self.col_labels
-        # }
-        index = self.df.index
-        try:
-            assert all(jdata["model_names"] == index.get_level_values(0).unique()), \
-                "JSON metadata for model names does not match dataframe index. %s vs %s" % \
-                (str(jdata["model_names"]), str(index.get_level_values(0)))
-            assert all(jdata["metric_names"] == index.get_level_values(1).unique()), \
-                "JSON metadata for metric names does not match dataframe index. %s vs %s" % \
-                (str(jdata["metric_names"]), str(index.get_level_values(1)))
-            df_n_repeats = len(index.get_level_values(2).unique())
-            assert jdata["n_repeats"] == df_n_repeats, \
-                "JSON metadata for number of repetitions does not match dataframe index. %s vs %s" % \
-                (str(jdata["n_repeats"]), str(df_n_repeats))
-            df_n_iters = len(index.get_level_values(3).unique())
-            assert jdata["n_iters"] == df_n_iters, \
-                "JSON metadata for number of iterations does not match dataframe index. %s vs %s" % \
-                (str(jdata["n_iters"]), str(df_n_iters))
-            assert all(jdata["data_structure"]["index_labels"] == index.names), \
-                "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
-                (str(jdata["data_structure"]["index_labels"]), str(index.names))
-            assert all(jdata["data_structure"]["column_labels"] == self.df.columns), \
-                "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
-                (str(jdata["data_structure"]["column_labels"]), str(self.df.columns))
-        except Exception as e:
-            _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might get "
-                         "overwritten. From:\n%s" % str(e))
+        if not disable_verification:
+            # Verify this metadata for consistency:
+            # {
+            #     "model_names": self.model_names,
+            #     "metric_names": self.metric_names,
+            #     "n_repeats": self.n_repeats,
+            #     "n_iters": self.n_iters,
+            #     "data_structure": {
+            #         "metric_index_labels": self.metric_row_index_labels,
+            #         "metric_column_labels": self.metric_col_labels
+            # }
+            index = self.metric_df.index
+            try:
+                assert all(jdata["model_names"] == index.get_level_values(0).unique()), \
+                    "JSON metadata for model names does not match dataframe index. %s vs %s" % \
+                    (str(jdata["model_names"]), str(index.get_level_values(0)))
+                assert all(jdata["metric_names"] == index.get_level_values(1).unique()), \
+                    "JSON metadata for metric names does not match dataframe index. %s vs %s" % \
+                    (str(jdata["metric_names"]), str(index.get_level_values(1)))
+                df_n_repeats = len(index.get_level_values(2).unique())
+                assert jdata["n_repeats"] == df_n_repeats, \
+                    "JSON metadata for number of repetitions does not match dataframe index. %s vs %s" % \
+                    (str(jdata["n_repeats"]), str(df_n_repeats))
+                df_n_iters = len(index.get_level_values(3).unique())
+                assert jdata["n_iters"] == df_n_iters, \
+                    "JSON metadata for number of iterations does not match dataframe index. %s vs %s" % \
+                    (str(jdata["n_iters"]), str(df_n_iters))
+                assert all(jdata["data_structure"]["metric_index_labels"] == index.names), \
+                    "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
+                    (str(jdata["data_structure"]["metric_index_labels"]), str(index.names))
+                assert all(jdata["data_structure"]["metric_column_labels"] == self.metric_df.columns), \
+                    "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
+                    (str(jdata["data_structure"]["metric_column_labels"]), str(self.metric_df.columns))
+            except Exception as e:
+                _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might get "
+                             "overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
-        _log.info("Finished loading from disk.")
+            try:
+                assert all(self.metric_row_index_labels == index.names), \
+                    "Expected index labels %s, loaded metrics dataframe has labels %s." % \
+                    (str(self.metric_row_index_labels), str(index.names))
+                assert all(self.metric_col_labels == self.metric_df.columns), \
+                    "Expected column labels %s, loaded metrics dataframe has labels %s." % \
+                    (str(self.metric_col_labels), str(self.metric_df.columns))
+            except Exception as e:
+                raise RuntimeError("Possible PyBNN version mismatch.") from e
+
+        self._set_metrics_metadata()
+
+        if not no_runhistory:
+            runhistory_df_file = path / "runhistory.pkl.compressed"
+            self.runhistory_df = pd.read_pickle(runhistory_df_file, **pd_kwargs)
+            _log.debug("Loaded run history from %s" % runhistory_df_file)
+
+            if not disable_verification:
+                # Verify this metadata for consistency:
+                # metadata["data_structure"]["runhistory_row_index_labels"] = self.runhistory_row_index_labels
+                # metadata["data_structure"]["runhistory_col_labels"] = self.runhistory_col_labels
+                index = self.runhistory_df.index
+                try:
+                    assert all(jdata["data_structure"]["runhistory_row_index_labels"] == index.names), \
+                        "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
+                        (str(jdata["data_structure"]["runhistory_row_index_labels"]), str(index.names))
+                    assert all(jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns), \
+                        "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
+                        (str(jdata["data_structure"]["runhistory_col_labels"]), str(self.runhistory_df.columns))
+                except Exception as e:
+                    _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might "
+                                 "get overwritten or dataframes may not align properly. From:\n%s" % str(e))
+
+                try:
+                    assert all(self.runhistory_row_index_labels == index.names), \
+                        "Expected index labels %s, loaded runhistory dataframe has labels %s." % \
+                        (str(self.runhistory_row_index_labels), str(index.names))
+                    assert all(self.runhistory_col_labels == self.runhistory_df.columns), \
+                        "Expected column labels %s, loaded runhistory dataframe has labels %s." % \
+                        (str(self.runhistory_col_labels), str(self.runhistory_df.columns))
+                except Exception as e:
+                    raise RuntimeError("Possible PyBNN version mismatch.") from e
+
+            self._set_runhistory_metadata()
+
+    _log.info("Finished loading from disk.")
+
+    def _set_metrics_metadata(self):
+        """
+        Parse the stored metrics dataframe and set the following metadata accordingly.
+
+        model_names: Sequence[str]
+        metric_names: Sequence[str]
+        n_repeats: int
+        n_iters: int
+        
+        :return: None 
+        """
+        
+        self.model_names, self.metric_names = self.metric_df.index.names[:2]
+        self.n_repeats = self.metric_df.index.get_level_values(2).unique().shape[0]
+        self.n_iters = self.metric_df.index.get_level_values(3).unique().shape[0]
+
+    def _set_runhistory_metadata(self):
+        """
+        Parse the stored runhistory dataframe and set the following metadata accordingly.
+
+        runhistory_col_labels: Sequence[str]
+
+        :return: None
+        """
+
+        self.runhistory_col_labels = self.runhistory_df.columns
