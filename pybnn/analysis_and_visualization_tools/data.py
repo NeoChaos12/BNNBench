@@ -21,9 +21,9 @@ class BenchmarkData:
     n_repeats: int
     n_iters: int
     
-    metric_df: pd.DataFrame
-    metric_row_index_labels: Sequence[str] = ("model", "metric", "repetition", "iteration")
-    metric_col_labels: Sequence[str] = ("metric_value")
+    metrics_df: pd.DataFrame
+    metrics_row_index_labels: Sequence[str] = ("model", "metric", "repetition", "iteration")
+    metrics_col_labels: Sequence[str] = ("metric_value",)
     
     runhistory_df: pd.DataFrame
     runhistory_col_labels: Sequence[str]
@@ -34,7 +34,7 @@ class BenchmarkData:
         self.metric_names = None
         self.n_repeats = None
         self.n_iters = None
-        self.metric_df = None
+        self.metrics_df = None
         self.runhistory_df = None
         self.runhistory_col_labels = None
 
@@ -85,10 +85,10 @@ class BenchmarkData:
                    (obj.n_models, obj.n_metrics, obj.n_repeats, obj.n_iters))
 
         all_indices = [obj.model_names, obj.metric_names, np.arange(obj.n_repeats), np.arange(obj.n_iters)]
-        assert len(obj.metric_row_index_labels) == len(all_indices), \
+        assert len(obj.metrics_row_index_labels) == len(all_indices), \
             "This is unexpected. The number of row index labels %d should be exactly equal to the number of index " \
-            "arrays %d." % (len(obj.metric_row_index_labels), len(all_indices))
-        indices = [pd.MultiIndex.from_product(all_indices[i:], names=obj.metric_row_index_labels[i:])
+            "arrays %d." % (len(obj.metrics_row_index_labels), len(all_indices))
+        indices = [pd.MultiIndex.from_product(all_indices[i:], names=obj.metrics_row_index_labels[i:])
                    for i in range(len(all_indices)-2, -1, -1)]
         _log.debug("Generated indices of lengths %s" % str([len(i) for i in indices]))
         model_dfs = []
@@ -96,14 +96,16 @@ class BenchmarkData:
             metric_dfs = []
             for metric_idx, metric_name in enumerate(obj.metric_names):
                 metric_vals = pd.DataFrame(results.extract_metric_as_array(model_name, metric_name).reshape(-1, 1),
-                                           columns=(obj.metric_col_labels[0],))
+                                           columns=obj.metrics_col_labels)
                 _log.debug("Read data for model %s and metric %s with %s values" %
                            (model_name, metric_name, metric_vals.shape))
                 metric_dfs.append(metric_vals.set_index(indices[0]))
             model_dfs.append(pd.concat(metric_dfs, axis=0).set_index(indices[1]))
 
-        obj.metric_df = pd.concat(model_dfs, axis=0).set_index(indices[2])
-        _log.debug("Generated final metrics dataframe of shape %s" % str(obj.metric_df.shape))
+        obj.metrics_df = pd.concat(model_dfs, axis=0).set_index(indices[2])
+        _log.debug("Metrics dataframe has index labels %s and column labels %s." %
+                   (str(obj.metrics_df.index.names), str(obj.metrics_df.columns)))
+        _log.debug("Generated final metrics dataframe of shape %s" % str(obj.metrics_df.shape))
 
         if include_runhistories:
             obj.runhistory_col_labels = emukit_space.parameter_names + ["objective_value"]
@@ -126,12 +128,14 @@ class BenchmarkData:
             # Therefore, all initialization points will be assigned non-positive indices. This will help in aligning the
             # runhistory dataframe with the metrics dataframe.
             _log.debug("Read run histories of configurations and objective evaluations of shapes %s and %s "
-                       "respectively. The will be re-indexed to indices of shape %s" %
+                       "respectively. They will be re-indexed to indices of shape %s" %
                        (X.shape, Y.shape, runhistory_indices.shape))
             X = X.set_index(runhistory_indices)
             Y = Y.set_index(runhistory_indices)
             obj.runhistory_df = pd.concat((X, Y), axis=1)
             _log.debug("Generated final runhistory dataframe of shape %s" % str(obj.runhistory_df.shape))
+            _log.debug("Runhistory dataframe has index labels %s and column labels %s." %
+                       (str(obj.runhistory_df.index.names), str(obj.runhistory_df.columns)))
 
             return obj
 
@@ -171,8 +175,8 @@ class BenchmarkData:
                 "n_repeats": self.n_repeats,
                 "n_iters": self.n_iters,
                 "data_structure": {
-                    "metric_index_labels": self.metric_row_index_labels,
-                    "metric_column_labels": self.metric_col_labels
+                    "metric_index_labels": self.metrics_row_index_labels,
+                    "metric_column_labels": self.metrics_col_labels
                 }
             }
         if not no_runhistory:
@@ -184,7 +188,7 @@ class BenchmarkData:
         _log.debug("Saved metadata in %s" % metadata_file)
 
         metric_df_file = path / "metrics.pkl.compressed"
-        self.metric_df.to_pickle(path=metric_df_file, **pd_kwargs)
+        self.metrics_df.to_pickle(path=metric_df_file, **pd_kwargs)
         _log.debug("Saved metrics in %s" % metric_df_file)
 
         runhistory_df_file = path / "runhistory.pkl.compressed"
@@ -229,7 +233,7 @@ class BenchmarkData:
         _log.debug("Loaded metadata from %s" % metadata_file)
 
         metric_df_file = path / "metrics.pkl.compressed"
-        self.metric_df = pd.read_pickle(metric_df_file, **pd_kwargs)
+        self.metrics_df = pd.read_pickle(metric_df_file, **pd_kwargs)
         _log.debug("Loaded metrics from %s" % metric_df_file)
 
         if not disable_verification:
@@ -240,17 +244,17 @@ class BenchmarkData:
             #     "n_repeats": self.n_repeats,
             #     "n_iters": self.n_iters,
             #     "data_structure": {
-            #         "metric_index_labels": self.metric_row_index_labels,
-            #         "metric_column_labels": self.metric_col_labels
+            #         "metric_index_labels": self.metrics_row_index_labels,
+            #         "metric_column_labels": self.metrics_col_labels
             # }
-            index = self.metric_df.index
+            index = self.metrics_df.index
             try:
-                assert all(jdata["model_names"] == index.get_level_values(0).unique()), \
+                assert all(index.get_level_values(0).unique().values == jdata["model_names"]), \
                     "JSON metadata for model names does not match dataframe index. %s vs %s" % \
-                    (str(jdata["model_names"]), str(index.get_level_values(0)))
-                assert all(jdata["metric_names"] == index.get_level_values(1).unique()), \
+                    (str(jdata["model_names"]), str(index.get_level_values(0).unique().values))
+                assert all(index.get_level_values(1).unique().values == jdata["metric_names"]), \
                     "JSON metadata for metric names does not match dataframe index. %s vs %s" % \
-                    (str(jdata["metric_names"]), str(index.get_level_values(1)))
+                    (str(jdata["metric_names"]), str(index.get_level_values(1).unique().values))
                 df_n_repeats = len(index.get_level_values(2).unique())
                 assert jdata["n_repeats"] == df_n_repeats, \
                     "JSON metadata for number of repetitions does not match dataframe index. %s vs %s" % \
@@ -259,23 +263,23 @@ class BenchmarkData:
                 assert jdata["n_iters"] == df_n_iters, \
                     "JSON metadata for number of iterations does not match dataframe index. %s vs %s" % \
                     (str(jdata["n_iters"]), str(df_n_iters))
-                assert all(jdata["data_structure"]["metric_index_labels"] == index.names), \
+                assert index.names == jdata["data_structure"]["metric_index_labels"], \
                     "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
                     (str(jdata["data_structure"]["metric_index_labels"]), str(index.names))
-                assert all(jdata["data_structure"]["metric_column_labels"] == self.metric_df.columns), \
+                assert all(self.metrics_df.columns.values == jdata["data_structure"]["metric_column_labels"]), \
                     "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
-                    (str(jdata["data_structure"]["metric_column_labels"]), str(self.metric_df.columns))
+                    (str(jdata["data_structure"]["metric_column_labels"]), str(self.metrics_df.columns.values))
             except Exception as e:
                 _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might get "
                              "overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
             try:
-                assert all(self.metric_row_index_labels == index.names), \
+                assert index.names == self.metrics_row_index_labels, \
                     "Expected index labels %s, loaded metrics dataframe has labels %s." % \
-                    (str(self.metric_row_index_labels), str(index.names))
-                assert all(self.metric_col_labels == self.metric_df.columns), \
+                    (str(self.metrics_row_index_labels), str(index.names))
+                assert (self.metrics_df.columns.unique().values == self.metrics_col_labels), \
                     "Expected column labels %s, loaded metrics dataframe has labels %s." % \
-                    (str(self.metric_col_labels), str(self.metric_df.columns))
+                    (str(self.metrics_col_labels), str(self.metrics_df.columns.unique().values))
             except Exception as e:
                 raise RuntimeError("Possible PyBNN version mismatch.") from e
 
@@ -292,10 +296,10 @@ class BenchmarkData:
                 # metadata["data_structure"]["runhistory_col_labels"] = self.runhistory_col_labels
                 index = self.runhistory_df.index
                 try:
-                    assert all(jdata["data_structure"]["runhistory_row_index_labels"] == index.names), \
+                    assert jdata["data_structure"]["runhistory_row_index_labels"] == index.names, \
                         "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
                         (str(jdata["data_structure"]["runhistory_row_index_labels"]), str(index.names))
-                    assert all(jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns), \
+                    assert jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns, \
                         "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
                         (str(jdata["data_structure"]["runhistory_col_labels"]), str(self.runhistory_df.columns))
                 except Exception as e:
@@ -303,12 +307,9 @@ class BenchmarkData:
                                  "get overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
                 try:
-                    assert all(self.runhistory_row_index_labels == index.names), \
+                    assert index.names == self.runhistory_row_index_labels, \
                         "Expected index labels %s, loaded runhistory dataframe has labels %s." % \
                         (str(self.runhistory_row_index_labels), str(index.names))
-                    assert all(self.runhistory_col_labels == self.runhistory_df.columns), \
-                        "Expected column labels %s, loaded runhistory dataframe has labels %s." % \
-                        (str(self.runhistory_col_labels), str(self.runhistory_df.columns))
                 except Exception as e:
                     raise RuntimeError("Possible PyBNN version mismatch.") from e
 
@@ -328,9 +329,9 @@ class BenchmarkData:
         :return: None 
         """
         
-        self.model_names, self.metric_names = self.metric_df.index.names[:2]
-        self.n_repeats = self.metric_df.index.get_level_values(2).unique().shape[0]
-        self.n_iters = self.metric_df.index.get_level_values(3).unique().shape[0]
+        self.model_names, self.metric_names = self.metrics_df.index.names[:2]
+        self.n_repeats = self.metrics_df.index.get_level_values(2).unique().shape[0]
+        self.n_iters = self.metrics_df.index.get_level_values(3).unique().shape[0]
 
     def _set_runhistory_metadata(self):
         """
