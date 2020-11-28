@@ -1,8 +1,11 @@
 import numpy as np
+import pandas as pd
+import itertools
 import json
 from pathlib import Path
-from typing import Union
+from typing import Union, List, Dict
 from emukit.benchmarking.loop_benchmarking.benchmark_result import BenchmarkResult
+from emukit.core import ParameterSpace
 import logging
 import functools
 
@@ -22,23 +25,29 @@ class BenchmarkData():
 
     '''
 
+    model_names: List[str]
+    metric_names: List[str]
+    n_repeats: int
+    n_iters: int
+    df: pd.DataFrame
+
     def __init__(self):
-        self.loop_names = None
+        self.model_names = None
         self.metric_names = None
-        self.results = None
         self.n_repeats = None
         self.n_iters = None
-        self.array_orderings = ["loop_names", "metric_names", "n_repeats", "n_iterations"]
+        self.df = None
 
     @property
     def n_loops(self):
-        return len(self.loop_names)
+        return len(self.model_names)
 
     @property
     def n_metrics(self):
         return len(self.metric_names)
 
-    def read_results_from_emukit(self, results: BenchmarkResult, n_iters: int, include_runhistories: bool = True):
+    def read_results_from_emukit(self, results: BenchmarkResult, include_runhistories: bool = True,
+                                 emukit_space: ParameterSpace = None, outx: np.ndarray = None, outy: np.ndarray = None):
         '''
         Given the results of an emukit benchmarking operation stored within a BenchmarkResult object, reads the data
         and prepares it for use within PyBNN's data analysis and visualizatino pipeline.
@@ -49,27 +58,48 @@ class BenchmarkData():
         :param include_runhistories: bool
             Flag to indicate that the BenchmarkResults include a pseudo-metric for tracking the run history that should
             be handled appropriately. This should be the last metric in the sequence of metrics.
+        :param outx: np.ndarray
+            The run history of the configurations.
+        :param outy: np.ndarray
+            The run history of the function evaluations.
         :return: None
         '''
 
         # Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
 
-        self.loop_names = results.loop_names
+        self.model_names = results.loop_names
         self.metric_names = results.metric_names
-        self.n_repeats = results.n_repeats
-        self.n_iters = n_iters
         if include_runhistories:
             # Exclude the pseudo-metric for tracking run histories
             self.metric_names = self.metric_names[:-1]
+            assert outx is not None and outy is not None, "Expected run histories to be provided in parameters " \
+                                                          "'outx' and 'outy', received %s and %s respectively." % \
+                                                          (str(type(outx)), str(type(outy)))
 
-        # results_array = np.empty(shape=(len(loop_gen._loops), len(metrics) - 1, NUM_REPEATS, NUM_LOOP_ITERS + 1))
-        results_array = np.empty(shape=(self.n_loops, self.n_metrics, self.n_repeats, self.n_iters))
+        self.n_repeats = results.n_repeats
+        self.n_iters = results.extract_metric_as_array(self.model_names[0], self.metric_names[0]).shape[-1]
 
-        for loop_idx, loop_name in enumerate(self.loop_names):
+        self.row_index_labels = ["model", "metric", "repetition", "iteration"]
+        self.col_labels = ["metric_value"] + emukit_space.parameter_names + ["objective_value"]
+
+        all_indices = [self.model_names, self.metric_names, np.arange(self.n_repeats), np.arange(self.n_iters)]
+        assert  len(self.row_index_labels) == len(all_indices)
+        indices = [pd.MultiIndex.from_product(all_indices[i:], names=self.row_index_labels[i:])
+                   for i in range(len(all_indices)-2, -1, -1)]
+
+        model_dfs = []
+        for model_idx, model_name in enumerate(self.model_names):
+            metric_dfs = []
             for metric_idx, metric_name in enumerate(self.metric_names):
-                results_array[loop_idx, metric_idx, ::] = results.extract_metric_as_array(loop_name, metric_name)
+                metric_vals = pd.DataFrame(results.extract_metric_as_array(model_name, metric_name).reshape(-1, 1),
+                                           columns=self.col_labels[0])
+                X = pd.DataFrame(data=outx.reshape(-1, emukit_space.dimensionality),
+                                 columns=self.col_labels[1:-1])
+                Y = pd.DataFrame(data=outy.reshape(-1, 1), columns=self.col_labels[-1])
+                metric_dfs.append(pd.concat((metric_vals, X, Y), axis=1).set_index(indices[0]))
+            model_dfs.append(pd.concat(metric_dfs, axis=0).set_index(indices[1]))
 
-        self.results = np.asarray(results_array)
+        self.df = pd.concat(model_dfs, axis=0).set_index(indices[2])
 
     @classmethod
     @functools.wraps(read_results_from_emukit)
@@ -81,19 +111,17 @@ class BenchmarkData():
         '''
         return cls().read_results_from_emukit(**kwargs)
 
-    def save(self, dir: Union[Path, str], outx, outy, **kwargs):
+    def save(self, dir: Union[Path, str], **kwargs):
         '''
         Save the contents of this object to disk.
         :param dir: str or Path
             The location where all the relevant files should be stored.
         :param kwargs: dict
-            A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "np_kwargs" and their
+            A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "pd_kwargs" and their
             values should be keyword-argument dictionaries corresponding to arguments that are passed on to the
-            methods "dump()" and "save()" of the libraries json and numpy, respectively.
-        :param outx: np.ndarray
-            The run history of the configurations.
-        :param outy: np.ndarray
-            The run history of the function evaluations.
+            methods "dump()" and "to_pickle()" of json and pandas.DataFrame, respectively. By default,
+            json_kwargs={"indent": 4} and pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two
+            dictionaries are merged, with values in kwargs overwriting the defaults.
         :return: None
         '''
 
@@ -104,28 +132,29 @@ class BenchmarkData():
             dir.mkdir(parents=True, exist_ok=True)
 
         _log.info("Saving results of benchmark evaluation in directory %s" % dir)
-        results_json_file = dir / "benchmark_results.json"
-        with open(results_json_file, 'w') as fp:
+
+        json_kwargs = {"indent": 4}
+        json_kwargs = {**json_kwargs, **kwargs.get("json_kwargs", {})}
+        pd_kwargs = {"compression": "gzip"}
+        pd_kwargs = {**pd_kwargs, **(kwargs.get("pd_kwargs", {}))}
+
+        metadata_file = dir / "metadata.json"
+        with open(metadata_file, 'w') as fp:
             json.dump({
-                "loop_names": self.loop_names,
-                "n_repeats": self.n_repeats,
+                "model_names": self.model_names,
                 "metric_names": self.metric_names,
-                "array_orderings": self.array_orderings
-            }, fp, indent=4)
-        _log.debug("Saved metadata in %s" % results_json_file)
+                "n_repeats": self.n_repeats,
+                "n_iters": self.n_iters,
+                "data_structure": {
+                    "index_labels": self.row_index_labels,
+                    "column_labels": self.col_labels
+                }
+            }, fp, **json_kwargs)
+        _log.debug("Saved metadata in %s" % metadata_file)
 
-        results_npy_file = dir / "benchmark_results.npy"
-        np.save(results_npy_file, arr=self.results, allow_pickle=False)
-        _log.debug("Saved metric evaluations in %s" % results_npy_file)
-
-        config_npy_file = dir / "benchmark_runhistory_X.npy"
-        np.save(config_npy_file, arr=outx, allow_pickle=False)
-        _log.debug("Saved configuration run history in %s" % config_npy_file)
-
-        output_npy_file = dir / "benchmark_runhistory_Y.npy"
-        np.save(output_npy_file, arr=outy, allow_pickle=False)
-        _log.debug("Saved function evaluation run history in %s" % output_npy_file)
-
+        df_file = dir / "benchmark_results"
+        self.df.to_pickle(path=df_file, **pd_kwargs)
+        _log.debug("Saved benchmark results in %s" % df_file)
         _log.info("Finished saving to disk.")
 
     def load(self, dir: Union[Path, str], **kwargs):
@@ -134,25 +163,70 @@ class BenchmarkData():
         :param dir: str or Path
             The location where all the relevant files should be stored.
         :param kwargs: dict
-            A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "np_kwargs" and their
+            A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "pd_kwargs" and their
             values should be keyword-argument dictionaries corresponding to arguments that are passed on to the
-            methods "load()" of the libraries json and numpy.
+            methods "load()" and "read_pickle()" of json and pandas, respectively. By default,
+            json_kwargs={} and pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two
+            dictionaries are merged, with values in kwargs overwriting the defaults.
         :return: None
         '''
-        pass
 
-    def read_result_files(source: Path):
-        with open(source / JSON_RESULTS_FILE) as fp:
-            jdata = json_tricks.load(fp)
+        if not isinstance(dir, Path):
+            dir = Path(dir)
 
-        ndata = np.load(source / NUMPY_RESULTS_FILE, allow_pickle=False)
+        if not dir.exists():
+            dir.mkdir(parents=True, exist_ok=True)
 
-        return jdata, ndata
+        _log.info("Loading results of benchmark evaluation from directory %s" % dir)
 
-    def read_runhistory(source: Path):
-        X = np.load(source / NUMPY_RUNHISTORY_X, allow_pickle=False)
-        Y = np.load(source / NUMPY_RUNHISTORY_Y, allow_pickle=False)
+        json_kwargs = {}
+        json_kwargs = {**json_kwargs, **kwargs.get("json_kwargs", {})}
+        pd_kwargs = {"compression": "gzip"}
+        pd_kwargs = {**pd_kwargs, **(kwargs.get("pd_kwargs", {}))}
 
-        return X, Y
+        metadata_file = dir / "metadata.json"
+        with open(metadata_file) as fp:
+            jdata = json.load(fp, **json_kwargs)
+        _log.debug("Loaded metadata from %s" % metadata_file)
 
+        df_file = dir / "benchmark_results"
+        self.df = pd.read_pickle(df_file, **pd_kwargs)
+        _log.debug("Loaded benchmark results from %s" % df_file)
 
+        # Verify data for consistency
+        # {
+        #     "model_names": self.model_names,
+        #     "metric_names": self.metric_names,
+        #     "n_repeats": self.n_repeats,
+        #     "n_iters": self.n_iters,
+        #     "data_structure": {
+        #         "index_labels": self.row_index_labels,
+        #         "column_labels": self.col_labels
+        # }
+        index = self.df.index
+        try:
+            assert all(jdata["model_names"] == index.get_level_values(0).unique()), \
+                "JSON metadata for model names does not match dataframe index. %s vs %s" % \
+                (str(jdata["model_names"]), str(index.get_level_values(0)))
+            assert all(jdata["metric_names"] == index.get_level_values(1).unique()), \
+                "JSON metadata for metric names does not match dataframe index. %s vs %s" % \
+                (str(jdata["metric_names"]), str(index.get_level_values(1)))
+            df_n_repeats = len(index.get_level_values(2).unique())
+            assert jdata["n_repeats"] == df_n_repeats, \
+                "JSON metadata for number of repetitions does not match dataframe index. %s vs %s" % \
+                (str(jdata["n_repeats"]), str(df_n_repeats))
+            df_n_iters = len(index.get_level_values(3).unique())
+            assert jdata["n_iters"] == df_n_iters, \
+                "JSON metadata for number of iterations does not match dataframe index. %s vs %s" % \
+                (str(jdata["n_iters"]), str(df_n_iters))
+            assert all(jdata["data_structure"]["index_labels"] == index.names), \
+                "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
+                (str(jdata["data_structure"]["index_labels"]), str(index.names))
+            assert all(jdata["data_structure"]["column_labels"] == self.df.columns), \
+                "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
+                (str(jdata["data_structure"]["column_labels"]), str(self.df.columns))
+        except Exception as e:
+            _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might get "
+                         "overwritten. From:\n%s" % str(e))
+
+        _log.info("Finished loading from disk.")
