@@ -30,6 +30,8 @@ from emukit.benchmarking.loop_benchmarking import benchmarker
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
 
+from pybnn.analysis_and_visualization_tools import BenchmarkData
+
 # ############# SETUP ENVIRONMENT ######################################################################################
 
 # CLI setup
@@ -198,28 +200,6 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
 # LoopState using the training dataset. This should theoretically also preserve the repeatability of experiments.
 
 # Save results
-# Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
-results_array = np.empty(shape=(len(loop_gen._loops), len(metrics)-1, NUM_REPEATS, NUM_LOOP_ITERS + 1))
-
-for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
-    for metric_idx, metric_name in enumerate(benchmark_results.metric_names[:-1]):
-        # Notice the metric_names[:-1]. This is done to ignore the last metric - the hack for recording runhistory
-        results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
-
-results_json_file = save_dir / "benchmark_results.json"
-with open(results_json_file, 'w') as fp:
-    json.dump({
-        "loop_names": benchmark_results.loop_names,
-        "n_repeats": benchmark_results.n_repeats,
-        "metric_names": benchmark_results.metric_names[:-1],
-        # Notice the metric_names[:-1]. This is done to ignore the last metric - the hack for recording runhistory
-        "array_orderings": ["loop_names", "metric_names", "n_repeats", "n_iterations"]
-        }, fp, indent=4)
-
-results_npy_file = save_dir / "benchmark_results.npy"
-np.save(results_npy_file, arr=results_array, allow_pickle=False)
-
-config_npy_file = save_dir / "benchmark_runhistory_X.npy"
-np.save(config_npy_file, arr=outx, allow_pickle=False)
-output_npy_file = save_dir / "benchmark_runhistory_Y.npy"
-np.save(output_npy_file, arr=outy, allow_pickle=False)
+final_results: BenchmarkData = BenchmarkData.from_emutkit_results(results=benchmark_results, include_runhistories=True,
+                                                   emukit_space=target_function.emukit_space, outx=outx, outy=outy)
+final_results.save(path=save_dir)
