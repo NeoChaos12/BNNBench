@@ -1,8 +1,8 @@
 import logging
 import numpy as np
-import seaborn as sns
+# import seaborn as sns
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 try:
     from pybnn.bin import _default_log_format
@@ -14,9 +14,9 @@ except (ImportError, ModuleNotFoundError):
 
 from pybnn.emukit_interfaces.synthetic_objectives import all_known_objectives
 from sklearn.manifold import TSNE
-import mpl_toolkits.mplot3d as plt3d
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-import matplotlib.colors, matplotlib.cm
+# import mpl_toolkits.mplot3d as plt3d
+# from mpl_toolkits.axes_grid1 import make_axes_locatable
+# import matplotlib.colors, matplotlib.cm
 from pathlib import Path
 import json
 import argparse
@@ -121,7 +121,7 @@ def plot(tsne_data: pd.DataFrame, plot_density: int = 250, save_data: bool = Fal
     plt.rcParams['figure.figsize'] = (6.4, 4.8)
     # cmap = sns.color_palette("YlOrBr_r", as_cmap=True)
     # sns.set_style("dark")
-    colors = sns.color_palette("husl", n_colors=n_models)
+    # colors = sns.color_palette("husl", n_colors=n_models)
 
     if (source_dir / plot_data_file).exists():
         _log.debug("Loading plotting data from disk.")
@@ -137,9 +137,9 @@ def plot(tsne_data: pd.DataFrame, plot_density: int = 250, save_data: bool = Fal
         precomputed = False
 
     for idx, model_name in enumerate(model_names):
-        fig: plt.Figure = plt.figure()
-        ax: plt3d.Axes3D = fig.add_subplot(111, projection='3d')
-        ax.set_title(f"Embeddings in 3D space.")
+        # fig: plt.Figure = plt.figure()
+        # ax: plt3d.Axes3D = fig.add_subplot(111, projection='3d')
+        # ax.set_title(f"Embeddings in 3D space.")
         if not precomputed:
             _log.debug(f"Generating plotting data using input data for model {model_name}.")
             plot_data = get_plot_data_from_raw(raw_data=tsne_data.loc[(model_name, slice(None)), :],
@@ -149,20 +149,20 @@ def plot(tsne_data: pd.DataFrame, plot_density: int = 250, save_data: bool = Fal
             all_plot_data = all_plot_data.combine_first(plot_data)
             _log.debug("Generated plotting data.")
 
-        plotx = all_plot_data.loc[(model_name, slice(None)), "x"]
-        ploty = all_plot_data.loc[(model_name, slice(None)), "y"]
-        plotz = all_plot_data.loc[(model_name, slice(None)), "z"]
-        counts = all_plot_data.loc[(model_name, slice(None)), "count"]
+        # plotx = all_plot_data.loc[(model_name, slice(None)), "x"]
+        # ploty = all_plot_data.loc[(model_name, slice(None)), "y"]
+        # plotz = all_plot_data.loc[(model_name, slice(None)), "z"]
+        # counts = all_plot_data.loc[(model_name, slice(None)), "count"]
 
-        _log.debug("Generating plots.")
+        # _log.debug("Generating plots.")
 
-        cmap = sns.dark_palette(colors[idx], as_cmap=True)
-        scatter_plt = ax.scatter(plotx, ploty, plotz, c=counts, cmap=cmap, label=model_name)
-        plt.legend()
-        if savefig:
-            fig.savefig(target_dir / f"{model_name}_{fig_name}")
-        else:
-            plt.show()
+        # cmap = sns.dark_palette(colors[idx], as_cmap=True)
+        # scatter_plt = ax.scatter(plotx, ploty, plotz, c=counts, cmap=cmap, label=model_name)
+        # plt.legend()
+        # if savefig:
+        #     fig.savefig(target_dir / f"{model_name}_{fig_name}")
+        # else:
+        #     plt.show()
 
     if not precomputed and save_data:
         # np.save(target_dir / plot_data_file, all_plot_data, allow_pickle=False)
