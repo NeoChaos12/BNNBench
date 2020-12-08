@@ -30,14 +30,15 @@ logging.basicConfig(format=_default_log_format)
 
 JSON_RESULTS_FILE = "benchmark_results.json"
 NUMPY_RESULTS_FILE = "benchmark_results.npy"
+NUMPY_RUNHISTORY_X = "benchmark_runhistory_X.npy"
+NUMPY_RUNHISTORY_Y = "benchmark_runhistory_Y.npy"
 
 
 def handle_cli():
     parser = argparse.ArgumentParser(add_help="Collate the results from multiple benchmarking runs into a single pandas "
                                               "DataFrame object and store it as a Feather file.")
-    parser.add_argument("-s", "--source", type=Path, help="The source directory to be crawled for benchmark result JSON "
-                                                       "files. It is assumed that the name of every leaf directory "
-                                                       "corresponds to the task_id to be used for that set of results.")
+    parser.add_argument("-s", "--source", type=Path,
+                        help="The source directory to be crawled for benchmark result JSON files.")
     parser.add_argument("-t", "--target", type=Path, help="The target directory where the results will be stored.")
     parser.add_argument("-m", "--mode", type=int, help="The mode of operation to be used for collating the results.",
                         choices=[1, 2])
@@ -79,6 +80,13 @@ def read_result_files(source: Path):
     return jdata, ndata
 
 
+def read_runhistory(source: Path):
+    X = np.load(source / NUMPY_RUNHISTORY_X, allow_pickle=False)
+    Y = np.load(source / NUMPY_RUNHISTORY_Y, allow_pickle=False)
+
+    return X, Y
+
+
 class Mode1:
     """ A simple collection of functions for Mode 1 operations i.e. collate data cross tasks """
 
@@ -96,8 +104,8 @@ class Mode1:
 
         base["tasks"].append(dir.name)
 
-    def collate(self, arr: list, base: dict):
-        """" Collate the data stored in arr assuming mode 1. """
+    def collate(self, arr: list, base: dict, runhistory: bool = False):
+        """" Collate the data stored in arr assuming mode 1. Does not yet support collating runhistories. """
 
         axis = base["array_orderings"].index("tasks")
         full_array = np.stack(arr, axis=axis)   # Create new axis dimension
@@ -138,7 +146,7 @@ class Mode2:
     def update_base_jdata(self, base: dict, dir: Path, jdata: dict, ndata: np.ndarray):
         base["n_repeats"] += jdata["n_repeats"]
 
-    def collate(self, arr: list, base: dict):
+    def collate(self, arr: list, base: dict, runhistory: bool = False):
         """ Collate the data stored in arr assuming mode 2. """
 
         if not arr:
@@ -150,13 +158,25 @@ class Mode2:
             return
 
         axis = base["array_orderings"].index("n_repeats")
-        full_array = np.concatenate(arr, axis=axis)
+        if runhistory:
+            data_array = np.concatenate(arr[0], axis=axis)
+            _log.info("Saving collated runhistories in %s" % str(self.target_dir))
+            runhistory_orderings = list(base["array_orderings"])  # Make a copy
+            runhistory_orderings.remove("metric_names")
+            axis = runhistory_orderings.index("n_repeats")
+            X = np.concatenate(arr[1], axis=axis)
+            Y = np.concatenate(arr[2], axis=axis)
+            np.save(file=self.target_dir / NUMPY_RUNHISTORY_X, arr=X, allow_pickle=False)
+            np.save(file=self.target_dir / NUMPY_RUNHISTORY_Y, arr=Y, allow_pickle=False)
+            _log.info("Collated runhistories saved.")
+        else:
+            data_array = np.concatenate(arr, axis=axis)
         _log.info("Saving collated data in %s" % str(self.target_dir))
-        np.save(file=self.target_dir / NUMPY_RESULTS_FILE, arr=full_array, allow_pickle=False)
+        np.save(file=self.target_dir / NUMPY_RESULTS_FILE, arr=data_array, allow_pickle=False)
         with open(self.target_dir / JSON_RESULTS_FILE, 'w') as fp:
             json_tricks.dump(base, fp, indent=4)
         _log.info("Generated final data array of shape %s with base configuration %s" %
-                   (str(full_array.shape), json_tricks.dumps(base, indent=4)))
+                   (str(data_array.shape), json_tricks.dumps(base, indent=4)))
 
     def is_jdata_valid(self, base_jdata: dict, jdata: dict):
 
@@ -173,7 +193,7 @@ class Mode2:
         return key_check and item_check
 
 
-def collate_data(source_dir: Path, target_dir: Path, mode: int, debug: bool):
+def collate_data(source_dir: Path, target_dir: Path, mode: int, debug: bool = False, runhistory: bool = True):
 
     source_dir: Path = source_dir.expanduser().resolve()
     target_dir: Path = target_dir.expanduser().resolve()
@@ -185,7 +205,7 @@ def collate_data(source_dir: Path, target_dir: Path, mode: int, debug: bool):
     _log.info("Crawling directory %s for source data." % str(source_dir))
     _log.info("Saving collated results to directory %s" % str(source_dir))
 
-    data_arrays = []
+    data_arrays = [[], [], []] if runhistory else []
     base_jdata = None
     modes = {
         1: Mode1,
@@ -206,8 +226,17 @@ def collate_data(source_dir: Path, target_dir: Path, mode: int, debug: bool):
                 _log.info("Skipping directory %s due to inconsistent benchmark settings. Base settings are %s" %
                           (str(leaf_dir), str(base_jdata)))
                 continue
+            elif runhistory:
+                if not (leaf_dir / NUMPY_RUNHISTORY_X).exists() or not (leaf_dir / NUMPY_RUNHISTORY_Y).exists():
+                    _log.info("Skipping directory %s because runhistory collation is enabled but the relevant runhistory "
+                              "could not be found." % str(leaf_dir))
+                    continue
+                X, Y = read_runhistory(leaf_dir)
+                for array, data in zip(data_arrays, (ndata, X, Y)):
+                    array.append(data)
+            else:
+                data_arrays.append(ndata)
 
-            data_arrays.append(ndata)
             mode_obj.update_base_jdata(base_jdata, leaf_dir, jdata, ndata)
             # base_jdata["tasks"].append(leaf_dir.name)
             _log.info("Successfully included benchmark results from directory %s" % str(leaf_dir))
@@ -225,7 +254,7 @@ def collate_data(source_dir: Path, target_dir: Path, mode: int, debug: bool):
         _log.info("Successfully created backup directory %s" % backup_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-    mode_obj.collate(data_arrays, base_jdata)
+    mode_obj.collate(data_arrays, base_jdata, runhistory=runhistory)
 
 
 def plot_results(source_dir: Path, save_dir: Path = None):
