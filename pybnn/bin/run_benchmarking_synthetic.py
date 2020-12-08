@@ -3,7 +3,6 @@
 import logging
 from pathlib import Path
 import numpy as np
-import json_tricks as json
 import argparse
 
 try:
@@ -50,14 +49,14 @@ parser.add_argument("--source_seed", type=int, default=1,
 parser.add_argument("--training_pts_per_dim", type=int, default=10,
                     help="The number of initial data samples to use per input feature for warm starting model "
                          "training.")
-parser.add_argument("-n", "--num_repeats", type=int, default=10,
-                    help="The number of times the benchmarking process is to be repeated and averaged over for each "
-                         "model type.")
+# parser.add_argument("-n", "--num_repeats", type=int, default=10,
+#                     help="The number of times the benchmarking process is to be repeated and averaged over for each "
+#                          "model type.")
 parser.add_argument("-s", "--sdir", type=str, default=None,
                     help="The path to the directory where all Synthetic Benchmark data files are to be read from. "
                          "Default: Current working directory.")
 parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files are "
-                                                                "to be stored. Default: same as sdir.")
+                                                                 "to be stored. Default: same as sdir.")
 parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode logging.")
 parser.add_argument("--iterate_confs", action="store_true", default=False,
                     help="Enable generation of new training and testing datasets by iterating through random "
@@ -90,7 +89,8 @@ if not args.debug:
 NUM_LOOP_ITERS = args.iterations
 SOURCE_RNG_SEED = args.source_seed
 NUM_INITIAL_DATA = None
-NUM_REPEATS = args.num_repeats
+# NUM_REPEATS = args.num_repeats
+NUM_REPEATS = 1 # Since the entire script has been re-designed to work for only one RNG-offset at a time anyways.
 global_seed = np.random.RandomState(seed=args.rng).randint(0, 1_000_000_000, size=args.seed_offset + 1)[-1]
 model_selection = int("0b" + args.models, 2)
 
@@ -196,5 +196,6 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
 
 # Save results
 final_results: BenchmarkData = BenchmarkData.from_emutkit_results(results=benchmark_results, include_runhistories=True,
-                                                   emukit_space=target_function.emukit_space, outx=outx, outy=outy)
+                                                                  emukit_space=target_function.emukit_space, outx=outx,
+                                                                  outy=outy, rng_offsets=[args.seed_offset])
 final_results.save(path=save_dir)

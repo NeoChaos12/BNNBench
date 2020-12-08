@@ -22,15 +22,12 @@ class BenchmarkData:
     n_iters: int
     
     metrics_df: pd.DataFrame
-    # TODO: Rename "repetition" to "rng_offset" in order to better reflect its purpose, change overall row index labels
-    #  to [model, base_rng, rng_offset, metric, repetition] so that the database remains consistent and easy to manage.
-    # TODO: Change from_emutkit_results() to directly record rng_offsets and rngs
-    metrics_row_index_labels: Sequence[str] = ("model", "metric", "repetition", "iteration")
+    metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
     metrics_col_labels: Sequence[str] = ("metric_value",)
     
     runhistory_df: pd.DataFrame
     runhistory_col_labels: Sequence[str]
-    runhistory_row_index_labels: Sequence[str] = ("model", "repetition", "iteration")
+    runhistory_row_index_labels: Sequence[str] = ("model", "rng_offset", "iteration")
 
     def __init__(self):
         self.model_names = None
@@ -51,7 +48,8 @@ class BenchmarkData:
 
     @classmethod
     def from_emutkit_results(cls, results: BenchmarkResult, include_runhistories: bool = True,
-                             emukit_space: ParameterSpace = None, outx: np.ndarray = None, outy: np.ndarray = None):
+                             emukit_space: ParameterSpace = None, outx: np.ndarray = None, outy: np.ndarray = None,
+                             rng_offsets: Sequence[int] = None):
         """
         Given the results of an emukit benchmarking operation stored within a BenchmarkResult object, reads the data
         and prepares it for use within PyBNN's data analysis and visualizatino pipeline.
@@ -67,6 +65,9 @@ class BenchmarkData:
             The run history of the configurations. Not necessary unless include_runhistories = True.
         :param outy: np.ndarray
             The run history of the function evaluations. Not necessary unless include_runhistories = True.
+        :param rng_offsets: np.ndarray
+            A sequence of integers, which functions as a mapping for the 'repetitions' index in BenchmarkResults. If
+            None (default), the repetition indices are used as is.
         :return: None
         """
 
@@ -87,7 +88,12 @@ class BenchmarkData:
         _log.debug("Reading data for %d models and %d metrics, over %d repetitions of %d iterations each." %
                    (obj.n_models, obj.n_metrics, obj.n_repeats, obj.n_iters))
 
-        all_indices = [obj.model_names, obj.metric_names, np.arange(obj.n_repeats), np.arange(obj.n_iters)]
+        all_indices = [
+            obj.model_names,
+            obj.metric_names,
+            rng_offsets if rng_offsets is not None else np.arange(obj.n_repeats),
+            np.arange(obj.n_iters)
+        ]
         assert len(obj.metrics_row_index_labels) == len(all_indices), \
             "This is unexpected. The number of row index labels %d should be exactly equal to the number of index " \
             "arrays %d." % (len(obj.metrics_row_index_labels), len(all_indices))
@@ -142,7 +148,6 @@ class BenchmarkData:
 
             return obj
 
-    # TODO: Switch to fixed compression type in order to make this operation safer
     def save(self, path: Union[Path, str], no_runhistory: bool = False, **kwargs):
         """
         Save the contents of this object to disk.
@@ -191,11 +196,11 @@ class BenchmarkData:
             json.dump(metadata, fp, **json_kwargs)
         _log.debug("Saved metadata in %s" % metadata_file)
 
-        metric_df_file = path / "metrics.pkl.compressed"
+        metric_df_file = path / f"metrics.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
         self.metrics_df.to_pickle(path=metric_df_file, **pd_kwargs)
         _log.debug("Saved metrics in %s" % metric_df_file)
 
-        runhistory_df_file = path / "runhistory.pkl.compressed"
+        runhistory_df_file = path / f"runhistory.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
         self.runhistory_df.to_pickle(path=runhistory_df_file, **pd_kwargs)
         _log.debug("Saved run history in %s" % runhistory_df_file)
         _log.info("Finished saving to disk.")
@@ -236,7 +241,7 @@ class BenchmarkData:
             jdata = json.load(fp, **json_kwargs)
         _log.debug("Loaded metadata from %s" % metadata_file)
 
-        metric_df_file = path / "metrics.pkl.compressed"
+        metric_df_file = path / f"metrics.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
         self.metrics_df = pd.read_pickle(metric_df_file, **pd_kwargs)
         _log.debug("Loaded metrics from %s" % metric_df_file)
 
@@ -290,7 +295,8 @@ class BenchmarkData:
         self._set_metrics_metadata()
 
         if not no_runhistory:
-            runhistory_df_file = path / "runhistory.pkl.compressed"
+            runhistory_df_file = \
+                path / f"runhistory.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
             self.runhistory_df = pd.read_pickle(runhistory_df_file, **pd_kwargs)
             _log.debug("Loaded run history from %s" % runhistory_df_file)
 
