@@ -22,6 +22,9 @@ class BenchmarkData:
     n_iters: int
     
     metrics_df: pd.DataFrame
+    # TODO: Rename "repetition" to "rng_offset" in order to better reflect its purpose, change overall row index labels
+    #  to [model, base_rng, rng_offset, metric, repetition] so that the database remains consistent and easy to manage.
+    # TODO: Change from_emutkit_results() to directly record rng_offsets and rngs
     metrics_row_index_labels: Sequence[str] = ("model", "metric", "repetition", "iteration")
     metrics_col_labels: Sequence[str] = ("metric_value",)
     
@@ -139,6 +142,7 @@ class BenchmarkData:
 
             return obj
 
+    # TODO: Switch to fixed compression type in order to make this operation safer
     def save(self, path: Union[Path, str], no_runhistory: bool = False, **kwargs):
         """
         Save the contents of this object to disk.
@@ -299,7 +303,7 @@ class BenchmarkData:
                     assert jdata["data_structure"]["runhistory_row_index_labels"] == index.names, \
                         "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
                         (str(jdata["data_structure"]["runhistory_row_index_labels"]), str(index.names))
-                    assert jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns, \
+                    assert all(jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns), \
                         "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
                         (str(jdata["data_structure"]["runhistory_col_labels"]), str(self.runhistory_df.columns))
                 except Exception as e:
