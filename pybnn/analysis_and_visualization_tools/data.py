@@ -205,7 +205,8 @@ class BenchmarkData:
         _log.debug("Saved run history in %s" % runhistory_df_file)
         _log.info("Finished saving to disk.")
 
-    def load(self, path: Union[Path, str], no_runhistory: bool = False, disable_verification: bool = False, **kwargs):
+    def load(self, path: Union[Path, str], no_runhistory: bool = False, disable_verification: bool = False,
+             enable_soft_warnings: bool = True, **kwargs):
         """
         Load the contents of this object from disk.
         :param path: str or Path
@@ -214,6 +215,10 @@ class BenchmarkData:
             When True, does not attempt to load a run history. Default is False.
         :param disable_verification: bool
             When True, does not verify metadata of the loaded dataframes. Default is False.
+        :param enable_soft_warnings: bool
+            When True (default), performs checks and generates warnings for non-critical errors due to mismatch between
+            stored JSON data and loaded DataFrame metadata. Useful when such discrepancies are expected. Ignored if
+            disable_verification is True.
         :param kwargs: dict
             A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "pd_kwargs" and their
             values should be keyword-argument dictionaries corresponding to arguments that are passed on to the
@@ -245,7 +250,7 @@ class BenchmarkData:
         self.metrics_df = pd.read_pickle(metric_df_file, **pd_kwargs)
         _log.debug("Loaded metrics from %s" % metric_df_file)
 
-        if not disable_verification:
+        if not disable_verification and enable_soft_warnings:
             # Verify this metadata for consistency:
             # {
             #     "model_names": self.model_names,
@@ -282,6 +287,8 @@ class BenchmarkData:
                 _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might get "
                              "overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
+        if not disable_verification:
+            index = self.metrics_df.index
             try:
                 assert index.names == self.metrics_row_index_labels, \
                     "Expected index labels %s, loaded metrics dataframe has labels %s." % \
@@ -292,7 +299,7 @@ class BenchmarkData:
             except Exception as e:
                 raise RuntimeError("Possible PyBNN version mismatch.") from e
 
-        self._set_metrics_metadata()
+        self._reset_metrics_metadata()
 
         if not no_runhistory:
             runhistory_df_file = \
@@ -300,7 +307,7 @@ class BenchmarkData:
             self.runhistory_df = pd.read_pickle(runhistory_df_file, **pd_kwargs)
             _log.debug("Loaded run history from %s" % runhistory_df_file)
 
-            if not disable_verification:
+            if not disable_verification and enable_soft_warnings:
                 # Verify this metadata for consistency:
                 # metadata["data_structure"]["runhistory_row_index_labels"] = self.runhistory_row_index_labels
                 # metadata["data_structure"]["runhistory_col_labels"] = self.runhistory_col_labels
@@ -316,6 +323,8 @@ class BenchmarkData:
                     _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might "
                                  "get overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
+            if not disable_verification:
+                index = self.runhistory_df.index
                 try:
                     assert index.names == self.runhistory_row_index_labels, \
                         "Expected index labels %s, loaded runhistory dataframe has labels %s." % \
@@ -323,11 +332,11 @@ class BenchmarkData:
                 except Exception as e:
                     raise RuntimeError("Possible PyBNN version mismatch.") from e
 
-            self._set_runhistory_metadata()
+            self._reset_runhistory_metadata()
 
     _log.info("Finished loading from disk.")
 
-    def _set_metrics_metadata(self):
+    def _reset_metrics_metadata(self):
         """
         Parse the stored metrics dataframe and set the following metadata accordingly.
 
@@ -343,7 +352,7 @@ class BenchmarkData:
         self.n_repeats = self.metrics_df.index.get_level_values(2).unique().shape[0]
         self.n_iters = self.metrics_df.index.get_level_values(3).unique().shape[0]
 
-    def _set_runhistory_metadata(self):
+    def _reset_runhistory_metadata(self):
         """
         Parse the stored runhistory dataframe and set the following metadata accordingly.
 
@@ -353,3 +362,17 @@ class BenchmarkData:
         """
 
         self.runhistory_col_labels = self.runhistory_df.columns
+
+    def _reset_all_metadata(self):
+        """
+        Conenience function to reset both metric and runhistory metadata.
+        :return: None
+        """
+
+        if self.metrics_df is None:
+            _log.warning("Attempted to reset metadata when metrics dataframe was None. No action taken.")
+            return
+
+        self._reset_metrics_metadata()
+        if self.runhistory_df is not None:
+            self._reset_runhistory_metadata()
