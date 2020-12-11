@@ -3,6 +3,7 @@ Contains a class ResultDataHandler which facilitates handling the results of var
 '''
 
 import logging
+import traceback
 from typing import Union, Sequence, Optional, Any, Iterator
 from pathlib import Path
 from pybnn.analysis_and_visualization_tools import BenchmarkData
@@ -12,6 +13,9 @@ import itertools as itt
 import os
 
 _log = logging.getLogger(__name__)
+
+# Turn this on to display complete stack traces in cases where an exception is being caught and suppressed.
+PRINT_TRACEBACKS = False
 
 
 class ResultDataHandler():
@@ -61,18 +65,7 @@ class ResultDataHandler():
         return pd.DataFrame(data=subtree[:, n_base_dirs:], columns=columns)
 
     @staticmethod
-    def _combine_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, index: str) -> pd.DataFrame:
-        """
-        Given two dataframes, combines the data within using the given index. This is a magic function which takes care
-        of handling special cases arising out of specific index names.
-        :param df1:
-        :param df2:
-        :param index:
-        :return:
-        """
-
-    @staticmethod
-    def _get_data_iterator(base: Path, dir_tree: pd.DataFrame, no_runhistory: bool = False,
+    def _get_data_iterator(base: Path, dir_tree: pd.DataFrame, metrics: bool = None, runhistory: bool = None,
                            disable_verification: bool = False) -> Iterator[BenchmarkData]:
         """
         Creates an iterator for all BenchmarkData objects based on the data found in the given directory tree.
@@ -83,91 +76,111 @@ class ResultDataHandler():
         :return: An iterator over BenchmarkData objects
         """
 
+        if metrics is None and runhistory is None:
+            raise RuntimeError("Must specify type of data to load: either metrics or runhistory.")
+
+        if metrics and runhistory:
+            raise RuntimeError("Must specify only one type of data to load, not both.")
+
         for row in dir_tree.itertuples():
             this_dir = base / os.path.join(*row[1:])
             _log.debug("Reading BenchmarkData from %s" % str(this_dir))
             data = BenchmarkData()
             try:
                 # We expect mismatches between JSON metadata and the stored DataFrames, so disable the annoying warning.
-                data.load(this_dir, no_runhistory=no_runhistory, disable_verification=disable_verification,
+                data.load(this_dir, metrics=metrics, runhistory=runhistory, disable_verification=disable_verification,
                           enable_soft_warnings=False)
             except FileNotFoundError as e:
                 _log.warning("Could not load data for folder %s due to\n%s" % (str(this_dir), e.strerror))
+                if PRINT_TRACEBACKS:
+                    traceback.print_tb(e.__traceback__)
                 continue
+            # TODO: Collapse duplicated collate methods into one, return appropriate dataframe from here.
             yield row[0], np.asarray(row[1:]), data
 
     @classmethod
-    def collate_metrics_data(cls, dir: Union[Path, str], directory_structure: Sequence[str] = None,
-                             include_runhistories=True, **kwargs) -> pd.DataFrame:
+    def collate_data(cls, loc: Union[Path, str], directory_structure: Sequence[str], type: str,
+                             safe_mode: bool = True) -> pd.DataFrame:
         """
         Given a directory containing multiple stored dataframes readable by BenchmarkData, collates the data in the
         dataframes according to the rules specified by 'row_index_sequence'. This includes descending into an ordered
         directory structure and collating data accordingly.
 
-        :param dir: Path-like
+        :param loc: Path-like
             The top-level directory for the directory tree containing all the data to be collated.
         :param directory_structure: A sequence of strings
             Each string in the sequence specifies what row index name the data at the corresponding sub-directory
             level corresponds to, such that the first index (index 0 for a list) in 'row_index_sequence' corresponds to
-            the sub-directories that are immediate children of 'dir'. Strings described in
+            the sub-directories that are immediate children of 'loc'. Strings described in
             BenchmarkData.metrics_row_index_labels are treated specially: Since they're always present in every
             recorded dataframe, the corresponding directory names are only used for filesystem traversal and are
             otherwise completely ignored in favor of respecting the already recorded data. For all other
             strings, the sub-directory names are treated as individual index labels belonging to that index name. Such
             extra index names can only occur before the preset index names. Note that "label" and "name" as used here
             correspond to Pandas.MultiIndex terminology for the same.
+        :param type: str
+            Can be either "metrics" or "runhistory", indicates which type of data is to be collected and collated.
         :return: collated_data
             A BenchmarkData object containing all the collated data.
         """
 
-        # Use cases:
-        # 1. directory structure does not contain any special index labels. This implies that the dataframes all
-        # contain the same structure already, and should be combined on new axis labels.
-        #
-        # 2. directory structure contains some or all of the special index labels. This implies that the dataframes
-        # contain some of the special indices that need to be handled appropriately, and then the dataframes will be
-        # combined with new index labels.
-
         # Perform sanity check first
         assert cls.metrics_row_index_labels == BenchmarkData.metrics_row_index_labels, \
             "Possible PyBNN version mismatch, known metrics DataFrame row index labels do not line up."
-        if include_runhistories:
-            assert ResultDataHandler.runhistory_row_index_labels == BenchmarkData.runhistory_row_index_labels, \
-                "Possible PyBNN version mismatch, known runhistory DataFrame row index labels do not line up."
+
+        type = str(type).lower()
+        assert type in ("metrics", "runhistory"), "Argumnt 'type' must be either 'metrics' or " \
+                                                               "'runhistory', found %s" % str(type)
+
+        if type == "metrics":
+            fixed_row_index_labels = cls.metrics_row_index_labels
+            metrics = True
+            runhistory = False
+        else:
+            fixed_row_index_labels = cls.runhistory_row_index_labels
+            metrics = False
+            runhistory = True
 
         directory_structure = np.asarray(directory_structure)
-        idx_mask = np.logical_not(np.isin(directory_structure, cls.metrics_row_index_labels))
+        # noinspection PyUnresolvedReferences
+        idx_mask = np.logical_not(np.isin(directory_structure, cls.metrics_row_index_labels +
+                                          cls.runhistory_row_index_labels))
 
         # Mask away any elements from metrics_row_index_labels that are present in the directory structure array
-        new_metric_idx_names = directory_structure[idx_mask]
-        if include_runhistories:
-            exclude_metric_idx = np.where(new_metric_idx_names != 'metric')
-            new_runhistory_idx_names = new_metric_idx_names[exclude_metric_idx]
+        new_metric_idx_names = list(directory_structure[idx_mask])
 
-        subtree = cls._collect_directory_structure(dir, directory_structure)
-        data_iter = ResultDataHandler._get_data_iterator(dir, subtree, no_runhistory=not include_runhistories,
-                                                         disable_verification=False)
+        subtree = cls._collect_directory_structure(loc, directory_structure)
+        data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=True, runhistory=False,
+                                                         disable_verification=not safe_mode)
         collated_data = None
         count = itt.count(start=0)
+        original_metric_idx_names = None
+        new_idx_name_order = None
+
         for (row_idx, row_vals, data), _ in zip(data_iter, count):
             # Same masking process as for the index names
             new_metric_indices = row_vals[idx_mask]
             new_metric_data = dict(zip(new_metric_idx_names, new_metric_indices))
-            data.metrics_df = data.metrics_df.assign(**new_metric_data)
+            df = data.metrics_df.assign(**new_metric_data)
 
-            if include_runhistories:
-                new_runhistory_indices = new_metric_indices[exclude_metric_idx]
-                new_runhistory_data = dict(zip(new_runhistory_idx_names, new_runhistory_indices))
-                data.runhistory_df = data.runhistory_df.assign(**new_runhistory_data)
+            if new_idx_name_order is None:
+                original_metric_idx_names = list(df.index.names)
+                new_idx_name_order = new_metric_idx_names + original_metric_idx_names
+            else:
+                assert original_metric_idx_names == df.index.names, \
+                    "All dataframes must have the same index structure in order to be compatible. Dataframe at %s had " \
+                    "index names %s, expected %s." % (str(os.path.join(*row_vals)), str(df.index.names),
+                                                      str(original_metric_idx_names))
+
+            # Augment the index to ensure that this dataframe's values remain uniquely identifiable.
+            df = df.set_index(new_metric_idx_names, append=True).reorder_levels(new_idx_name_order)
 
             if collated_data is None:
-                collated_data = data
+                collated_data = df
                 continue
 
-            collated_data: BenchmarkData
-            collated_data.metrics_df = collated_data.metrics_df.combine_first(data.metrics_df)
-            if include_runhistories:
-                collated_data.runhistory_df = collated_data.runhistory_df.combine_first(data.runhistory_df)
+            collated_data: pd.DataFrame
+            collated_data = collated_data.combine_first(df)
 
         total_count = next(count)
         _log.info("Processed %d records." % total_count)
@@ -175,34 +188,26 @@ class ResultDataHandler():
         # Now fix the indices of the combined DataFrame(s).
 
         # Make a copy
-        original_metric_idx_names = list(collated_data.metrics_df.index.names)
-        collated_data.metrics_df = collated_data.metrics_df.set_index(
-            list(new_metric_idx_names), append=True).reorder_levels(
-            list(new_metric_idx_names) + original_metric_idx_names)
-
-        if include_runhistories:
-            # Make a copy, also ensure python-list datatype
-            original_runhistory_idx_names = list(collated_data.runhistory_df.index.names)
-            collated_data.runhistory_df = collated_data.runhistory_df.set_index(
-                list(new_runhistory_idx_names), append=True).reorder_levels(
-                list(new_runhistory_idx_names) + original_runhistory_idx_names)
+        # original_metric_idx_names = list(collated_data.index.names)
+        # collated_data = collated_data.set_index(
+        #     list(new_metric_idx_names), append=True).reorder_levels(
+        #     list(new_metric_idx_names) + original_metric_idx_names)
 
         return collated_data
 
     @classmethod
-    def collate_runhistories(cls, dir: Union[Path, str], directory_structure: Sequence[str] = None,
-                             **kwargs) -> pd.DataFrame:
+    def collate_runhistories(cls, loc: Union[Path, str], directory_structure: Sequence[str] = None) -> pd.DataFrame:
         """
         Given a directory containing multiple stored dataframes readable by BenchmarkData, collates the data in the
         dataframes according to the rules specified by 'row_index_sequence'. This includes descending into an ordered
         directory structure and collating data accordingly.
 
-        :param dir: Path-like
+        :param loc: Path-like
             The top-level directory for the directory tree containing all the data to be collated.
         :param directory_structure: A sequence of strings
             Each string in the sequence specifies what row index name the data at the corresponding sub-directory
             level corresponds to, such that the first index (index 0 for a list) in 'row_index_sequence' corresponds to
-            the sub-directories that are immediate children of 'dir'. Strings described in
+            the sub-directories that are immediate children of 'loc'. Strings described in
             BenchmarkData.metrics_row_index_labels are treated specially: Since they're always present in every
             recorded dataframe, the corresponding directory names are only used for filesystem traversal and are
             otherwise completely ignored in favor of respecting the already recorded data. For all other
@@ -213,26 +218,21 @@ class ResultDataHandler():
             A DataFrame object containing all the collated data.
         """
 
-        # Use cases:
-        # 1. directory structure does not contain any special index labels. This implies that the dataframes all
-        # contain the same structure already, and should be combined on new axis labels.
-        #
-        # 2. directory structure contains some or all of the special index labels. This implies that the dataframes
-        # contain some of the special indices that need to be handled appropriately, and then the dataframes will be
-        # combined with new index labels.
-
         # Perform sanity check first
         assert ResultDataHandler.runhistory_row_index_labels == BenchmarkData.runhistory_row_index_labels, \
-            "Possible PyBNN version mismatch, known runhistory DataFrame row index labels do not line up."
+            "Possible PyBNN version mismatch, known run history DataFrame row index labels do not line up."
 
         directory_structure = np.asarray(directory_structure)
-        idx_mask = np.logical_not(np.isin(directory_structure, cls.runhistory_row_index_labels))
+        # noinspection PyUnresolvedReferences
+        idx_mask = np.logical_not(np.isin(directory_structure, cls.metrics_row_index_labels +
+                                          cls.runhistory_row_index_labels))
 
         # Mask away any elements from runhistory_row_index_labels that are present in the directory structure array
         new_runhistory_idx_names = directory_structure[idx_mask]
 
-        subtree = cls._collect_directory_structure(dir, directory_structure)
-        data_iter = ResultDataHandler._get_data_iterator(dir, subtree, no_runhistory=False, disable_verification=False)
+        subtree = cls._collect_directory_structure(loc, directory_structure)
+        data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=False, runhistory=True,
+                                                         disable_verification=False)
         collated_df = None
         count = itt.count(start=0)
         for (row_idx, row_vals, data), _ in zip(data_iter, count):

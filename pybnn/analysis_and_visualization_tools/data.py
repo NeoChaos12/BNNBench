@@ -148,19 +148,86 @@ class BenchmarkData:
 
             return obj
 
-    def save(self, path: Union[Path, str], no_runhistory: bool = False, **kwargs):
+    def save(self, path: Union[Path, str], metrics: bool = True, runhistory: bool = True, **kwargs):
         """
         Save the contents of this object to disk.
         :param path: str or Path
             The location where all the relevant files should be stored.
-        :param no_runhistory: bool
-            When True, does not attempt to save a run history. Default is False.
+        :param metrics: bool
+            When True (default), save metrics data.
+        :param runhistory: bool
+            When True (default), save run history data.
         :param kwargs: dict
-            A dictionary of optional keyword arguments. Acceptable keys are "json_kwargs" and "pd_kwargs" and their
-            values should be keyword-argument dictionaries corresponding to arguments that are passed on to the
-            methods "dump()" and "to_pickle()" of json and pandas.DataFrame, respectively. By default,
-            json_kwargs={"indent": 4} and pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two
-            dictionaries are merged, with values in kwargs overwriting the defaults.
+            A dictionary of optional keyword arguments. Two keys, each containing dictionaries, are allowed:
+            json_kwargs - passed on directly to save_metadata(). Check the documentation there for details.
+            pd_kwargs - passed on directly to save_metrics() and save_runhistories(). Check the respective
+            documentations for details.
+        :return: None
+        """
+        _log.info("Saving benchmark evaluation data in %s" % path)
+        self.save_metadata(path, **(kwargs.get("json_kwargs")))
+        if metrics:
+            self.save_metrics(path, **(kwargs.get("pd_kwargs")))
+        if runhistory:
+            self.save_runhistory(**(kwargs.get("pd_kwargs")))
+        _log.info("Finished saving to disk.")
+
+    def save_metadata(self, path: Union[Path, str], **kwargs):
+        """
+        Save the metadata of this object's DataFrames in human-readable JSON format. This is only intended to be used
+        for providing a quick glance at the DataFrames' metadata. External changes to this JSON file do not have any
+        effect.
+        :param path:
+        :param kwargs: dict
+            A dictionary of optional keyword arguments that are passed on to a call json.dump(/, **json_kwargs).
+            By default, json_kwargs={"indent": 4}. If additional kwargs are given, the two dictionaries are merged,
+            with values in kwargs overwriting the defaults.
+        :return: None
+        """
+
+        _log.info("Saving metadata of benchmark evaluation in directory %s" % path)
+        json_kwargs = {"indent": 4}
+        json_kwargs = {**json_kwargs, **kwargs}
+
+        self._reset_all_metadata()
+        metadata_file = path / "metadata.json"
+        metadata = {}
+        if self.metrics_df is not None:
+            metadata = {**metadata, **{
+                    "model_names": self.model_names,
+                    "metric_names": self.metric_names,
+                    "n_repeats": self.n_repeats,
+                    "n_iters": self.n_iters,
+                    "data_structure": {
+                        "metric_index_labels": self.metrics_row_index_labels,
+                        "metric_column_labels": self.metrics_col_labels
+                    }
+                }}
+
+        if self.runhistory_df is not None:
+            metadata = {**metadata, **{
+                "data_structure": {
+                    "runhistory_row_index_labels": self.runhistory_row_index_labels,
+                    "runhistory_col_labels": self.runhistory_col_labels
+                }
+            }}
+
+        if metadata:
+            with open(metadata_file, 'w') as fp:
+                json.dump(metadata, fp, **json_kwargs)
+            _log.debug("Saved metadata in %s" % metadata_file)
+        else:
+            _log.debug("No metadata to save, dataframes not yet initialized.")
+
+    def save_metrics(self, path: Union[Path, str], **kwargs):
+        """
+        Save the metrics dataframe to disk.
+        :param path: Path-like
+            The complete filepath of the folder where the metrics DataFrame should be saved.
+        :param kwargs:
+            A dictionary of optional keyword arguments that are passed on to a call pd.DataFrame.to_pickle(**pd_kwargs).
+            By default, pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two dictionaries are
+            merged, with values in kwargs overwriting the defaults.
         :return: None
         """
 
@@ -171,48 +238,44 @@ class BenchmarkData:
             path.mkdir(parents=True, exist_ok=True)
 
         _log.info("Saving results of benchmark evaluation in directory %s" % path)
-
-        json_kwargs = {"indent": 4}
-        json_kwargs = {**json_kwargs, **kwargs.get("json_kwargs", {})}
         pd_kwargs = {"compression": "gzip"}
-        pd_kwargs = {**pd_kwargs, **(kwargs.get("pd_kwargs", {}))}
-
-        metadata_file = path / "metadata.json"
-        metadata = {
-                "model_names": self.model_names,
-                "metric_names": self.metric_names,
-                "n_repeats": self.n_repeats,
-                "n_iters": self.n_iters,
-                "data_structure": {
-                    "metric_index_labels": self.metrics_row_index_labels,
-                    "metric_column_labels": self.metrics_col_labels
-                }
-            }
-        if not no_runhistory:
-            metadata["data_structure"]["runhistory_row_index_labels"] = self.runhistory_row_index_labels
-            metadata["data_structure"]["runhistory_col_labels"] = self.runhistory_col_labels
-        
-        with open(metadata_file, 'w') as fp:
-            json.dump(metadata, fp, **json_kwargs)
-        _log.debug("Saved metadata in %s" % metadata_file)
+        pd_kwargs = {**pd_kwargs, **kwargs}
 
         metric_df_file = path / f"metrics.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
         self.metrics_df.to_pickle(path=metric_df_file, **pd_kwargs)
         _log.debug("Saved metrics in %s" % metric_df_file)
 
+    def save_runhistory(self, path: Union[Path, str], **kwargs):
+        """
+        Save the runhistory DataFrame to disk.
+        :param path: Path-like
+            The complete filepath of the folder where the runhistory DataFrame should be saved.
+        :param kwargs:
+            A dictionary of optional keyword arguments that are passed on to a call pd.DataFrame.to_pickle(**pd_kwargs).
+            By default, pd_kwargs={"compression": "gzip"}. If additional kwargs are given, the two dictionaries are
+            merged, with values in kwargs overwriting the defaults.
+        :return: None
+        """
+
+        _log.info("Saving run histories of benchmark evaluation in directory %s" % path)
+        pd_kwargs = {"compression": "gzip"}
+        pd_kwargs = {**pd_kwargs, **kwargs}
+
         runhistory_df_file = path / f"runhistory.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
         self.runhistory_df.to_pickle(path=runhistory_df_file, **pd_kwargs)
         _log.debug("Saved run history in %s" % runhistory_df_file)
-        _log.info("Finished saving to disk.")
 
-    def load(self, path: Union[Path, str], no_runhistory: bool = False, disable_verification: bool = False,
-             enable_soft_warnings: bool = True, **kwargs):
+    def load(self, path: Union[Path, str], metrics: bool = True, runhistory: bool = True,
+             disable_verification: bool = False, enable_soft_warnings: bool = True, **kwargs):
         """
-        Load the contents of this object from disk.
+        Load the contents of this object from disk. Should be preferred over direct calls to load_metrics() and
+        load_runhistory().
         :param path: str or Path
             The location where all the relevant files should be stored.
-        :param no_runhistory: bool
-            When True, does not attempt to load a run history. Default is False.
+        :param metrics: bool
+            When True (default), loads metric data.
+        :param runhistory: bool
+            When True (default), loads the run histories.
         :param disable_verification: bool
             When True, does not verify metadata of the loaded dataframes. Default is False.
         :param enable_soft_warnings: bool
@@ -232,25 +295,29 @@ class BenchmarkData:
             path = Path(path)
 
         if not path.exists():
-            path.mkdir(parents=True, exist_ok=True)
+            raise FileNotFoundError("Filepath %s does not exist." % str(path))
 
         _log.info("Loading results of benchmark evaluation from directory %s" % path)
 
-        json_kwargs = {}
-        json_kwargs = {**json_kwargs, **kwargs.get("json_kwargs", {})}
-        pd_kwargs = {"compression": "gzip"}
-        pd_kwargs = {**pd_kwargs, **(kwargs.get("pd_kwargs", {}))}
+        json_kwargs = kwargs.get("json_kwargs", {})
+        pd_kwargs = kwargs.get("pd_kwargs", {})
 
+        if metrics:
+            self.load_metrics(path=path, **pd_kwargs)
+            self._reset_metrics_metadata()
+        if runhistory:
+            self.load_runhistory(path=path, **pd_kwargs)
+            self._reset_runhistory_metadata()
+        if disable_verification:
+            return
+
+        # Perform metadata verification
         metadata_file = path / "metadata.json"
         with open(metadata_file) as fp:
             jdata = json.load(fp, **json_kwargs)
         _log.debug("Loaded metadata from %s" % metadata_file)
 
-        metric_df_file = path / f"metrics.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
-        self.metrics_df = pd.read_pickle(metric_df_file, **pd_kwargs)
-        _log.debug("Loaded metrics from %s" % metric_df_file)
-
-        if not disable_verification and enable_soft_warnings:
+        if metrics and enable_soft_warnings:
             # Verify this metadata for consistency:
             # {
             #     "model_names": self.model_names,
@@ -287,7 +354,7 @@ class BenchmarkData:
                 _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might get "
                              "overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
-        if not disable_verification:
+        if metrics:
             index = self.metrics_df.index
             try:
                 assert index.names == self.metrics_row_index_labels, \
@@ -299,42 +366,70 @@ class BenchmarkData:
             except Exception as e:
                 raise RuntimeError("Possible PyBNN version mismatch.") from e
 
-        self._reset_metrics_metadata()
+        if runhistory and enable_soft_warnings:
+            # Verify this metadata for consistency: {
+            #   "data_structure": {
+            #       "runhistory_row_index_labels": self.runhistory_row_index_labels,
+            #       "runhistory_col_labels": self.runhistory_col_labels
+            #   }
+            # }
+            index = self.runhistory_df.index
+            try:
+                assert jdata["data_structure"]["runhistory_row_index_labels"] == index.names, \
+                    "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
+                    (str(jdata["data_structure"]["runhistory_row_index_labels"]), str(index.names))
+                assert all(jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns), \
+                    "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
+                    (str(jdata["data_structure"]["runhistory_col_labels"]), str(self.runhistory_df.columns))
+            except Exception as e:
+                _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might "
+                             "get overwritten or dataframes may not align properly. From:\n%s" % str(e))
 
-        if not no_runhistory:
-            runhistory_df_file = \
-                path / f"runhistory.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
-            self.runhistory_df = pd.read_pickle(runhistory_df_file, **pd_kwargs)
-            _log.debug("Loaded run history from %s" % runhistory_df_file)
-
-            if not disable_verification and enable_soft_warnings:
-                # Verify this metadata for consistency:
-                # metadata["data_structure"]["runhistory_row_index_labels"] = self.runhistory_row_index_labels
-                # metadata["data_structure"]["runhistory_col_labels"] = self.runhistory_col_labels
-                index = self.runhistory_df.index
-                try:
-                    assert jdata["data_structure"]["runhistory_row_index_labels"] == index.names, \
-                        "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
-                        (str(jdata["data_structure"]["runhistory_row_index_labels"]), str(index.names))
-                    assert all(jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns), \
-                        "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
-                        (str(jdata["data_structure"]["runhistory_col_labels"]), str(self.runhistory_df.columns))
-                except Exception as e:
-                    _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might "
-                                 "get overwritten or dataframes may not align properly. From:\n%s" % str(e))
-
-            if not disable_verification:
-                index = self.runhistory_df.index
-                try:
-                    assert index.names == self.runhistory_row_index_labels, \
-                        "Expected index labels %s, loaded runhistory dataframe has labels %s." % \
-                        (str(self.runhistory_row_index_labels), str(index.names))
-                except Exception as e:
-                    raise RuntimeError("Possible PyBNN version mismatch.") from e
-
-            self._reset_runhistory_metadata()
+        if runhistory:
+            index = self.runhistory_df.index
+            try:
+                assert index.names == self.runhistory_row_index_labels, \
+                    "Expected index labels %s, loaded runhistory dataframe has labels %s." % \
+                    (str(self.runhistory_row_index_labels), str(index.names))
+            except Exception as e:
+                raise RuntimeError("Possible PyBNN version mismatch.") from e
 
     _log.info("Finished loading from disk.")
+
+    def load_metrics(self, path: Path, **kwargs):
+        """
+        Load metrics data from disk to the current object's metrics_df attribute. Does not automatically reset metadata.
+        :param path: Path-like
+            The full path to the directory where the DataFrame object is to be loaded from.
+        :param kwargs: dict
+            Optional keyword arguments that are passed in a call to pd.read_pickle(/, **pd_kwargs), where
+            pd_kwargs={"compression": "gzip"} by default. Values of duplicate keys in pd_kwargs are overwritten by
+            corresponding values from kwargs, and the other key-value pairs are passed as-is.
+        :return: None
+        """
+        pd_kwargs = {"compression": "gzip"}
+        pd_kwargs = {**pd_kwargs, **kwargs}
+        metric_df_file = path / f"metrics.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
+        self.metrics_df = pd.read_pickle(metric_df_file, **pd_kwargs)
+        _log.debug("Loaded metrics from %s" % metric_df_file)
+
+    def load_runhistory(self, path: Path, **kwargs):
+        """
+        Load metrics data from disk to the current object's runhistory_df attribute. Does not automatically reset
+        metadata.
+        :param path: Path-like
+            The full path to the directory where the DataFrame object is to be loaded from.
+        :param kwargs: dict
+            Optional keyword arguments that are passed in a call to pd.read_pickle(/, **pd_kwargs), where
+            pd_kwargs={"compression": "gzip"} by default. Values of duplicate keys in pd_kwargs are overwritten by
+            corresponding values from kwargs, and the other key-value pairs are passed as-is.
+        :return: None
+        """
+        pd_kwargs = {"compression": "gzip"}
+        pd_kwargs = {**pd_kwargs, **kwargs}
+        runhistory_df_file = path / f"runhistory.pkl.{'gz' if pd_kwargs['compression'] == 'gzip' else 'compressed'}"
+        self.runhistory_df = pd.read_pickle(runhistory_df_file, **pd_kwargs)
+        _log.debug("Loaded run history from %s" % runhistory_df_file)
 
     def _reset_metrics_metadata(self):
         """
@@ -370,9 +465,11 @@ class BenchmarkData:
         """
 
         if self.metrics_df is None:
-            _log.warning("Attempted to reset metadata when metrics dataframe was None. No action taken.")
+            _log.debug("Attempted to reset metadata when metrics dataframe was None. No action taken.")
             return
-
         self._reset_metrics_metadata()
-        if self.runhistory_df is not None:
-            self._reset_runhistory_metadata()
+
+        if self.runhistory_df is None:
+            _log.debug("Attempted to reset metadata when runhistory dataframe was None. No action taken.")
+            return
+        self._reset_runhistory_metadata()
