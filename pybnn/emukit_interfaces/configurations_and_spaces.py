@@ -10,6 +10,7 @@ from typing import Any, Sequence, Union, Dict
 
 
 # TODO: Define more mappings
+# TODO: Clean this up/update, the methodology used in HPOBenchExperimentUtils.utils.emukit_utils is cleaner
 
 # Mappings for __parameter definitions__ in ConfigSpace to emukit's ParameterSpace
 def _to_continuous(param: cs.UniformFloatHyperparameter):

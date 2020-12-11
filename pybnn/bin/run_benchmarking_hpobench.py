@@ -3,7 +3,6 @@
 import logging
 from pathlib import Path
 import numpy as np
-import json_tricks as json
 import argparse
 
 try:
@@ -30,6 +29,8 @@ from emukit.benchmarking.loop_benchmarking import benchmarker
 from emukit.examples.gp_bayesian_optimization.enums import AcquisitionType
 from emukit.benchmarking.loop_benchmarking import metrics as emukit_metrics
 
+from pybnn.analysis_and_visualization_tools import BenchmarkData
+
 # ############# SETUP ENVIRONMENT ######################################################################################
 
 # CLI setup
@@ -46,17 +47,17 @@ parser.add_argument("--source_seed", type=int, default=1,
 parser.add_argument("--training_pts_per_dim", type=int, default=10,
                     help="The number of initial data samples to use per input feature for warm starting model "
                          "training.")
-parser.add_argument("-n", "--num_repeats", type=int, default=10,
-                    help="The number of times the benchmarking process is to be repeated and averaged over for each "
-                         "model type.")
+# parser.add_argument("-n", "--num_repeats", type=int, default=10,
+#                     help="The number of times the benchmarking process is to be repeated and averaged over for each "
+#                          "model type.")
 parser.add_argument("--source_data_tile_freq", type=int, default=10,
                     help="The number of times each configuration was queried when benchmarking the HPOBench objective "
                          "benchmark.")
 parser.add_argument("-s", "--sdir", type=str, default=None,
-                    help="The path to the directory where all HPOBench data files are to be read from. Default: Current "
-                         "working directory.")
+                    help="The path to the directory where all HPOBench data files are to be read from. Default: "
+                         "Current working directory.")
 parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files are "
-                                                                "to be stored. Default: same as sdir.")
+                                                                 "to be stored. Default: same as sdir.")
 parser.add_argument("--use_local", action="store_true", default=False,
                     help="Use a local version of the HPOBench benchmark objective instead of the container.")
 parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode logging.")
@@ -94,7 +95,8 @@ NUM_LOOP_ITERS = args.iterations
 TASK_ID = args.task_id
 SOURCE_RNG_SEED = args.source_seed
 NUM_INITIAL_DATA = None
-NUM_REPEATS = args.num_repeats
+# NUM_REPEATS = args.num_repeats
+NUM_REPEATS = 1 # Since the entire script has been re-designed to work for only one RNG-offset at a time anyways.
 SOURCE_DATA_TILE_FREQ = args.source_data_tile_freq
 global_seed = np.random.RandomState(seed=args.rng).randint(0, 1_000_000_000, size=args.seed_offset + 1)[-1]
 model_selection = int("0b" + args.models, 2)
@@ -109,9 +111,10 @@ save_dir.mkdir(exist_ok=True, parents=True)
 target_function = HPOBenchObjective(benchmark=Benchmarks.XGBOOST, task_id=TASK_ID, rng=SOURCE_RNG_SEED,
                                     use_local=args.use_local)
 
-data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID, source_rng_seed=SOURCE_RNG_SEED,
-                           evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
-                           iterate_evals=args.iterate_evals, emukit_map_func=target_function.map_configurations_to_emukit,
+data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID,
+                           source_rng_seed=SOURCE_RNG_SEED, evals_per_config=SOURCE_DATA_TILE_FREQ,
+                           extension="csv", iterate_confs=args.iterate_confs, iterate_evals=args.iterate_evals,
+                           emukit_map_func=target_function.map_configurations_to_emukit,
                            rng=args.rng, train_set_multiplier=args.training_pts_per_dim)
 
 NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[2]
@@ -198,28 +201,7 @@ benchmark_results = benchmarkers.run_benchmark(n_iterations=NUM_LOOP_ITERS, n_in
 # LoopState using the training dataset. This should theoretically also preserve the repeatability of experiments.
 
 # Save results
-# Remember, no. of metric calculations per repeat = num loop iterations + 1 due to initial metric calculation
-results_array = np.empty(shape=(len(loop_gen._loops), len(metrics)-1, NUM_REPEATS, NUM_LOOP_ITERS + 1))
-
-for loop_idx, loop_name in enumerate(benchmark_results.loop_names):
-    for metric_idx, metric_name in enumerate(benchmark_results.metric_names[:-1]):
-        # Notice the metric_names[:-1]. This is done to ignore the last metric - the hack for recording runhistory
-        results_array[loop_idx, metric_idx, ::] = benchmark_results.extract_metric_as_array(loop_name, metric_name)
-
-results_json_file = save_dir / "benchmark_results.json"
-with open(results_json_file, 'w') as fp:
-    json.dump({
-        "loop_names": benchmark_results.loop_names,
-        "n_repeats": benchmark_results.n_repeats,
-        "metric_names": benchmark_results.metric_names[:-1],
-        # Notice the metric_names[:-1]. This is done to ignore the last metric - the hack for recording runhistory
-        "array_orderings": ["loop_names", "metric_names", "n_repeats", "n_iterations"]
-        }, fp, indent=4)
-
-results_npy_file = save_dir / "benchmark_results.npy"
-np.save(results_npy_file, arr=results_array, allow_pickle=False)
-
-config_npy_file = save_dir / "benchmark_runhistory_X.npy"
-np.save(config_npy_file, arr=outx, allow_pickle=False)
-output_npy_file = save_dir / "benchmark_runhistory_Y.npy"
-np.save(output_npy_file, arr=outy, allow_pickle=False)
+final_results: BenchmarkData = BenchmarkData.from_emutkit_results(results=benchmark_results, include_runhistories=True,
+                                                                  emukit_space=target_function.emukit_space, outx=outx,
+                                                                  outy=outy, rng_offsets=[args.seed_offset])
+final_results.save(path=save_dir)
