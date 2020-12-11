@@ -1,10 +1,10 @@
-'''
+"""
 Contains a class ResultDataHandler which facilitates handling the results of various benchmarking runs.
-'''
+"""
 
 import logging
 import traceback
-from typing import Union, Sequence, Optional, Any, Iterator
+from typing import Union, Sequence, Iterator
 from pathlib import Path
 from pybnn.analysis_and_visualization_tools import BenchmarkData
 import pandas as pd
@@ -18,28 +18,21 @@ _log = logging.getLogger(__name__)
 PRINT_TRACEBACKS = False
 
 
-class ResultDataHandler():
-    # Use for a sanity check. They should always be completely equal to the corresponding attributes of BenchmarkData
+class ResultDataHandler:
+    # Use for a sanity check. These should always be the same as the corresponding attributes of BenchmarkData
     metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
     runhistory_row_index_labels: Sequence[str] = ("model", "rng_offset", "iteration")
-    known_model_mappings = {
-        "10000": "DeepEnsemble",
-        "01000": "MCBatchNorm",
-        "00100": "MCDropout",
-        "00010": "Gaussian Process",
-        "00001": "Random Search",
-    }
 
     def __init__(self):
         pass
 
     @staticmethod
-    def _collect_directory_structure(dir: Path, columns: Sequence[str] = None) -> pd.DataFrame:
+    def _collect_directory_structure(root: Path, columns: Sequence[str] = None) -> pd.DataFrame:
         """
         Descend into a directory and collect all the leaf directory paths in the directory sub-tree as a
         2d numpy array. Note that this assumes that the directory structure is homogenous in that all leaf
         directories reside at the same depth. If that is not the case, the behaviour is undefined.
-        :param dir: Path-like object
+        :param root: Path-like object
             The root directory
         :param columns: Sequence of strings
             An optional sequence of strings which is used to name the columns of the returned DataFrame. Note that
@@ -50,17 +43,17 @@ class ResultDataHandler():
             indices.
         """
 
-        full_structure = os.walk(dir)
+        full_structure = os.walk(root)
         leaf_dirs = [struct for struct in full_structure if len(struct[1]) == 0]
         if len(leaf_dirs) == 0:
-            raise RuntimeError("Couldn't find any leaf directories in the sub-tree rooted at %s." % dir)
+            raise RuntimeError("Couldn't find any leaf directories in the sub-tree rooted at %s." % root)
 
         subtree = np.asarray([Path(leaf[0]).parts for leaf in leaf_dirs])
-        n_base_dirs = len(dir.parts)
+        n_base_dirs = len(root.parts)
         if columns is not None:
             n_sub_dirs = subtree.shape[1] - n_base_dirs
-            assert n_sub_dirs == len(columns), f"Mismatched directory structure under {str(dir)}, expected " \
-                                             f"{len(columns)} levels in the sub-tree, found {n_sub_dirs} levels."
+            assert n_sub_dirs == len(columns), f"Mismatched directory structure under {str(root)}, expected " \
+                                               f"{len(columns)} levels in the sub-tree, found {n_sub_dirs} levels."
 
         return pd.DataFrame(data=subtree[:, n_base_dirs:], columns=columns)
 
@@ -95,12 +88,11 @@ class ResultDataHandler():
                 if PRINT_TRACEBACKS:
                     traceback.print_tb(e.__traceback__)
                 continue
-            # TODO: Collapse duplicated collate methods into one, return appropriate dataframe from here.
-            yield row[0], np.asarray(row[1:]), data
+            yield row[0], np.asarray(row[1:]), data.metrics_df if metrics else data.runhistory_df
 
     @classmethod
-    def collate_data(cls, loc: Union[Path, str], directory_structure: Sequence[str], type: str,
-                             safe_mode: bool = True) -> pd.DataFrame:
+    def collate_data(cls, loc: Union[Path, str], directory_structure: Sequence[str], which: str,
+                     safe_mode: bool = True) -> pd.DataFrame:
         """
         Given a directory containing multiple stored dataframes readable by BenchmarkData, collates the data in the
         dataframes according to the rules specified by 'row_index_sequence'. This includes descending into an ordered
@@ -110,16 +102,18 @@ class ResultDataHandler():
             The top-level directory for the directory tree containing all the data to be collated.
         :param directory_structure: A sequence of strings
             Each string in the sequence specifies what row index name the data at the corresponding sub-directory
-            level corresponds to, such that the first index (index 0 for a list) in 'row_index_sequence' corresponds to
-            the sub-directories that are immediate children of 'loc'. Strings described in
+            level corresponds to, such that the first index (index 0 for a list) in 'directory_structure' corresponds
+            to the sub-directories that are immediate children of 'loc'. Strings described in
             BenchmarkData.metrics_row_index_labels are treated specially: Since they're always present in every
             recorded dataframe, the corresponding directory names are only used for filesystem traversal and are
             otherwise completely ignored in favor of respecting the already recorded data. For all other
             strings, the sub-directory names are treated as individual index labels belonging to that index name. Such
             extra index names can only occur before the preset index names. Note that "label" and "name" as used here
             correspond to Pandas.MultiIndex terminology for the same.
-        :param type: str
-            Can be either "metrics" or "runhistory", indicates which type of data is to be collected and collated.
+        :param which: str
+            Can be either "metrics" or "runhistory", indicates which DataFrame is to be collected and collated.
+        :param safe_mode: bool
+            When True (default), enables extra metadata checks while loading dataframes.
         :return: collated_data
             A BenchmarkData object containing all the collated data.
         """
@@ -128,52 +122,49 @@ class ResultDataHandler():
         assert cls.metrics_row_index_labels == BenchmarkData.metrics_row_index_labels, \
             "Possible PyBNN version mismatch, known metrics DataFrame row index labels do not line up."
 
-        type = str(type).lower()
-        assert type in ("metrics", "runhistory"), "Argumnt 'type' must be either 'metrics' or " \
-                                                               "'runhistory', found %s" % str(type)
+        which = str(which).lower()
+        assert which in ("metrics", "runhistory"), "Argument 'which' must be either 'metrics' or 'runhistory', " \
+                                                   "received %s" % str(which)
 
-        if type == "metrics":
+        if which == "metrics":
             fixed_row_index_labels = cls.metrics_row_index_labels
             metrics = True
-            runhistory = False
         else:
             fixed_row_index_labels = cls.runhistory_row_index_labels
             metrics = False
-            runhistory = True
 
         directory_structure = np.asarray(directory_structure)
         # noinspection PyUnresolvedReferences
-        idx_mask = np.logical_not(np.isin(directory_structure, cls.metrics_row_index_labels +
-                                          cls.runhistory_row_index_labels))
+        idx_mask = np.logical_not(np.isin(directory_structure, fixed_row_index_labels))
 
-        # Mask away any elements from metrics_row_index_labels that are present in the directory structure array
-        new_metric_idx_names = list(directory_structure[idx_mask])
+        # Mask away any elements from new_index_labels that are present in the directory structure array
+        new_index_labels = list(directory_structure[idx_mask])
 
         subtree = cls._collect_directory_structure(loc, directory_structure)
-        data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=True, runhistory=False,
+        data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=metrics, runhistory=not metrics,
                                                          disable_verification=not safe_mode)
         collated_data = None
         count = itt.count(start=0)
-        original_metric_idx_names = None
-        new_idx_name_order = None
+        original_index_names = None
+        new_index_names = None
 
         for (row_idx, row_vals, data), _ in zip(data_iter, count):
             # Same masking process as for the index names
-            new_metric_indices = row_vals[idx_mask]
-            new_metric_data = dict(zip(new_metric_idx_names, new_metric_indices))
-            df = data.metrics_df.assign(**new_metric_data)
+            new_index_values = row_vals[idx_mask]
+            new_index_data = dict(zip(new_index_labels, new_index_values))
+            df = data.assign(**new_index_data)
 
-            if new_idx_name_order is None:
-                original_metric_idx_names = list(df.index.names)
-                new_idx_name_order = new_metric_idx_names + original_metric_idx_names
+            if new_index_names is None:
+                original_index_names = list(df.index.names)
+                new_index_names = new_index_labels + original_index_names
             else:
-                assert original_metric_idx_names == df.index.names, \
-                    "All dataframes must have the same index structure in order to be compatible. Dataframe at %s had " \
-                    "index names %s, expected %s." % (str(os.path.join(*row_vals)), str(df.index.names),
-                                                      str(original_metric_idx_names))
+                assert original_index_names == df.index.names, \
+                    "All dataframes must have the same index structure in order to be compatible. %s Dataframe at %s " \
+                    "had index names %s, expected %s." % (which, str(os.path.join(*row_vals)), str(df.index.names),
+                                                          str(original_index_names))
 
             # Augment the index to ensure that this dataframe's values remain uniquely identifiable.
-            df = df.set_index(new_metric_idx_names, append=True).reorder_levels(new_idx_name_order)
+            df = df.set_index(new_index_labels, append=True).reorder_levels(new_index_names)
 
             if collated_data is None:
                 collated_data = df
@@ -185,78 +176,4 @@ class ResultDataHandler():
         total_count = next(count)
         _log.info("Processed %d records." % total_count)
 
-        # Now fix the indices of the combined DataFrame(s).
-
-        # Make a copy
-        # original_metric_idx_names = list(collated_data.index.names)
-        # collated_data = collated_data.set_index(
-        #     list(new_metric_idx_names), append=True).reorder_levels(
-        #     list(new_metric_idx_names) + original_metric_idx_names)
-
         return collated_data
-
-    @classmethod
-    def collate_runhistories(cls, loc: Union[Path, str], directory_structure: Sequence[str] = None) -> pd.DataFrame:
-        """
-        Given a directory containing multiple stored dataframes readable by BenchmarkData, collates the data in the
-        dataframes according to the rules specified by 'row_index_sequence'. This includes descending into an ordered
-        directory structure and collating data accordingly.
-
-        :param loc: Path-like
-            The top-level directory for the directory tree containing all the data to be collated.
-        :param directory_structure: A sequence of strings
-            Each string in the sequence specifies what row index name the data at the corresponding sub-directory
-            level corresponds to, such that the first index (index 0 for a list) in 'row_index_sequence' corresponds to
-            the sub-directories that are immediate children of 'loc'. Strings described in
-            BenchmarkData.metrics_row_index_labels are treated specially: Since they're always present in every
-            recorded dataframe, the corresponding directory names are only used for filesystem traversal and are
-            otherwise completely ignored in favor of respecting the already recorded data. For all other
-            strings, the sub-directory names are treated as individual index labels belonging to that index name. Such
-            extra index names can only occur before the preset index names. Note that "label" and "name" as used here
-            correspond to Pandas.MultiIndex terminology for the same.
-        :return: collated_df
-            A DataFrame object containing all the collated data.
-        """
-
-        # Perform sanity check first
-        assert ResultDataHandler.runhistory_row_index_labels == BenchmarkData.runhistory_row_index_labels, \
-            "Possible PyBNN version mismatch, known run history DataFrame row index labels do not line up."
-
-        directory_structure = np.asarray(directory_structure)
-        # noinspection PyUnresolvedReferences
-        idx_mask = np.logical_not(np.isin(directory_structure, cls.metrics_row_index_labels +
-                                          cls.runhistory_row_index_labels))
-
-        # Mask away any elements from runhistory_row_index_labels that are present in the directory structure array
-        new_runhistory_idx_names = directory_structure[idx_mask]
-
-        subtree = cls._collect_directory_structure(loc, directory_structure)
-        data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=False, runhistory=True,
-                                                         disable_verification=False)
-        collated_df = None
-        count = itt.count(start=0)
-        for (row_idx, row_vals, data), _ in zip(data_iter, count):
-            # Same masking process as for the index names
-            new_runhistory_indices = row_vals[idx_mask]
-            new_runhistory_data = dict(zip(new_runhistory_idx_names, new_runhistory_indices))
-            df = data.runhistory_df.assign(**new_runhistory_data)
-
-            if collated_df is None:
-                collated_df = df
-                continue
-
-            collated_df: pd.DataFrame
-            collated_df = collated_df.combine_first(df)
-
-        total_count = next(count)
-        _log.info("Processed %d records." % total_count)
-
-        # Now fix the indices of the combined DataFrame(s).
-
-        # Make a copy, also ensure python-list datatype
-        original_runhistory_idx_names = list(collated_df.index.names)
-        collated_df.runhistory_df = collated_df.set_index(
-            list(new_runhistory_idx_names), append=True).reorder_levels(
-            list(new_runhistory_idx_names) + original_runhistory_idx_names)
-
-        return collated_df
