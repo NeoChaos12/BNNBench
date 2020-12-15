@@ -4,7 +4,7 @@ Contains a class ResultDataHandler which facilitates handling the results of var
 
 import logging
 import traceback
-from typing import Union, Sequence, Iterator
+from typing import Union, Sequence, Iterator, Tuple, Optional
 from pathlib import Path
 from pybnn.analysis_and_visualization_tools import BenchmarkData
 import pandas as pd
@@ -59,7 +59,7 @@ class ResultDataHandler:
 
     @staticmethod
     def _get_data_iterator(base: Path, dir_tree: pd.DataFrame, metrics: bool = None, runhistory: bool = None,
-                           disable_verification: bool = False) -> Iterator[BenchmarkData]:
+                           disable_verification: bool = False) -> Iterator[pd.DataFrame]:
         """
         Creates an iterator for all BenchmarkData objects based on the data found in the given directory tree.
         :param base: Path-like
@@ -177,3 +177,41 @@ class ResultDataHandler:
         _log.info("Processed %d records." % total_count)
 
         return collated_data
+
+    @classmethod
+    def visualize_data(cls, data: pd.DataFrame, across: Tuple[str, Optional[str]], which: str, save_data: bool = True,
+                       loc: Union[Path, str] = None, **kwargs):
+        """
+        Generate standard visualizations for the data.
+        :param data: pd.DataFrame
+            A DataFrame object containing all the data that needs to be visualized.
+        :param across: tuple of strings
+            A tuple containing one or two strings, each representing an index name in 'data', across the values of
+            which comparisons are made in the visualization. Can be either a 1-tuple or a 2-tuple.
+        :param which: string
+            A string specifying which type of visualization should be generated. Supported visualizations:
+            ['mean-var', 't-SNE']. Check their respective methods for further details, including optional keyword
+            arguments.
+        :param save_data: bool
+            When True (default), saves the generated visualization and its relevant data to disk instead of displaying
+            it.
+        :param loc: Path-like or string
+            The full path to the directory where the generated visualization should be saved. Only relevant when
+            'save_data' is True. If None, uses the current working directory.
+        :param kwargs: dict
+            Optional keyword arguments that depend on the type of visualization selected by 'which'.
+        :return:
+        """
+
+        if loc is None:
+            loc = Path().cwd()
+
+        if not isinstance(loc, Path):
+            loc = Path(loc)
+
+        known_visualizations = ["mean-var", "t-sne"]
+        which = str(which).lower()
+        assert which in known_visualizations, f"Visualization type {which} not recognized. Must be one of " \
+                                              f"{str(known_visualizations)}."
+
+        pass
