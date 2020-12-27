@@ -142,6 +142,7 @@ class BenchmarkData:
             X = X.set_index(runhistory_indices)
             Y = Y.set_index(runhistory_indices)
             obj.runhistory_df = pd.concat((X, Y), axis=1)
+            obj.runhistory_df.columns.names = ["run_data"]
             _log.debug("Generated final runhistory dataframe of shape %s" % str(obj.runhistory_df.shape))
             _log.debug("Runhistory dataframe has index labels %s and column labels %s." %
                        (str(obj.runhistory_df.index.names), str(obj.runhistory_df.columns)))

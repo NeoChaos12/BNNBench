@@ -20,8 +20,16 @@ PRINT_TRACEBACKS = False
 
 class ResultDataHandler:
     # Use for a sanity check. These should always be the same as the corresponding attributes of BenchmarkData
-    metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
-    runhistory_row_index_labels: Sequence[str] = ("model", "rng_offset", "iteration")
+    fixed_index_labels = {
+        "metrics": {
+            "row": ("model", "metric", "rng_offset", "iteration"),
+            "col": ("metric_value",),
+        },
+        "runhistory": {
+            "row": ("model", "rng_offset", "iteration"),
+            "col": ("run_config",)
+        }
+    }
 
     def __init__(self):
         pass
@@ -59,7 +67,7 @@ class ResultDataHandler:
 
     @staticmethod
     def _get_data_iterator(base: Path, dir_tree: pd.DataFrame, metrics: bool = None, runhistory: bool = None,
-                           disable_verification: bool = False) -> Iterator[pd.DataFrame]:
+                           disable_verification: bool = False) -> Iterator[Tuple[int, np.ndarray, pd.DataFrame]]:
         """
         Creates an iterator for all BenchmarkData objects based on the data found in the given directory tree.
         :param base: Path-like
@@ -91,8 +99,17 @@ class ResultDataHandler:
             yield row[0], np.asarray(row[1:]), data.metrics_df if metrics else data.runhistory_df
 
     @classmethod
+    def __perform_sanity_check(cls):
+        assert cls.fixed_index_labels["metrics"]["row"] == BenchmarkData.metrics_row_index_labels, \
+            "Possible PyBNN version mismatch, known metrics DataFrame row index labels do not line up."
+        assert cls.fixed_index_labels["metrics"]["col"] == BenchmarkData.metrics_col_labels, \
+            "Possible PyBNN version mismatch, known metrics DataFrame column index labels do not line up."
+        assert cls.fixed_index_labels["runhistory"]["row"] == BenchmarkData.runhistory_row_index_labels, \
+            "Possible PyBNN version mismatch, known runhistory DataFrame row index labels do not line up."
+
+    @classmethod
     def collate_data(cls, loc: Union[Path, str], directory_structure: Sequence[str], which: str,
-                     safe_mode: bool = True) -> pd.DataFrame:
+                     new_columns: Sequence[str] = None, safe_mode: bool = True) -> pd.DataFrame:
         """
         Given a directory containing multiple stored dataframes readable by BenchmarkData, collates the data in the
         dataframes according to the rules specified by 'row_index_sequence'. This includes descending into an ordered
@@ -109,7 +126,14 @@ class ResultDataHandler:
             otherwise completely ignored in favor of respecting the already recorded data. For all other
             strings, the sub-directory names are treated as individual index labels belonging to that index name. Such
             extra index names can only occur before the preset index names. Note that "label" and "name" as used here
-            correspond to Pandas.MultiIndex terminology for the same.
+            correspond to Pandas.MultiIndex terminology for the same. Also check 'new_columns' to see how new column
+            index labels are to be specified.
+        :param new_columns: A sequence of strings
+            An optional sequence of strings from 'directory_structure' that are used to augment the column index
+            instead of the row index. This is necessary in the case of runhistory dataframes, as the column labels
+            (configuration parameter names) are not always guaranteed to be the same. In this case, unless the column
+            index is marked properly, values may be lost or overwritten during dataframe collation. When 'which' is
+            "metrics", the behaviour is not properly defined. Default: None
         :param which: str
             Can be either "metrics" or "runhistory", indicates which DataFrame is to be collected and collated.
         :param safe_mode: bool
@@ -119,52 +143,65 @@ class ResultDataHandler:
         """
 
         # Perform sanity check first
-        assert cls.metrics_row_index_labels == BenchmarkData.metrics_row_index_labels, \
-            "Possible PyBNN version mismatch, known metrics DataFrame row index labels do not line up."
+        cls.__perform_sanity_check()
 
         which = str(which).lower()
-        assert which in ("metrics", "runhistory"), "Argument 'which' must be either 'metrics' or 'runhistory', " \
-                                                   "received %s" % str(which)
+        assert which in cls.fixed_index_labels, \
+            f"Argument 'which' must be one of {list(cls.fixed_index_labels.keys())}, received %s" % str(which)
 
-        if which == "metrics":
-            fixed_row_index_labels = cls.metrics_row_index_labels
-            metrics = True
-        else:
-            fixed_row_index_labels = cls.runhistory_row_index_labels
-            metrics = False
+        fixed_row_index_labels = cls.fixed_index_labels[which]["row"]
+        fixed_col_index_labels = cls.fixed_index_labels[which]["col"]
 
+        assert not np.any(np.isin(new_columns, fixed_col_index_labels)), \
+            f"The newly assigned column names {new_columns} should not have any overlap with the fixed column names " \
+            f"{fixed_col_index_labels}"
+
+        metrics = which == "metrics"
+        new_columns = np.asarray(new_columns).reshape((-1,))
         directory_structure = np.asarray(directory_structure)
-        # noinspection PyUnresolvedReferences
-        idx_mask = np.logical_not(np.isin(directory_structure, fixed_row_index_labels))
-
-        # Mask away any elements from new_index_labels that are present in the directory structure array
-        new_index_labels = list(directory_structure[idx_mask])
+        # Mask that generates a view on indices corresponding to the fixed row labels
+        row_idx_mask = np.isin(directory_structure, fixed_row_index_labels)
+        # Mask that generates a view on indices corresponding to the new column labels
+        col_idx_mask = np.isin(directory_structure, new_columns)
+        # Mask away all those indices from directory_structure that correspond to labels that are present in the set
+        # of fixed row index labels as well as the set of new column index labels.
+        new_row_index_names_mask = np.logical_not(np.logical_or(row_idx_mask, col_idx_mask))
+        new_row_index_names = list(directory_structure[new_row_index_names_mask])
 
         subtree = cls._collect_directory_structure(loc, directory_structure)
         data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=metrics, runhistory=not metrics,
                                                          disable_verification=not safe_mode)
         collated_data = None
         count = itt.count(start=0)
-        original_index_names = None
-        new_index_names = None
+        original_row_index_names = None
+        collated_df_row_index_names = None
 
         for (row_idx, row_vals, data), _ in zip(data_iter, count):
             # Same masking process as for the index names
-            new_index_values = row_vals[idx_mask]
-            new_index_data = dict(zip(new_index_labels, new_index_values))
-            df = data.assign(**new_index_data)
+            new_row_index_values = row_vals[new_row_index_names_mask]
+            new_row_data = dict(zip(new_row_index_names, new_row_index_values))
+            df = data.assign(**new_row_data)
 
-            if new_index_names is None:
-                original_index_names = list(df.index.names)
-                new_index_names = new_index_labels + original_index_names
+            # Also update the column index, if needed
+            if np.any(col_idx_mask):
+                new_col_index_values = row_vals[col_idx_mask]
+                new_col_index = pd.MultiIndex.from_product(
+                    iterables=[[i] for i in new_col_index_values] + [df.columns.values],
+                    names=np.concatenate([new_columns, df.columns.names]))
+                df = df.set_axis(labels=new_col_index, axis=1)
+
+            if collated_df_row_index_names is None:
+                original_row_index_names = list(df.index.names)
+                collated_df_row_index_names = new_row_index_names + original_row_index_names
             else:
-                assert original_index_names == df.index.names, \
+                assert original_row_index_names == df.index.names, \
                     "All dataframes must have the same index structure in order to be compatible. %s Dataframe at %s " \
                     "had index names %s, expected %s." % (which, str(os.path.join(*row_vals)), str(df.index.names),
-                                                          str(original_index_names))
+                                                          str(original_row_index_names))
 
-            # Augment the index to ensure that this dataframe's values remain uniquely identifiable.
-            df = df.set_index(new_index_labels, append=True).reorder_levels(new_index_names)
+            # Augment the index to ensure that this dataframe's values remain uniquely identifiable for any given set
+            # of column labels.
+            df = df.set_index(new_row_index_names, append=True).reorder_levels(collated_df_row_index_names)
 
             if collated_data is None:
                 collated_data = df
