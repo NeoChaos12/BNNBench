@@ -19,8 +19,13 @@ import pandas as pd
 import numpy as np
 
 _log = logging.getLogger(__name__)
+# Instead of importing these values from BenchmarkData, they are intentionally re-written here to prevent and detect
+# version mismatch errors.
 fixed_runhistory_row_index_labels: Sequence[str] = ("model", "rng_offset", "iteration")
 y_value_label = 'objective_value'
+runhistory_data_level_name = 'run_data'
+tsne_data_col_labels = ['dim1', 'dim2', y_value_label]
+tsne_data_level_name = 'tsne_data'
 
 def _initialize_seaborn():
     """ Since seaborn can be finicky on the server, we only import it when we're really sure about it. """
@@ -35,26 +40,46 @@ def _initialize_seaborn():
 
 def perform_tsne(data: pd.DataFrame, save_data: bool = True, output_dir: Path = None) -> pd.DataFrame:
     """ Given a runhistory dataframe, generates TSNE embeddings in 2 dimensions for the data and returns the embedded
-    data as a dataframe with the same index as the runhistory dataframe. Remember that all models are initialized with
-    a number of random samples which are also stored in indices iteration<=0. Including these samples would pollute the
-    embedding since they will attach an extremely high probability score to the random samples, and we are mostly only
-    interested in the differences between the given samples. Therefore, all such samples are excluded at this stage
-    itself rather than in the plotting stage. """
+    data as a dataframe with the same index as the runhistory dataframe.
+
+    The DataFrame itself should conform to these conditions:
+    Row Index: Should be the Multi-Index with names defined in fixed_runhistory_row_index_labels, such that all values
+    up to and including index "0" of the level "iteration" correspond to random samples and will be excluded from the
+    t-SNE projection. Including these samples would pollute the embedding since they will attach an extremely high
+    probability score to the random samples, and we are mostly only interested in the differences between the model
+    generated samples. Therefore, all such samples are excluded at this stage itself rather than in the plotting stage.
+    Also excluded are NaN values.
+    Column Index: Homogenous in the column names i.e. include only the index level BenchmarkData.runhistory_col_name.
+    Correspondingly, the returned dataframe will have precisely 3 column labels: "dim1", "dim2", and "objective_value",
+    while the index level will be only "tsne_data". """
 
     if save_data:
         if output_dir is None:
             output_dir = Path().cwd()
         output_dir.mkdir(parents=True, exist_ok=True)
 
+    assert data.columns.nlevels == 1 and data.columns.names == (runhistory_data_level_name,), \
+        f"The DataFrame 'data' should have a 1-level column index containing only the level name " \
+        f"{runhistory_data_level_name}, was instead {data.columns.names} containing {data.columns.nlevels} levels."
+
     from sklearn.manifold import TSNE
     config_dims = data.columns.drop(y_value_label)
-    configs = data.loc[:, config_dims].xs(np.s_[1:], level=fixed_runhistory_row_index_labels[-1])
+    # Get rid of random samples
+    configs = data.xs(np.s_[1:], level=fixed_runhistory_row_index_labels[-1], drop_level=False)
+    # Get rid of NaN values
+    configs = configs[configs.notna().any(axis=1)]
     tsne = TSNE(n_components=2, n_jobs=1)
-    tsne_data = tsne.fit(configs.to_numpy())
+    # Perform t-SNE transformation on only the x-values
+    tsne_data = tsne.fit_transform(configs.loc[pd.IndexSlice[:], config_dims].to_numpy())
     # Append y-values to configuration embeddings
-    tsne_data = np.concatenate((tsne_data, data.loc[:, y_value_label]).to_numpy(), axis=1)
-    tsne_dims = ("dim1", "dim2", data.columns[-1])
-    tsne_df = pd.DataFrame(data=tsne_data, index=data.index, columns=tsne_dims)
+    y_values = configs.loc[pd.IndexSlice[:], y_value_label]
+    if tsne_data.shape[0] != y_values.shape[0]:
+        raise RuntimeError("There is a mismatch in the number of data points mapped by t-SNE and the number of data "
+                           "points expected.")
+    tsne_data = np.concatenate((tsne_data, y_values.to_numpy().reshape(-1, 1)), axis=1)
+    # Re-package the t-SNE embeddings into a DataFrame
+    tsne_cols = pd.Index(data=tsne_data_col_labels, name=tsne_data_level_name)
+    tsne_df = pd.DataFrame(data=tsne_data, index=configs.index, columns=tsne_cols)
 
     if save_data:
         tsne_df.to_pickle(output_dir / "tsne_embeddings.pkl.gz")

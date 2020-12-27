@@ -26,7 +26,8 @@ class BenchmarkData:
     metrics_col_index_names: Sequence[str] = ("metric_value",)
     
     runhistory_df: pd.DataFrame
-    runhistory_col_names: Sequence[str]
+    runhistory_col_labels: Sequence[str]
+    runhistory_col_name: str = "run_data"
     runhistory_yname: str = "objective_value"
     runhistory_row_index_names: Sequence[str] = ("model", "rng_offset", "iteration")
 
@@ -37,7 +38,7 @@ class BenchmarkData:
         self.n_iters = None
         self.metrics_df = None
         self.runhistory_df = None
-        self.runhistory_col_names = None
+        self.runhistory_col_labels = None
 
     @property
     def n_models(self):
@@ -118,7 +119,7 @@ class BenchmarkData:
         _log.debug("Generated final metrics dataframe of shape %s" % str(obj.metrics_df.shape))
 
         if include_runhistories:
-            obj.runhistory_col_names = emukit_space.parameter_names + obj.runhistory_yname
+            obj.runhistory_col_labels = emukit_space.parameter_names + obj.runhistory_yname
             # Extract run history. Remember that the run history works a bit differently. Given N_i initial evaluations,
             # and N_iter iterations, each repetition for each model generates N_i + N_iter points, where
             # N_iter=n_iters - 1. This is because n_iters includes an extra metric evaluation at the initialization
@@ -128,8 +129,8 @@ class BenchmarkData:
             # extra dimension that may be used by the run history of configurations or outputs.
 
             X = pd.DataFrame(data=outx.reshape(-1, emukit_space.dimensionality),
-                             columns=obj.runhistory_col_names[:-1])
-            Y = pd.DataFrame(data=outy.reshape(-1, 1), columns=(obj.runhistory_col_names[-1],))
+                             columns=obj.runhistory_col_labels[:-1])
+            Y = pd.DataFrame(data=outy.reshape(-1, 1), columns=(obj.runhistory_col_labels[-1],))
             n_i = outy.shape[-2] - (obj.n_iters - 1)
             runhistory_indices = pd.MultiIndex.from_product(
                 [all_indices[0], all_indices[2], np.arange(-n_i + 1, obj.n_iters)],
@@ -143,7 +144,7 @@ class BenchmarkData:
             X = X.set_index(runhistory_indices)
             Y = Y.set_index(runhistory_indices)
             obj.runhistory_df = pd.concat((X, Y), axis=1)
-            obj.runhistory_df.columns.names = ["run_data"]
+            obj.runhistory_df.columns.names = [obj.runhistory_col_name]
             _log.debug("Generated final runhistory dataframe of shape %s" % str(obj.runhistory_df.shape))
             _log.debug("Runhistory dataframe has index labels %s and column labels %s." %
                        (str(obj.runhistory_df.index.names), str(obj.runhistory_df.columns)))
@@ -210,7 +211,7 @@ class BenchmarkData:
             metadata = {**metadata, **{
                 "data_structure": {
                     "runhistory_row_index_names": self.runhistory_row_index_names,
-                    "runhistory_col_names": self.runhistory_col_names
+                    "runhistory_col_labels": self.runhistory_col_labels
                 }
             }}
 
@@ -372,7 +373,7 @@ class BenchmarkData:
             # Verify this metadata for consistency: {
             #   "data_structure": {
             #       "runhistory_row_index_names": self.runhistory_row_index_names,
-            #       "runhistory_col_names": self.runhistory_col_names
+            #       "runhistory_col_labels": self.runhistory_col_labels
             #   }
             # }
             index = self.runhistory_df.index
@@ -380,9 +381,9 @@ class BenchmarkData:
                 assert jdata["data_structure"]["runhistory_row_index_names"] == index.names, \
                     "JSON metadata for index labels does not match dataframe index. %s vs %s" % \
                     (str(jdata["data_structure"]["runhistory_row_index_names"]), str(index.names))
-                assert all(jdata["data_structure"]["runhistory_col_names"] == self.runhistory_df.columns), \
+                assert all(jdata["data_structure"]["runhistory_col_labels"] == self.runhistory_df.columns), \
                     "JSON metadata for column labels does not match dataframe column. %s vs %s" % \
-                    (str(jdata["data_structure"]["runhistory_col_names"]), str(self.runhistory_df.columns))
+                    (str(jdata["data_structure"]["runhistory_col_labels"]), str(self.runhistory_df.columns))
             except Exception as e:
                 _log.warning("Mismatch between stored dataframe metadata and json metadata, json metadata might "
                              "get overwritten or dataframes may not align properly. From:\n%s" % str(e))
@@ -453,12 +454,12 @@ class BenchmarkData:
         """
         Parse the stored runhistory dataframe and set the following metadata accordingly.
 
-        runhistory_col_names: Sequence[str]
+        runhistory_col_labels: Sequence[str]
 
         :return: None
         """
 
-        self.runhistory_col_names = self.runhistory_df.columns
+        self.runhistory_col_labels = self.runhistory_df.columns
 
     def _reset_all_metadata(self):
         """
