@@ -100,11 +100,11 @@ class ResultDataHandler:
 
     @classmethod
     def __perform_sanity_check(cls):
-        assert cls.fixed_index_labels["metrics"]["row"] == BenchmarkData.metrics_row_index_labels, \
+        assert cls.fixed_index_labels["metrics"]["row"] == BenchmarkData.metrics_row_index_names, \
             "Possible PyBNN version mismatch, known metrics DataFrame row index labels do not line up."
-        assert cls.fixed_index_labels["metrics"]["col"] == BenchmarkData.metrics_col_labels, \
+        assert cls.fixed_index_labels["metrics"]["col"] == BenchmarkData.metrics_col_index_names, \
             "Possible PyBNN version mismatch, known metrics DataFrame column index labels do not line up."
-        assert cls.fixed_index_labels["runhistory"]["row"] == BenchmarkData.runhistory_row_index_labels, \
+        assert cls.fixed_index_labels["runhistory"]["row"] == BenchmarkData.runhistory_row_index_names, \
             "Possible PyBNN version mismatch, known runhistory DataFrame row index labels do not line up."
 
     @classmethod
@@ -121,7 +121,7 @@ class ResultDataHandler:
             Each string in the sequence specifies what row index name the data at the corresponding sub-directory
             level corresponds to, such that the first index (index 0 for a list) in 'directory_structure' corresponds
             to the sub-directories that are immediate children of 'loc'. Strings described in
-            BenchmarkData.metrics_row_index_labels are treated specially: Since they're always present in every
+            BenchmarkData.metrics_row_index_names are treated specially: Since they're always present in every
             recorded dataframe, the corresponding directory names are only used for filesystem traversal and are
             otherwise completely ignored in favor of respecting the already recorded data. For all other
             strings, the sub-directory names are treated as individual index labels belonging to that index name. Such
