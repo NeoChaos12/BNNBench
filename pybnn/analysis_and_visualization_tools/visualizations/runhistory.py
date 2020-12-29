@@ -44,7 +44,8 @@ def _initialize_seaborn():
 
 def perform_tsne(data: pd.DataFrame, save_data: bool = True, output_dir: Path = None,
                  filename: str = "tsne_embeddings") -> pd.DataFrame:
-    """ Given a runhistory dataframe, generates TSNE embeddings in 2 dimensions for the data and returns the embedded
+    """
+    Given a runhistory dataframe, generates TSNE embeddings in 2 dimensions for the data and returns the embedded
     data as a dataframe with the same index as the runhistory dataframe.
 
     The DataFrame itself should conform to these conditions:
@@ -54,9 +55,10 @@ def perform_tsne(data: pd.DataFrame, save_data: bool = True, output_dir: Path = 
     probability score to the random samples, and we are mostly only interested in the differences between the model
     generated samples. Therefore, all such samples are excluded at this stage itself rather than in the plotting stage.
     Also excluded are NaN values.
-    Column Index: Homogenous in the column names i.e. include only the index level BenchmarkData.runhistory_col_name.
-    Correspondingly, the returned dataframe will have precisely 3 column labels: "dim1", "dim2", and "objective_value",
-    while the index level will be only "tsne_data". """
+    Column Index: Homogenous in the column names i.e. include only the index level
+    BenchmarkData.runhistory_base_col_name. Correspondingly, the returned dataframe will have precisely 3 column
+    labels: "dim1", "dim2", and "objective_value", while the index level will be only "tsne_data".
+    """
 
     if save_data:
         if output_dir is None:

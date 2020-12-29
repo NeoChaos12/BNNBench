@@ -27,7 +27,7 @@ class BenchmarkData:
     
     runhistory_df: pd.DataFrame
     runhistory_col_labels: Sequence[str]
-    runhistory_col_name: str = "run_data"
+    runhistory_base_col_name: str = "run_data"
     runhistory_yname: str = "objective_value"
     runhistory_row_index_names: Sequence[str] = ("model", "rng_offset", "iteration")
 
@@ -119,7 +119,7 @@ class BenchmarkData:
         _log.debug("Generated final metrics dataframe of shape %s" % str(obj.metrics_df.shape))
 
         if include_runhistories:
-            obj.runhistory_col_labels = emukit_space.parameter_names + obj.runhistory_yname
+            obj.runhistory_col_labels = emukit_space.parameter_names + [obj.runhistory_yname]
             # Extract run history. Remember that the run history works a bit differently. Given N_i initial evaluations,
             # and N_iter iterations, each repetition for each model generates N_i + N_iter points, where
             # N_iter=n_iters - 1. This is because n_iters includes an extra metric evaluation at the initialization
@@ -144,7 +144,7 @@ class BenchmarkData:
             X = X.set_index(runhistory_indices)
             Y = Y.set_index(runhistory_indices)
             obj.runhistory_df = pd.concat((X, Y), axis=1)
-            obj.runhistory_df.columns.names = [obj.runhistory_col_name]
+            obj.runhistory_df.columns.names = [obj.runhistory_base_col_name]
             _log.debug("Generated final runhistory dataframe of shape %s" % str(obj.runhistory_df.shape))
             _log.debug("Runhistory dataframe has index labels %s and column labels %s." %
                        (str(obj.runhistory_df.index.names), str(obj.runhistory_df.columns)))
@@ -168,11 +168,11 @@ class BenchmarkData:
         :return: None
         """
         _log.info("Saving benchmark evaluation data in %s" % path)
-        self.save_metadata(path, **(kwargs.get("json_kwargs")))
+        self.save_metadata(path, **(kwargs.get("json_kwargs", {})))
         if metrics:
-            self.save_metrics(path, **(kwargs.get("pd_kwargs")))
+            self.save_metrics(path, **(kwargs.get("pd_kwargs", {})))
         if runhistory:
-            self.save_runhistory(**(kwargs.get("pd_kwargs")))
+            self.save_runhistory(path, **(kwargs.get("pd_kwargs", {})))
         _log.info("Finished saving to disk.")
 
     def save_metadata(self, path: Union[Path, str], **kwargs):
@@ -196,7 +196,7 @@ class BenchmarkData:
         metadata_file = path / "metadata.json"
         metadata = {}
         if self.metrics_df is not None:
-            metadata = {**metadata, **{
+            metadata = {
                     "model_names": self.model_names,
                     "metric_names": self.metric_names,
                     "n_repeats": self.n_repeats,
@@ -205,15 +205,16 @@ class BenchmarkData:
                         "metrics_row_index_names": self.metrics_row_index_names,
                         "metrics_col_index_names": self.metrics_col_index_names
                     }
-                }}
+                }
 
         if self.runhistory_df is not None:
-            metadata = {**metadata, **{
-                "data_structure": {
+            rh_meta = {
+                "data_structure": {**metadata.get("data_structure", {}), **{
                     "runhistory_row_index_names": self.runhistory_row_index_names,
                     "runhistory_col_labels": self.runhistory_col_labels
                 }
             }}
+            metadata = {**metadata, **rh_meta}
 
         if metadata:
             with open(metadata_file, 'w') as fp:
@@ -446,9 +447,10 @@ class BenchmarkData:
         :return: None 
         """
         
-        self.model_names, self.metric_names = self.metrics_df.index.names[:2]
-        self.n_repeats = self.metrics_df.index.get_level_values(2).unique().shape[0]
-        self.n_iters = self.metrics_df.index.get_level_values(3).unique().shape[0]
+        self.model_names: Sequence[str] = self.metrics_df.index.unique(self.metrics_row_index_names[0]).tolist()
+        self.metric_names: Sequence[str] = self.metrics_df.index.unique(self.metrics_row_index_names[1]).tolist()
+        self.n_repeats: int = self.metrics_df.index.unique(self.metrics_row_index_names[2]).shape[0]
+        self.n_iters: int = self.metrics_df.index.unique(self.metrics_row_index_names[3]).shape[0]
 
     def _reset_runhistory_metadata(self):
         """
@@ -459,7 +461,8 @@ class BenchmarkData:
         :return: None
         """
 
-        self.runhistory_col_labels = self.runhistory_df.columns
+        # Remember that there are no guarantees for the order of values here.
+        self.runhistory_col_labels: Sequence[str] = self.runhistory_df.columns.unique(-1).tolist()
 
     def _reset_all_metadata(self):
         """
