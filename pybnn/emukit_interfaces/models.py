@@ -46,7 +46,6 @@ class SciPyLikeModelWrapper(IModel):
         self.model = model
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        # TODO: Ensure all models return either variance or standard deviation, and there is no mix-up.
         mean, var = self.model.predict(X)
 
         if X.ndim == 1:
@@ -99,16 +98,11 @@ class PyBNNModel(IModel):
         super(PyBNNModel, self).__init__()
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        # TODO: Ensure all models return either variance or standard deviation, and there is no mix-up.
         # PyBNN models are expected to always return 2D arrays.
         mean, var = self.model.predict(X_test=X)
 
         return mean, var
 
-    # TODO: Check if final model training should occur on training data set only or on training+validation data
-    # Currently, there is a discrepancy between the data passed to set_data and the data returned by the properties
-    # X and Y, since the fit() method first splits the data into a training and validation set, and X and Y only
-    # correspond to the training data. The validation data is effectively "lost".
     def set_data(self, X: np.ndarray, Y: np.ndarray) -> None:
         self.model = self.model_type()
         self.model.model_params = self.model_params

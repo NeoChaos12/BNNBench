@@ -26,6 +26,10 @@ class MLP(BaseModel):
     # Type hints for user-modifiable attributes go here
     hidden_layer_sizes: Union[int, list]
     num_confs: int
+    # When True (default) indicates that the hyperparameters of the model should be internally optimized before model
+    # fitting takes place. When False, the stored model_params of the model object are used to directly fit the model
+    # on the data.
+    optimize_hypers: bool
     # ------------------------------------
 
     # Attributes that are not meant to be user-modifiable model parameters go here
@@ -41,7 +45,8 @@ class MLP(BaseModel):
     __modelParamsDefaultDict = {
         "hidden_layer_sizes": [50, 50, 50],
         "weight_decay": 0.1,
-        "num_confs": 30
+        "num_confs": 30,
+        "optimize_hypers": True
     }
     __modelParams = namedtuple("mlpModelParams", __modelParamsDefaultDict.keys(),
                                defaults=__modelParamsDefaultDict.values())
@@ -68,7 +73,9 @@ class MLP(BaseModel):
     def __init__(self,
                  hidden_layer_sizes=_default_model_params.hidden_layer_sizes,
                  weight_decay=_default_model_params.weight_decay,
-                 num_confs=_default_model_params.num_confs, **kwargs):
+                 num_confs=_default_model_params.num_confs,
+                 optimize_hypers=_default_model_params.optimize_hypers,
+                 **kwargs):
         """
         Extension to Base Model that employs a Multi-Layer Perceptron. Most other models that need to use an MLP can
         be subclassed from this class.
@@ -93,7 +100,7 @@ class MLP(BaseModel):
         self.hidden_layer_sizes = hidden_layer_sizes
         self.weight_decay = weight_decay
         self.num_confs = num_confs
-
+        self.optimize_hypers = optimize_hypers
         # The MLP model brooks no compromise on these non-user defined parameters, but they may be overwritten by child
         # classes.
         self.output_dims = 1
@@ -350,62 +357,66 @@ class MLP(BaseModel):
     def fit(self, X, y):
         """
         Fits this model to the given data and returns the corresponding optimum weight decay value, final validation
-        loss and hyperparameter fitting history.
+        loss and hyperparameter fitting history (returns None if self.optimize_hypers is False).
         Generates a  validation set, generates num_confs random values for precision, and for each configuration,
         generates a weight decay value which in turn is used to train a network. The precision value with the minimum
         validation loss is returned.
 
         :param X: Features.
         :param y: Regression targets.
-        :return: tuple [final evaluation results, history]
+        :return: tuple [final evaluation results, history] or None if 'optimize_hypers' is False
         """
-        from sklearn.model_selection import train_test_split
 
         logger.info("Fitting %s model to the given data." % type(self).__name__)
 
-        hpspace = self.get_hyperparameter_space()
-        confs = hpspace.sample_configuration(self.num_confs)
-        logger.debug("Generated %d random configurations." % self.num_confs)
+        history = False
 
-        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
-        logger.debug("Generated validation set.")
+        if self.optimize_hypers:
+            logger.debug("Performing internal hyper-parameter optimization of PyBNN Model.")
+            from sklearn.model_selection import train_test_split
 
-        optim = None
-        history = []
-        old_tblog_flag = globalConfig.tblog
-        globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
-        for idx, conf in enumerate(confs, start=1):
-            logger.debug("Performing HPO, sampled configuration (#%d/%d):\n%s" % (idx, self.num_confs, str(conf)))
+            hpspace = self.get_hyperparameter_space()
+            confs = hpspace.sample_configuration(self.num_confs)
+            logger.debug("Generated %d random configurations." % self.num_confs)
 
-            new_model = self.__class__()
-            new_model_params = self.model_params._replace(**conf.get_dictionary(), **self.fixed_model_params)
+            Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True)
+            logger.debug("Generated validation set.")
 
-            new_model.model_params = new_model_params
-            new_model.preprocess_training_data(Xtrain, ytrain)
-            new_model.train_network()
+            optim = None
+            history = []
+            old_tblog_flag = globalConfig.tblog
+            globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
+            for idx, conf in enumerate(confs, start=1):
+                logger.debug("Performing HPO, sampled configuration (#%d/%d):\n%s" % (idx, self.num_confs, str(conf)))
 
-            logger.debug("Finished training sample model.")
+                new_model = self.__class__()
+                new_model_params = self.model_params._replace(**conf.get_dictionary(), **self.fixed_model_params)
 
-            validation_loss = new_model.validation_loss(Xval, yval)
-            logger.debug("Generated validation loss %f" % np.mean(validation_loss))
+                new_model.model_params = new_model_params
+                new_model.preprocess_training_data(Xtrain, ytrain)
+                new_model.train_network()
 
-            res = (validation_loss, conf)
+                logger.debug("Finished training sample model.")
 
-            if optim is None or validation_loss < optim[0]:
-                optim = res
-                logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
+                validation_loss = new_model.validation_loss(Xval, yval)
+                logger.debug("Generated validation loss %f" % np.mean(validation_loss))
 
-            history.append(res)
+                res = (validation_loss, conf)
 
-        logger.info("Training final model using optimal configuration %s\n" % optim[1])
-        globalConfig.tblog = old_tblog_flag
+                if optim is None or validation_loss < optim[0]:
+                    optim = res
+                    logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
 
-        self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
+                history.append(res)
+                del new_model # Conserve memory
+
+            logger.info("Training final model using optimal configuration %s\n" % optim[1])
+            globalConfig.tblog = old_tblog_flag
+
+            self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
+
         self.preprocess_training_data(X, y)
         self.train_network()
-
-        # results = self.evaluate(Xval, yval)
-        # logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         # TODO: Implement model saving for DeepEnsemble

@@ -37,14 +37,20 @@ def create_random_search_loop(space: ParameterSpace, initial_state: LoopState, *
 
 
 def create_pybnn_bo_loop(model_type: ModelType, model_params: dict, space: ParameterSpace, initial_state: LoopState,
-                         rng: Union[None, int, np.random.RandomState] = None, **kwargs) -> BayesianOptimizationLoop:
+                         rng: Union[None, int, np.random.RandomState] = None, optimize_hypers_only_once: bool = False,
+                         **kwargs) -> BayesianOptimizationLoop:
 
     _log.debug("Creating Bayesian Optimization Loop for PyBNN model of type %s, parameter space %s, and an initial "
-                 "loop state containing %d points." % (model_type, space, initial_state.X.shape[0]))
+               "loop state containing %d points." % (model_type, space, initial_state.X.shape[0]))
     model_type = model_classes[model_type]
     model_params = model_type.modelParamsContainer()._replace(**model_params, rng=rng)
     pybnn_model = PyBNNModel(model=model_type, model_params=model_params)
     pybnn_model.set_data(initial_state.X, initial_state.Y)
+    if optimize_hypers_only_once:
+        # Disable internal hyper-parameter optimization for all future calls to "fit()" for this model and store the
+        # optimized model parameters for re-use in all upcoming calls to "fit()" on this object's model.
+        pybnn_model.model_params = pybnn_model.model.model_params._replace(optimize_hypers=False)
+
     boloop = BayesianOptimizationLoop(space=space, model=pybnn_model)
     boloop.loop_state = LoopState(initial_results=initial_state.results[:])
     _log.info("BOLoop for PyBNN model of type %s initialized." % str(model_type).split('.')[-1])

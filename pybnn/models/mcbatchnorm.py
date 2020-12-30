@@ -116,7 +116,7 @@ class MCBatchNorm(MLP):
     def fit(self, X, y):
         """
         Fits this model to the given data and returns the corresponding optimum hyperparameter configuration, final
-        validation loss and hyperparameter fitting history.
+        validation loss and hyperparameter fitting history (returns None if self.optimize_hypers is False).
         Generates a  validation set and generates num_confs hyperparameter configurations that are validated against
         validation loss on small training samples to choose the optimal configuration for full network training.
         Note: Completely overrides the fit() method of MLP on account of limitations in the ConfigSpace package.
@@ -127,78 +127,79 @@ class MCBatchNorm(MLP):
         """
 
         # TODO: Update modelParams property to synchronize it with ConfigSpace, thus allowing MLP.fit() to be re-used as
-        # TODO: well as extending the functionality of the model to generic hyperparameter optimizers.
-
-        from sklearn.model_selection import train_test_split
-        from math import log10, floor
+        #  well as extending the functionality of the model to generic hyperparameter optimizers.
 
         logger.info("Fitting MC-BatchNorm model to the given data.")
 
-        cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark", seed=self.rng.randint(0, 1_000_000_000))
-        # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
+        history = None
 
-        inv_var_y = 1. / np.var(y)  # Assume y is 1-D
-        tau_range_lower = int(floor(log10(inv_var_y * 0.5))) - 1
-        tau_range_upper = int(floor(log10(inv_var_y * 2))) + 1
-        cs.add_hyperparameter(UniformIntegerHyperparameter(name="batch_size", lower=5, upper=10))
-        cs.add_hyperparameter(UniformIntegerHyperparameter(name="weight_decay", lower=-15, upper=-1))
-        # cs.add_hyperparameter(UniformIntegerHyperparameter(name="num_epochs", lower=5, upper=20))
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
-                                                         upper=10 ** tau_range_upper))
-        confs = cs.sample_configuration(self.num_confs)
-        logger.debug("Generated %d random configurations." % self.num_confs)
+        if self.optimize_hypers:
+            logger.debug("Performing internal hyper-parameter optimization of MC-BatchNorm Model.")
+            from sklearn.model_selection import train_test_split
+            from math import log10, floor
+            cs = ConfigurationSpace(name="PyBNN MC-BatchNorm Benchmark", seed=self.rng.randint(0, 1_000_000_000))
+            # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
-        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True, random_state=self.rng)
-        logger.debug("Generated validation set.")
+            inv_var_y = 1. / np.var(y)  # Assume y is 1-D
+            tau_range_lower = int(floor(log10(inv_var_y * 0.5))) - 1
+            tau_range_upper = int(floor(log10(inv_var_y * 2))) + 1
+            cs.add_hyperparameter(UniformIntegerHyperparameter(name="batch_size", lower=5, upper=10))
+            cs.add_hyperparameter(UniformIntegerHyperparameter(name="weight_decay", lower=-15, upper=-1))
+            # cs.add_hyperparameter(UniformIntegerHyperparameter(name="num_epochs", lower=5, upper=20))
+            cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
+                                                             upper=10 ** tau_range_upper))
+            confs = cs.sample_configuration(self.num_confs)
+            logger.debug("Generated %d random configurations." % self.num_confs)
 
-        optim = None
-        history = []
-        old_tblog_flag = globalConfig.tblog
-        globalConfig.tblog = False
+            Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True, random_state=self.rng)
+            logger.debug("Generated validation set.")
 
-        for idx, conf in enumerate(confs):
-            logger.debug("Training configuration #%d" % (idx + 1))
-            logger.debug("Sampled configuration %s" % conf)
+            optim = None
+            history = []
+            old_tblog_flag = globalConfig.tblog
+            globalConfig.tblog = False  # Disable Tensorboard logging if it was on since it's not needed here.
 
-            new_model = MCBatchNorm()
-            new_model.model_params = self.model_params._replace(**{
-                "batch_size": 2 ** conf.get("batch_size"),
-                "weight_decay": 10 ** conf.get("weight_decay"),
-                # "num_epochs": 100 * conf.get("num_epochs"),
-                "num_epochs": self.num_epochs // 10,
-                "precision": conf.get("precision")
+            for idx, conf in enumerate(confs):
+                logger.debug("Training configuration #%d" % (idx + 1))
+                logger.debug("Sampled configuration %s" % conf)
+
+                new_model = MCBatchNorm()
+                new_model.model_params = self.model_params._replace(**{
+                    "batch_size": 2 ** conf.get("batch_size"),
+                    "weight_decay": 10 ** conf.get("weight_decay"),
+                    # "num_epochs": 100 * conf.get("num_epochs"),
+                    "num_epochs": self.num_epochs // 10,
+                    "precision": conf.get("precision")
+                })
+                new_model.preprocess_training_data(Xtrain, ytrain)
+                new_model.train_network()
+                logger.debug("Finished training sample network.")
+
+                # Set validation loss to mean NLL
+                valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=500)["LogLikelihood"]
+                logger.debug("Generated validation loss %f" % valid_loss)
+
+                res = (valid_loss, conf)
+
+                if optim is None or valid_loss < optim[0]:
+                    optim = res
+                    logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
+
+                history.append(res)
+                del new_model # Conserve memory
+
+            logger.info("Training final model using optimal configuration %s\n" % optim[1])
+            globalConfig.tblog = old_tblog_flag
+
+            self.model_params = self.model_params._replace(**{
+                "batch_size": 2 ** optim[1].get("batch_size"),
+                "weight_decay": 10 ** optim[1].get("weight_decay"),
+                # "num_epochs": 100 * optim[1].get("num_epochs"),
+                "precision": optim[1].get("precision")
             })
-            new_model.preprocess_training_data(Xtrain, ytrain)
-            new_model.train_network()
-            logger.debug("Finished training sample network.")
-
-            # Set validation loss to mean NLL
-            valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=500)["LogLikelihood"]
-            logger.debug("Generated validation loss %f" % valid_loss)
-
-            res = (valid_loss, conf)
-
-            if optim is None or valid_loss < optim[0]:
-                optim = res
-                logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
-
-            history.append(res)
-
-        logger.info("Training final model using optimal configuration %s\n" % optim[1])
-        globalConfig.tblog = old_tblog_flag
-
-        self.model_params = self.model_params._replace(**{
-            "batch_size": 2 ** optim[1].get("batch_size"),
-            "weight_decay": 10 ** optim[1].get("weight_decay"),
-            # "num_epochs": 100 * optim[1].get("num_epochs"),
-            "precision": optim[1].get("precision")
-        })
 
         self.preprocess_training_data(X, y)
         self.train_network()
-
-        # results = self.evaluate(Xval, yval)
-        # logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         # if globalConfig.save_model:
@@ -207,7 +208,7 @@ class MCBatchNorm(MLP):
         # return results, history
         return history
 
-    def _predict_mc(self, X_test, nsamples=1000):
+    def _predict_mc(self, X_test, nsamples=500):
         r"""
         Performs nsamples forward passes on the given data and returns the results.
 

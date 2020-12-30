@@ -76,6 +76,13 @@ parser.add_argument("--seed-offset", type=int, default=0,
                          "another sequence of seeds, one of which is used as the global numpy seed for model training. "
                          "The seed offset determines the index position in this sequence the value at which is used "
                          "for the latter purpose. Offset range: [0, 1e9)")
+parser.add_argument("--disable_pybnn_internal_optimization", action="store_true", default=False,
+                    help="Completely disables internal hyper-parameter optimization performed by PyBNN models.")
+parser.add_argument("--optimize_hypers_only_once", action="store_true", default=False,
+                    help="Perform internal hyper-parameter optimization for PyBNN models before model fitting takes "
+                         "place only once, during warm start. When False, hyper-parameters are optimized in every "
+                         "iteration. Only works if internal optimization is enabled i.e. if "
+                         "--disable_pybnn_internal_optimization is not given.")
 args = parser.parse_args()
 
 # Logging setup
@@ -123,9 +130,12 @@ NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
 # ############# SETUP MODELS ###########################################################################################
 
 
-mcdropout_model_params = dict(dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50])
-mcbatchnorm_model_params = dict(hidden_layer_sizes=[50])
-ensemble_model_params = dict(hidden_layer_sizes=[50], n_learners=5)
+mcdropout_model_params = dict(dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50],
+                              optimize_hypers=not args.disable_pybnn_internal_optimization)
+mcbatchnorm_model_params = dict(hidden_layer_sizes=[50],
+                              optimize_hypers=not args.disable_pybnn_internal_optimization)
+ensemble_model_params = dict(hidden_layer_sizes=[50], n_learners=5,
+                              optimize_hypers=not args.disable_pybnn_internal_optimization)
 
 
 all_loops = [
@@ -152,6 +162,7 @@ all_loops = [
             model_type=ModelType.MCDROPOUT,
             model_params=mcdropout_model_params,
             space=target_function.emukit_space,
+            optimize_hypers_only_once=args.optimize_hypers_only_once
         )
     ),
     (
@@ -161,6 +172,7 @@ all_loops = [
             model_type=ModelType.MCBATCHNORM,
             model_params=mcbatchnorm_model_params,
             space=target_function.emukit_space,
+            optimize_hypers_only_once=args.optimize_hypers_only_once
         )
     ),
     (
@@ -170,6 +182,7 @@ all_loops = [
             model_type=ModelType.ENSEMBLE,
             model_params=ensemble_model_params,
             space=target_function.emukit_space,
+            optimize_hypers_only_once=args.optimize_hypers_only_once
         )
     )
 ]

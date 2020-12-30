@@ -173,7 +173,7 @@ class MCDropout(MLP):
     def fit(self, X, y):
         """
         Fits this model to the given data and returns the corresponding optimum precision value, final validation loss
-        and hyperparameter fitting history.
+        and hyperparameter fitting history (returns None if self.optimize_hypers is False).
         Generates a  validation set, generates num_confs random values for precision, and for each configuration,
         generates a weight decay value which in turn is used to train a network. The precision value with the minimum
         validation loss is returned.
@@ -185,69 +185,70 @@ class MCDropout(MLP):
         """
 
         # TODO: Update modelParams property to synchronize it with ConfigSpace, thus allowing MLP.fit() to be re-used as
-        # TODO: well as extending the functionality of the model to generic hyperparameter optimizers.
-
-        from sklearn.model_selection import train_test_split
-        from math import log10, floor
+        #  well as extending the functionality of the model to generic hyperparameter optimizers.
 
         logger.info("Fitting MC-Dropout model to the given data.")
 
-        cs = ConfigurationSpace(name="PyBNN MC-Dropout Benchmark", seed=self.rng.randint(0, 1_000_000_000))
-        # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
+        history = None
 
-        inv_var_y = 1. / np.var(y)  # Assume y is 1-D
-        tau_range_lower = int(floor(log10(inv_var_y * 0.5))) - 1
-        tau_range_upper = int(floor(log10(inv_var_y * 2))) + 1
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
-                                                         upper=10 ** tau_range_upper))
-        cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-3, upper=9e-1, log=True))
-        confs = cs.sample_configuration(self.num_confs)
-        logger.debug("Generated %d random configurations." % self.num_confs)
+        if self.optimize_hypers:
+            logger.debug("Performing internal hyper-parameter optimization of MC-Dropout Model.")
+            from sklearn.model_selection import train_test_split
+            from math import log10, floor
+            cs = ConfigurationSpace(name="PyBNN MC-Dropout Benchmark", seed=self.rng.randint(0, 1_000_000_000))
+            # TODO: Compare UniformFloat vs Categorical (the way Gal has implemented it)
 
-        Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True, random_state=self.rng)
-        logger.debug("Generated validation set.")
+            inv_var_y = 1. / np.var(y)  # Assume y is 1-D
+            tau_range_lower = int(floor(log10(inv_var_y * 0.5))) - 1
+            tau_range_upper = int(floor(log10(inv_var_y * 2))) + 1
+            cs.add_hyperparameter(UniformFloatHyperparameter(name="precision", lower=10 ** tau_range_lower,
+                                                             upper=10 ** tau_range_upper))
+            cs.add_hyperparameter(UniformFloatHyperparameter(name="pdrop", lower=1e-3, upper=9e-1, log=True))
+            confs = cs.sample_configuration(self.num_confs)
+            logger.debug("Generated %d random configurations." % self.num_confs)
 
-        optim = None
-        history = []
-        old_tblog_flag = globalConfig.tblog
-        globalConfig.tblog = False  # TODO: Implement/Test a way to keep track of interim logs if needed
-        for idx, conf in enumerate(confs):
-            logger.debug("Training configuration #%d" % (idx + 1))
-            logger.debug("Sampled configuration %s" % conf)
+            Xtrain, Xval, ytrain, yval = train_test_split(X, y, train_size=0.8, shuffle=True, random_state=self.rng)
+            logger.debug("Generated validation set.")
 
-            new_model = MCDropout()
-            new_model.model_params = self.model_params._replace(**conf.get_dictionary(),
-                                                                num_epochs=self.num_epochs // 10)
+            optim = None
+            history = []
+            old_tblog_flag = globalConfig.tblog
+            globalConfig.tblog = False  # Disable Tensorboard logging if it was on since it's not needed here.
+            for idx, conf in enumerate(confs):
+                logger.debug("Training configuration #%d" % (idx + 1))
+                logger.debug("Sampled configuration %s" % conf)
 
-            logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
+                new_model = MCDropout()
+                new_model.model_params = self.model_params._replace(**conf.get_dictionary(),
+                                                                    num_epochs=self.num_epochs // 10)
 
-            new_model.preprocess_training_data(Xtrain, ytrain)
-            new_model.train_network()
-            logger.debug("Finished training sample network.")
+                logger.debug("Using weight decay values: %s" % str(new_model.weight_decay))
 
-            # Set validation loss to mean negative log likelihood
-            valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=1000)["LogLikelihood"]
-            logger.debug("Generated validation loss %f" % valid_loss)
+                new_model.preprocess_training_data(Xtrain, ytrain)
+                new_model.train_network()
+                logger.debug("Finished training sample network.")
 
-            res = (valid_loss, conf)
+                # Set validation loss to mean negative log likelihood
+                valid_loss = -new_model.evaluate(X_test=Xval, y_test=yval, nsamples=1000)["LogLikelihood"]
+                logger.debug("Generated validation loss %f" % valid_loss)
 
-            if optim is None or valid_loss < optim[0]:
-                optim = res
-                logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
+                res = (valid_loss, conf)
 
-            history.append(res)
-            # Explicitly free up memory RIGHT NOW, useful for cases with bigger models or large datasets.
-            del new_model
+                if optim is None or valid_loss < optim[0]:
+                    optim = res
+                    logger.debug("Updated validation loss %f, optimum configuration to %s" % optim)
 
-        logger.info("Training final model using optimal configuration %s\n" % optim[1])
-        globalConfig.tblog = old_tblog_flag
+                history.append(res)
+                # Explicitly free up memory RIGHT NOW, useful for cases with bigger models or large datasets.
+                del new_model
 
-        self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
+            logger.info("Training final model using optimal configuration %s\n" % optim[1])
+            globalConfig.tblog = old_tblog_flag
+
+            self.model_params = self.model_params._replace(**(optim[1].get_dictionary()))
+
         self.preprocess_training_data(X, y)
         self.train_network()
-
-        # results = self.evaluate(Xval, yval)
-        # logger.info("Final analytics data of network training: %s" % str(results))
 
         # TODO: Integrate saving model parameters file here?
         # if globalConfig.save_model:
@@ -256,7 +257,7 @@ class MCDropout(MLP):
         # return results, history
         return history
 
-    def _predict_mc(self, X_test, nsamples=1000):
+    def _predict_mc(self, X_test, nsamples=500):
         r"""
         Performs nsamples stochastic passes over the trained model and returns the predictions.
 
@@ -298,7 +299,7 @@ class MCDropout(MLP):
 
         return Yt_hat
 
-    def predict(self, X_test, nsamples=1000):
+    def predict(self, X_test, nsamples=500):
         """
         Given a set of input data features and the number of samples, returns the corresponding predictive means and
         variances.
@@ -331,7 +332,7 @@ class MCDropout(MLP):
 
         return super(MCDropout, self).predict(X_test=X_test)
 
-    def evaluate(self, X_test, y_test, nsamples=1000):
+    def evaluate(self, X_test, y_test, nsamples=500):
         """
         Evaluates the trained model on the given test data, returning the results of the analysis as the RMSE of the
         standard dropout prediction and the RMSE and Log-Likelihood of the MC-Dropout prediction.
