@@ -111,9 +111,15 @@ def configuration_CS_to_Emu(config: Union[cs.Configuration, Sequence, Dict], csp
             # Assume vector representation was provided
             config = cs.Configuration(configuration_space=cspace, vector=config)
         elif isinstance(config, Dict):
+            # Numpy can cause havoc while loading values of different datatypes since every numpy array can only have
+            # one dtype for the entire array under the current data loading regime. Thus, we need to do some
+            # type-correction here.
+            for h, v in config.items():
+                if isinstance(v, float) and isinstance(cspace.get_hyperparameter(h), cs.UniformIntegerHyperparameter):
+                    config[h] = np.rint(v).astype(int)
             config = cs.Configuration(
                 configuration_space=cspace,
-                values={h: v for h, v in config.items()}
+                values=config
             )
         else:
             raise TypeError("Invalid object type %s for config. " \
