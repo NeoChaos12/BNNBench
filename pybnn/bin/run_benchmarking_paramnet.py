@@ -14,8 +14,9 @@ except (ImportError, ModuleNotFoundError):
     from pybnn import _log as pybnn_log
 
 from pybnn.bin import _default_log_format
+import pybnn.utils.constants as C
 import pybnn.utils.data_utils as dutils
-from pybnn.emukit_interfaces import HPOBenchObjective, Benchmarks
+from pybnn.emukit_interfaces import HPOBenchObjective
 
 from pybnn.models import _log as pybnn_model_log
 from pybnn.emukit_interfaces.loops import (
@@ -113,14 +114,15 @@ save_dir.mkdir(exist_ok=True, parents=True)
 # ############# LOAD DATA ##############################################################################################
 
 # SETUP TARGET FUNCTION
-target_function = HPOBenchObjective(benchmark=Benchmarks.PARAMNET, rng=SOURCE_RNG_SEED, use_local=args.use_local,
+target_function = HPOBenchObjective(benchmark=C.Benchmarks.PARAMNET, rng=SOURCE_RNG_SEED, use_local=args.use_local,
                                     dataset=DATASET)
 
-data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name="xgboost", task_id=TASK_ID,
-                           source_rng_seed=SOURCE_RNG_SEED, evals_per_config=SOURCE_DATA_TILE_FREQ,
-                           extension="csv", iterate_confs=args.iterate_confs, iterate_evals=args.iterate_evals,
+data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name=C.Benchmarks.PARAMNET, source_rng_seed=SOURCE_RNG_SEED,
+                           evals_per_config=SOURCE_DATA_TILE_FREQ, extension="csv", iterate_confs=args.iterate_confs,
+                           iterate_evals=args.iterate_evals,
                            emukit_map_func=target_function.map_configurations_to_emukit,
-                           rng=args.rng, train_set_multiplier=args.training_pts_per_dim)
+                           rng=args.rng, train_set_multiplier=args.training_pts_per_dim, dataset=DATASET)
+
 
 NUM_INITIAL_DATA = args.training_pts_per_dim * data.X_full.shape[2]
 NUM_DATA_POINTS = NUM_INITIAL_DATA + NUM_LOOP_ITERS
