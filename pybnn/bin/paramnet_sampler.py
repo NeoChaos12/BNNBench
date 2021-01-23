@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import numpy as np
 import pandas as pd
 import argparse
 import itertools as it
@@ -38,10 +39,15 @@ if __name__ == "__main__":
     output_dir = Path(args.output_dir).expanduser().resolve()
     extension = args.extension
 
-    bench, _, load_args = load_paramnet(use_local, rng_seed, dataset)
+    np.random.seed(rng_seed)
+    seeds = np.random.randint(0, 1_000_000_000, 2)
+    benchmark_seed = seeds[0]
+    cspace_seed = seeds[1]
+
+    bench, _, load_args = load_paramnet(use_local, benchmark_seed, dataset)
     benchmark = bench(**load_args)
 
-    cspace = benchmark.get_configuration_space()
+    cspace = benchmark.get_configuration_space(cspace_seed)
     hypers = cspace.get_hyperparameter_names()
     results = ['function_value', 'cost']
     cols = hypers + results
