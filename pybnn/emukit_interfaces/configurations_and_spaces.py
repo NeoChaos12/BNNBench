@@ -7,6 +7,7 @@ from emukit.core import (
 )
 from math import log, exp
 from typing import Any, Sequence, Union, Dict
+import numpy as np
 
 
 # TODO: Define more mappings
@@ -24,12 +25,10 @@ def _to_continuous(param: cs.UniformFloatHyperparameter):
 
 def _to_discrete(param: cs.UniformIntegerHyperparameter):
     if param.log:
-        # TODO: Consult Katha on how to handle this.
-        raise NotImplementedError("Mapping log-sampled integer parameters to discrete integers is still under "
-                                  "construction.")
+        min_val, max_val = log(param.lower), log(param.upper)
     else:
-        domain = list(range(param.lower, param.upper, step=1.))
-    return DiscreteParameter(name=param.name, domain=domain)
+        min_val, max_val = param.lower, param.upper
+    return ContinuousParameter(name=param.name, min_value=min_val, max_value=max_val)
 
 
 _cs_to_emu_map = {
@@ -55,9 +54,9 @@ def _from_continuous(param: cs.UniformFloatHyperparameter, val: Any):
 
 def _from_discrete(param: cs.UniformIntegerHyperparameter, val: Any):
     if param.log:
-        raise NotImplementedError("Mapping log-sampled integer parameters to discrete integers is still under "
-                                  "construction.")
-    return exp(val)
+        return np.clip(np.rint(exp(val)).astype(int), param.lower, param.upper)
+    else:
+        return np.rint(val).astype(int)
 
 
 _emu_to_cs_map = {
@@ -86,7 +85,7 @@ def _map_continuous_value(val, hyper: cs.UniformFloatHyperparameter):
 
 def _map_discrete_value(val, hyper: cs.UniformIntegerHyperparameter):
     if hyper.log:
-        raise NotImplementedError
+        return log(val)
     else:
         return val
 
