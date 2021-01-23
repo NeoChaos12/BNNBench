@@ -3,18 +3,14 @@ import numpy as np
 from emukit.core.loop.user_function import UserFunctionWrapper
 from pybnn.emukit_interfaces.configurations_and_spaces import map_CS_to_Emu, EmutoCSMap
 from pybnn.emukit_interfaces.configurations_and_spaces import configuration_CS_to_Emu as config_to_emu
+from pybnn.utils.constants import Benchmarks
 import time
 import logging
-from typing import Union, Tuple, Optional, Dict
+from typing import Union, Tuple, Optional, Dict, Callable
 
 
 _log = logging.getLogger(__name__)
 
-
-class Benchmarks(Enum):
-    XGBOOST = 1
-    SVM = 2
-    PARAMNET = 3
 
 """
 The following functions of the form load_<benchmark> each contain the processes for importing an HPOBench Benchmark. 
@@ -38,7 +34,7 @@ load_args: dict. A dictionary containing the appropriate keyword arguments to be
 """
 
 def load_xgboost(use_local: bool = False, rng: int = 1, task_id: Optional[int] = None) -> \
-        Tuple[object, bool, Optional[Dict]]:
+        Tuple[Callable, bool, Optional[Dict]]:
     _log.debug("Setting up XGBoost benchmark as objective.")
     load = True
     if task_id is None:
@@ -53,7 +49,7 @@ def load_xgboost(use_local: bool = False, rng: int = 1, task_id: Optional[int] =
 
 
 def load_svm(use_local: bool = False, rng: int = 1, task_id: Optional[int] = None) -> \
-        Tuple[object, bool, Optional[Dict]]:
+        Tuple[Callable, bool, Optional[Dict]]:
     _log.debug("Setting up SVM benchmark as objective.")
     load = True
     if task_id is None:
@@ -68,7 +64,7 @@ def load_svm(use_local: bool = False, rng: int = 1, task_id: Optional[int] = Non
 
 
 def load_paramnet(use_local: bool = False, rng: int = 1, dataset: str = None) -> \
-        Tuple[object, bool, Optional[Dict]]:
+        Tuple[Callable, bool, Optional[Dict]]:
     _log.debug("Setting up ParamNet benchmark as objective.")
     load = True
     if dataset is None:
@@ -94,7 +90,7 @@ def load_paramnet(use_local: bool = False, rng: int = 1, dataset: str = None) ->
 
 loaders = {
     Benchmarks.XGBOOST: load_xgboost,
-    Benchmarks.SVM: load_svm,
+    # Benchmarks.SVM: load_svm,
     Benchmarks.PARAMNET: load_paramnet,
 }
 

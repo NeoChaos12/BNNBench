@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Union, Optional, Tuple, Sequence, Callable
 from math import floor
 from abc import ABC
+from enum import Enum
 
 from pybnn.utils import AttrDict
 from pybnn.utils.universal_utils import standard_pathcheck
+from pybnn.utils import constants as C
 
 _log = logging.getLogger(__name__)
 
@@ -99,6 +101,33 @@ def data_generator(obj_config: AttrDict, numbered=True) -> \
 Dataset = Tuple[np.ndarray, np.ndarray, np.ndarray]
 RNG_Input = Union[int, np.random.RandomState, None]
 
+def get_full_benchmark_name(benchmark: Enum, rng_seed: int, **extra_args) -> str:
+    """
+    Generates the full name of the benchmark for the purposes of uniquely identifying a saved sample data file.
+    :param benchmark: Enum, as described in pybnn.utils.constants.Benchmarks, used for determining type of
+        benchmark without actually querying HPOBench.
+    :param rng_seed: int, a seed value.
+    :param extra_args: dict, a dictionary of optional benchmark-specific keyword arguments.
+    :return: str
+    """
+
+    def xgboost_name(rng_seed: int, task_id: int) -> str:
+        return f"{C.benchmarks_enum_to_name[C.Benchmarks.XGBOOST]}_{task_id}_rng{rng_seed}"
+
+    # def svm_name(rng_seed: int, task_id: int) -> str:
+    #     return f"{C.benchmarks_enum_to_name[C.Benchmarks.SVM]}_{task_id}_rng{rng_seed}"
+
+    def paramnet_name(rng_seed: int, dataset: str) -> str:
+        return f"{C.benchmarks_enum_to_name[C.Benchmarks.PARAMNET]}_{dataset}_rng{rng_seed}"
+
+    generators = {
+        C.Benchmarks.XGBOOST: xgboost_name,
+        # C.Benchmarks.SVM: svm_name,
+        C.Benchmarks.PARAMNET: paramnet_name,
+    }
+
+    return generators[benchmark](rng_seed, **extra_args)
+
 
 class BenchmarkData(ABC):
     # The complete dataset
@@ -129,13 +158,13 @@ class BenchmarkData(ABC):
 
 
 class HPOBenchData(BenchmarkData):
-    def __init__(self, data_folder: Union[str, Path], benchmark_name: str, task_id: int,
-                 source_rng_seed: int, evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
+    def __init__(self, data_folder: Union[str, Path], benchmark_name: Enum, source_rng_seed: int,
+                 evals_per_config: int, extension: str = "csv", iterate_confs: bool = True,
                  iterate_evals: bool = False, emukit_map_func: Callable = None, rng: RNG_Input = None,
-                 train_set_multiplier: int = 10):
-        data = HPOBenchData.read_hpobench_data(data_folder=data_folder, benchmark_name=benchmark_name, task_id=task_id,
+                 train_set_multiplier: int = 10, **extra_args):
+        data = HPOBenchData.read_hpobench_data(data_folder=data_folder, benchmark_name=benchmark_name,
                                                evals_per_config=evals_per_config, rng_seed=source_rng_seed,
-                                               extension=extension)
+                                               extension=extension, **extra_args)
         self.X_full, self.Y_full, self.meta_full = data[:3]
         self.features, self.outputs, self.meta_headers = data[3:]
         if emukit_map_func is not None:
@@ -186,17 +215,15 @@ class HPOBenchData(BenchmarkData):
                 pass
 
     @staticmethod
-    def read_hpobench_data(data_folder: Union[str, Path], benchmark_name: str, task_id: int, rng_seed: int,
-                           evals_per_config: int, extension: str = "csv") -> \
+    def read_hpobench_data(data_folder: Union[str, Path], benchmark_name: Enum, rng_seed: int,
+                           evals_per_config: int, extension: str = "csv", **extra_args) -> \
             Tuple[np.ndarray, np.ndarray, np.ndarray, Sequence[str], Sequence[str], Sequence[str]]:
         """
         Reads the relevant data of the given hpobench objective from the given folder and returns it as numpy arrays.
         :param data_folder: Path or string
             The folder containing all relevant data files.
-        :param benchmark_name: string
-            The name of the benchmark.
-        :param task_id: int
-            The task id used for generating the required data,used to select the correct data file.
+        :param benchmark_name: Enum
+            The type of the benchmark, as described by pybnn.utils.constants.Benchmarks.
         :param rng_seed: int
             The seed that was used for generating the data, used to select the correct data file.
         :param evals_per_config: int
@@ -207,9 +234,15 @@ class HPOBenchData(BenchmarkData):
             X, Y and metadata will have shapes [N, evals_per_config, Dx], [N, evals_per_config, Dy] and
             [N, evals_per_config, Dz] respectively, whereas feature_names, target_names and meta_headers will have the
             shapes [Nx,], [Ny,] and [Nz,] respectively.
+        :param extra_args: dict
+            Benchmark specific keyword arguments. They are described as follows.
+        :param task_id: int
+            XGBoost and SVM specific.
+        :param dataset: str
+            ParamNet specific.
         """
 
-        full_benchmark_name = f"{benchmark_name}_{task_id}_rng{rng_seed}"
+        full_benchmark_name = get_full_benchmark_name(benchmark_name, rng_seed, **extra_args)
 
         if not isinstance(data_folder, Path):
             data_folder = Path(data_folder).expanduser().resolve()
