@@ -47,6 +47,25 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str):
 #  value, each requiring its own unique handling.
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
              suptitle:str = None):
+    """
+    Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across upto
+    three individual dimensions.
+    :param data: pandas.DataFrame
+        A DataFrame object containing all the data to be visualized with the appropriate index.
+    :param indices: A list of strings
+        Upto three strings denoting the names of a pandas Multi-Level Index across which comparisons are to be
+        visualized. The first name is used to generate comparisons within the same plot, the second name for
+        comparisons across columns and the third for comparisons across rows.
+    :param save_data: bool
+        A flag to indicate whether or not the visualization is to be saved to disk. Default: True. See also
+        'output_dir'.
+    :param output_dir: Path-like
+        The full path to the directory where the visualization is to be saved, if 'save_data' is True. Ignored
+        otherwise.
+    :param suptitle: string
+        Used to attach a title for the visualization as a whole.
+    :return: None
+    """
     index: pd.MultiIndex = data.index
 
     if save_data:
