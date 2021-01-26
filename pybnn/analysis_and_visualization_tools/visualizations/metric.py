@@ -25,16 +25,18 @@ sns.set_context("paper", font_scale=2.5)
 
 fixed_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 
-def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str):
+def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level=None):
     """ Plots a Mean-Variance metric data visualization on the given Axes object comparing all indices defined by the
         name 'across' in the DataFrame 'data' within the same plot. """
 
+    if xaxis_level:
+        xaxis_level = fixed_metrics_row_index_labels[-1]
     labels = data.index.unique(level=across)
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
         subset: pd.DataFrame = data.xs(label, level=across)
-        means: np.ndarray = subset.mean(axis=0, level=fixed_metrics_row_index_labels[-1]).to_numpy().squeeze()
-        vars: np.ndarray = subset.std(axis=0, level=fixed_metrics_row_index_labels[-1]).to_numpy().squeeze()
-        xs: np.ndarray = subset.index.unique(level=fixed_metrics_row_index_labels[-1]).to_numpy().squeeze()
+        means: np.ndarray = subset.mean(axis=0, level=xaxis_level).to_numpy().squeeze()
+        vars: np.ndarray = subset.std(axis=0, level=xaxis_level).to_numpy().squeeze()
+        xs: np.ndarray = subset.index.unique(level=xaxis_level).to_numpy().squeeze()
         ax.plot(xs, means, c=colour, label=label)
         ax.fill_between(xs, means - vars, means + vars, alpha=0.2, color=colour)
         formatter = mtick.ScalarFormatter(useMathText=True)
@@ -43,10 +45,8 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str):
         ax.yaxis.set_major_formatter(formatter)
 
 
-# TODO: Define a parameter "xaxis", which is "iteration" by default. This can be set to either "time" or a custom
-#  value, each requiring its own unique handling.
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
-             suptitle:str = None):
+             suptitle: str = None, xaxis_level: str = None):
     """
     Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across upto
     three individual dimensions.
@@ -64,14 +64,21 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         otherwise.
     :param suptitle: string
         Used to attach a title for the visualization as a whole.
+    :param xaxis_level: string
+        A string that specifies the level of the index which is used to obtain values along the x-axis of the plots.
+        If None, it defaults to 'fixed_metrics_row_index_labels[-1]'.
     :return: None
     """
+
     index: pd.MultiIndex = data.index
 
     if save_data:
         if output_dir is None:
             output_dir = Path().cwd()
         output_dir.mkdir(parents=True, exist_ok=True)
+
+    if xaxis_level is None:
+        xaxis_level = fixed_metrics_row_index_labels[-1]
 
     if not indices:
         # Use the default values
@@ -123,7 +130,7 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         for cidx, clabel in enumerate(col_labels):
             ax: plt.Axes = axes[ridx, cidx]
             view = get_view_on_data(row_val=rlabel, col_val=clabel)
-            _mean_std_plot(ax=ax, data=view, across=idx1)
+            _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level)
             if ridx == nrows - 1:
                 ax.set_xlabel(clabel, labelpad=10)
 
