@@ -45,3 +45,33 @@ def get_rank_across_models(df: pd.DataFrame, metric: str = 'minimum_observed_val
 
     print("Finished sampling the dataframe.")
     return rank_df.reorder_levels(['model', 'sample_idx', 'iteration'])
+
+
+def calculate_overhead(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Given a dataframe which has at least the levels ['model', 'metric', 'rng_offset', 'iteration'] as the final 4
+    levels of its index, return a dataframe containing the estimated time taken for each iteration to generate a new
+    data point to evaluate, including model re-training time, calculated by subtracting the time taken to evaluate the
+    benchmark from the total time that passed between every two iterations.
+    :param df: pandas.DataFrame
+        The dataframe object containing metric data.
+    :return: pandas.DataFrame
+        A DataFrame object which has all the metric information and the same index as the object given as input along
+        with an addition to the level 'metric' - 'overhead'. Note that the lowest value of 'iteration' (usually 0)
+        denotes end of model initialization. Since no overhead can be calculated for this value, it will be be set to 0.
+    """
+
+    # Iteration 0 corresponds to the end of initialization.
+    end_times = df.xs('time', level='metric', drop_level=True).unstack('iteration')
+    iters = end_times.columns.unique('iteration')
+    start_times = end_times.drop(iters.max(), axis=1, level='iteration')
+    start_times = start_times.rename(lambda x: x+1, axis=1, level='iteration')
+    # end_times = end_times.drop(iters.min(), axis=1, level='iteration')
+    ind = start_times.columns.unique(0).values[0], iters.min()
+    obj_eval_durations = df.xs('evaluation_duration', level='metric', drop_level=True).unstack('iteration')
+    start_times[ind] = end_times[ind] - obj_eval_durations[ind]
+    overhead = end_times - start_times - obj_eval_durations
+    # start_times = pd.DataFrame()
+    overhead: pd.DataFrame = overhead.stack('iteration').assign(metric='overhead')
+    overhead = overhead.set_index('metric', append=True).reorder_levels(df.index.names)
+    return df.combine_first(overhead)
