@@ -25,18 +25,29 @@ sns.set_context("paper", font_scale=2.5)
 
 fixed_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 
-def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level=None):
+def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1):
     """ Plots a Mean-Variance metric data visualization on the given Axes object comparing all indices defined by the
-        name 'across' in the DataFrame 'data' within the same plot. """
+        name 'across' in the DataFrame 'data' within the same plot. Remember that the dataframe index can only contain
+        upto 3 levels, one of which has to be 'across' and one must be 'xaxis_level'. The remaining level will be
+        averaged over to generate the means."""
 
-    if xaxis_level:
+    pass
+    assert len(data.index.names) == 3, \
+        "To generate a mean-std plot, the dataframe must have exactly 3 index levels. The given dataframe has %d " \
+        "index levels." % data.index.names.shape[0]
+
+    if xaxis_level is None:
         xaxis_level = fixed_metrics_row_index_labels[-1]
     labels = data.index.unique(level=across)
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
         subset: pd.DataFrame = data.xs(label, level=across)
-        means: np.ndarray = subset.mean(axis=0, level=xaxis_level).to_numpy().squeeze()
-        vars: np.ndarray = subset.std(axis=0, level=xaxis_level).to_numpy().squeeze()
-        xs: np.ndarray = subset.index.unique(level=xaxis_level).to_numpy().squeeze()
+        y_label = subset.columns.values
+        tmp = subset.reset_index()
+        tmp = tmp.pivot(index=xaxis_level, columns=tmp.columns.drop([xaxis_level, *y_label]), values=y_label)
+        tmp = tmp.sort_index(axis=0).iloc[x_offset:]
+        xs: np.ndarray = tmp.index.to_numpy().squeeze()
+        means: np.ndarray = tmp.mean(axis=1).to_numpy().squeeze()
+        vars: np.ndarray = tmp.std(axis=1).to_numpy().squeeze()
         ax.plot(xs, means, c=colour, label=label)
         ax.fill_between(xs, means - vars, means + vars, alpha=0.2, color=colour)
         formatter = mtick.ScalarFormatter(useMathText=True)
@@ -46,9 +57,9 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level=No
 
 
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
-             suptitle: str = None, xaxis_level: str = None):
+             suptitle: str = None, xaxis_level: str = None, x_offset: int = 1):
     """
-    Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across upto
+    Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across up to
     three individual dimensions.
     :param data: pandas.DataFrame
         A DataFrame object containing all the data to be visualized with the appropriate index.
@@ -67,6 +78,9 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     :param xaxis_level: string
         A string that specifies the level of the index which is used to obtain values along the x-axis of the plots.
         If None, it defaults to 'fixed_metrics_row_index_labels[-1]'.
+    :param x_offset: int
+        An offset used to exclude the earliest few values from the x-axis level. The value of 'x_offset' is how many of
+        the initial indices from both the x-axis and the corresponding y-values will be ignored. Default: 1.
     :return: None
     """
 
@@ -130,7 +144,7 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         for cidx, clabel in enumerate(col_labels):
             ax: plt.Axes = axes[ridx, cidx]
             view = get_view_on_data(row_val=rlabel, col_val=clabel)
-            _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level)
+            _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level, x_offset=x_offset)
             if ridx == nrows - 1:
                 ax.set_xlabel(clabel, labelpad=10)
 

@@ -109,7 +109,8 @@ class ResultDataHandler:
 
     @classmethod
     def collate_data(cls, loc: Union[Path, str], directory_structure: Sequence[str], which: str,
-                     new_columns: Sequence[str] = None, safe_mode: bool = True) -> pd.DataFrame:
+                     new_columns: Sequence[str] = None, safe_mode: bool = True, output: pd.DataFrame = None) -> \
+            pd.DataFrame:
         """
         Given a directory containing multiple stored dataframes readable by BenchmarkData, collates the data in the
         dataframes according to the rules specified by 'row_index_sequence'. This includes descending into an ordered
@@ -124,7 +125,7 @@ class ResultDataHandler:
             BenchmarkData.metrics_row_index_names are treated specially: Since they're always present in every
             recorded dataframe, the corresponding directory names are only used for filesystem traversal and are
             otherwise completely ignored in favor of respecting the already recorded data. For all other
-            strings, the sub-directory names are treated as individual index labels belonging to that index name. Such
+            strings, the sub-directory names are treated as individual index labels belonging to that index level. Such
             extra index names can only occur before the preset index names. Note that "label" and "name" as used here
             correspond to Pandas.MultiIndex terminology for the same. Also check 'new_columns' to see how new column
             index labels are to be specified.
@@ -138,6 +139,10 @@ class ResultDataHandler:
             Can be either "metrics" or "runhistory", indicates which DataFrame is to be collected and collated.
         :param safe_mode: bool
             When True (default), enables extra metadata checks while loading dataframes.
+        :param output: pandas.DataFrame
+            A dataframe object of previously collated data to which the new data should be appended instead of creating
+            a new one. This dataframe's index and column indices should be compatible with what would be expected given
+            the directory structure.
         :return: collated_data
             A BenchmarkData object containing all the collated data.
         """
@@ -171,7 +176,7 @@ class ResultDataHandler:
         subtree = cls._collect_directory_structure(loc, directory_structure)
         data_iter = ResultDataHandler._get_data_iterator(loc, subtree, metrics=metrics, runhistory=not metrics,
                                                          disable_verification=not safe_mode)
-        collated_data = None
+        collated_data = output
         count = itt.count(start=0)
         original_row_index_names = None
         collated_df_row_index_names = None
