@@ -19,3 +19,10 @@ benchmarks_enum_to_name = {
     # Benchmarks.SVM: "svm",
     Benchmarks.PARAMNET: "paramnet"
 }
+
+class FileNames:
+    " A container for all the various default filenames that will be used through the library. "
+    metrics_dataframe = "metrics.pkl.gz"
+    runhistory_dataframe = "runhistory.pkl.gz"
+    augmented_metrics_dataframe = "augmented_metrics.pkl.gz"
+    augmented_runhistory_dataframe = "augmented_runhistory.pkl.gz"

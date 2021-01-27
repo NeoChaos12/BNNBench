@@ -2,16 +2,19 @@ import logging
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
+from typing import Sequence, Optional
 
 _log = logging.getLogger(__name__)
 
 def get_rank_across_models(df: pd.DataFrame, metric: str = 'minimum_observed_value', nsamples: int = 1000,
-                           method: str = 'average') -> \
+                           method: str = 'average', rng: int = 1) -> \
         pd.DataFrame:
     """
     For a metrics dataframe, generate a corresponding dataframe containing model ranks based on randomly sampled
     rng_offsets for the chosen metric. The index of such a dataframe must correspond to this exact sequence of levels:
-    ['model', 'metric', 'rng_offset', 'iteration'].
+    ['model', 'metric', 'rng_offset', 'iteration']. Otherwise, any additional levels in the index should be such that
+    they can be randomly sampled to generate metric ranks.
+
     :param df: pandas.DataFrame
         The DataFrame object containing the relevant metrics data.
     :param metric: string
@@ -20,6 +23,8 @@ def get_rank_across_models(df: pd.DataFrame, metric: str = 'minimum_observed_val
         The number of times each model's 'rng_offset' value is sampled.
     :param method: string
         The method used to generate the ranking, consult pandas.DataFrame.rank() for more details.
+    :param rng: int
+        An integer seed for the numpy RNG in order to ensure that all metrics use the same rng offsets.
     :return: pandas.DataFrame
         A DataFrame object with the index levels ['model', 'sample_idx', 'iteration'] and the column labels
         ['rank', 'metric_value'] containing the respective rankings of each model and the metric values used to compute
@@ -27,15 +32,17 @@ def get_rank_across_models(df: pd.DataFrame, metric: str = 'minimum_observed_val
         all iterations for each model.
     """
 
+    np.random.seed(rng)
     known_names = ['model', 'metric', 'rng_offset', 'iteration']
     assert df.index.names == known_names, f"The input DataFrame must have this exact sequence of index names: " \
                                           f"{known_names}\nInstead, the given DataFrame's index was: {df.index.names}"
-    metric_df = df.xs((slice(None), metric))
+    metric_df = df.xs(metric, level='metric', drop_level=False)
     models = metric_df.index.unique('model')
     chosen_offsets = [None] * len(models)
     for i, m in enumerate(models):
-        tmp_df: pd.DataFrame = metric_df.xs(m, drop_level=False).unstack(level='iteration')
+        tmp_df: pd.DataFrame = metric_df.xs(m, level='model', drop_level=False).unstack(level='iteration')
         choice = tmp_df.sample(nsamples, replace=True)
+        # As of now, the 'rng_offset' is pointless but the 'sample_idx' instead makes more sense.
         choice['sample_idx'] = list(range(nsamples))
         chosen_offsets[i] = choice.set_index('sample_idx', append=True).reset_index(level='rng_offset', drop=True)
 
@@ -43,8 +50,8 @@ def get_rank_across_models(df: pd.DataFrame, metric: str = 'minimum_observed_val
     rank_df = new_df.rank(axis=1, method=method).stack('model').rename(columns={'metric_value': 'rank'})
     rank_df = rank_df.combine_first(new_df.stack('model'))
 
-    print("Finished sampling the dataframe.")
-    return rank_df.reorder_levels(['model', 'sample_idx', 'iteration'])
+    _log.info("Finished sampling the dataframe.")
+    return rank_df.reorder_levels(['model', 'metric', 'sample_idx', 'iteration'])
 
 
 def calculate_overhead(df: pd.DataFrame) -> pd.DataFrame:
@@ -75,3 +82,39 @@ def calculate_overhead(df: pd.DataFrame) -> pd.DataFrame:
     overhead: pd.DataFrame = overhead.stack('iteration').assign(metric='overhead')
     overhead = overhead.set_index('metric', append=True).reorder_levels(df.index.names)
     return df.combine_first(overhead)
+
+
+def generate_metric_ranks(df: pd.DataFrame, rank_metrics: Optional[Sequence[str]] = None, nsamples: int = 1000,
+                          method: str = 'average', rng: int = 1) -> pd.DataFrame:
+    """
+    A wrapper around get_rank_across_models that applies generates a rank for multiple metrics.
+
+    :param df: pandas.DataFrame
+        The dataframe containing all the metrics data.
+    :param rank_metrics: Sequence of strings
+        The metrics for which ranks should be generated. If None (default), all metrics are used.
+    :param nsamples: int
+        The number of times each model's 'rng_offset' value is sampled.
+    :param method: string
+        The method used to generate the ranking, consult pandas.DataFrame.rank() for more details.
+    :param rng: int
+        An integer seed for the numpy RNG in order to ensure that all metrics use the same rng offsets.
+    :return: pandas.DataFrame
+        A dataframe containing the rank data for all the specified metrics.
+    """
+
+    if rank_metrics is None:
+        rank_metrics = df.index.unique('metric')
+
+    collated_df = None
+    for metric in rank_metrics:
+        _log.info("Now sampling values for metric %s." % metric)
+        tmp = get_rank_across_models(df, metric, nsamples, method, rng)
+        if collated_df is None:
+            collated_df = tmp
+        else:
+            collated_df = collated_df.combine_first(tmp)
+
+    return collated_df
+
+

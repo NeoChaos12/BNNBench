@@ -23,7 +23,7 @@ sns.set_style("whitegrid")
 sns.set_palette('tab10')
 sns.set_context("paper", font_scale=2.5)
 
-fixed_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
+default_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 
 def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1):
     """ Plots a Mean-Variance metric data visualization on the given Axes object comparing all indices defined by the
@@ -31,13 +31,12 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
         upto 3 levels, one of which has to be 'across' and one must be 'xaxis_level'. The remaining level will be
         averaged over to generate the means."""
 
-    pass
     assert len(data.index.names) == 3, \
         "To generate a mean-std plot, the dataframe must have exactly 3 index levels. The given dataframe has %d " \
         "index levels." % data.index.names.shape[0]
 
     if xaxis_level is None:
-        xaxis_level = fixed_metrics_row_index_labels[-1]
+        xaxis_level = default_metrics_row_index_labels[-1]
     labels = data.index.unique(level=across)
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
         subset: pd.DataFrame = data.xs(label, level=across)
@@ -77,7 +76,7 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         Used to attach a title for the visualization as a whole.
     :param xaxis_level: string
         A string that specifies the level of the index which is used to obtain values along the x-axis of the plots.
-        If None, it defaults to 'fixed_metrics_row_index_labels[-1]'.
+        If None, it defaults to 'default_metrics_row_index_labels[-1]'.
     :param x_offset: int
         An offset used to exclude the earliest few values from the x-axis level. The value of 'x_offset' is how many of
         the initial indices from both the x-axis and the corresponding y-values will be ignored. Default: 1.
@@ -92,11 +91,11 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         output_dir.mkdir(parents=True, exist_ok=True)
 
     if xaxis_level is None:
-        xaxis_level = fixed_metrics_row_index_labels[-1]
+        xaxis_level = default_metrics_row_index_labels[-1]
 
     if not indices:
         # Use the default values
-        indices = fixed_metrics_row_index_labels[:2]
+        indices = default_metrics_row_index_labels[:2]
 
     # Identify the requested layout
     nind = len(indices)
