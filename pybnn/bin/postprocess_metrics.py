@@ -53,7 +53,7 @@ if destination is None:
 if not source.exists():
     raise RuntimeError("The specified source directory was not found.")
 
-metrics_df: pd.DataFrame = pd.read_pickle(source / C.FileNames.metrics_dataframe).xs('189907', level='task_id')
+metrics_df: pd.DataFrame = pd.read_pickle(source / C.FileNames.metrics_dataframe)
 
 all_index_names = metrics_df.index.names
 extra_names = all_index_names[:all_index_names.index('model')]
@@ -61,19 +61,26 @@ extra_names = all_index_names[:all_index_names.index('model')]
 def iterate_views():
     if extra_names is None or len(extra_names) == 0:
         _log.info("No extra levels in metrics dataframe found.")
-        yield metrics_df
+        yield metrics_df, None
     else:
         _log.info(f"Found these extra levels in the metrics dataframe: {extra_names}")
         idx = pd.MultiIndex.from_product([metrics_df.index.unique(l) for l in extra_names])
         _log.info(f"Iterating over {idx.shape[0]} views corresponding to extra index levels.")
         for i in idx.values:
             _log.info(f"Generating view for key {i}.")
-            yield metrics_df.xs(i, level=tuple(extra_names))
+            yield metrics_df.xs(i, level=tuple(extra_names)), i
 
 collated_df = None
-for df in iterate_views():
+new_index_names = None
+for df, idx in iterate_views():
     res = proc.calculate_overhead(df)
-    res = proc.generate_metric_ranks(df, rng=args.rng)
+    res = proc.generate_metric_ranks(res, rng=args.rng)
+    if idx is not None:
+        # idx is None only if no extra levels were present in the index.
+        res = res.assign(**dict(zip(extra_names, idx)))
+        if new_index_names is None:
+            new_index_names = extra_names + res.index.names
+        res = res.set_index(extra_names, append=True).reorder_levels(new_index_names)
     if collated_df is None:
         collated_df = res
     else:

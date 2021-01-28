@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import scipy.stats as stats
 from typing import Sequence, Optional
+from pybnn.utils import constants as C
 
 _log = logging.getLogger(__name__)
 
@@ -100,7 +101,11 @@ def generate_metric_ranks(df: pd.DataFrame, rank_metrics: Optional[Sequence[str]
     :param rng: int
         An integer seed for the numpy RNG in order to ensure that all metrics use the same rng offsets.
     :return: pandas.DataFrame
-        A dataframe containing the rank data for all the specified metrics.
+        A DataFrame object which has the same index as the object given as input, except that the index level
+        'rng_offset' is replaced by 'sample_idx', a range index in the range [0, 'nsamples'], and the column labels
+        ['rank', 'metric_value'] containing the respective rankings of each model and the metric values used to compute
+        them, respectively, at each iteration, such that the new level 'sample_idx' denotes a randomly chosen sample of
+        all iterations for each model.
     """
 
     if rank_metrics is None:
@@ -118,3 +123,49 @@ def generate_metric_ranks(df: pd.DataFrame, rank_metrics: Optional[Sequence[str]
     return collated_df
 
 
+def perform_tsne(data: pd.DataFrame, n_components: int = 2) -> pd.DataFrame:
+    """
+    Given a runhistory dataframe, generates TSNE embeddings in 2 dimensions for the data and returns the embedded
+    data as a dataframe with the same index as the runhistory dataframe.
+
+    The DataFrame itself should conform to these conditions:
+    Row Index: Should be the Multi-Index with names defined in pybnn.utils.constants.fixed_runhistory_row_index_labels,
+    such that all values up to and including index "0" of the level "iteration" correspond to random samples and will
+    be excluded from the t-SNE projection. Including these samples would pollute the embedding since they will attach
+    an extremely high probability score to the random samples, and we are mostly only interested in the differences
+    between the model generated samples. Therefore, all such samples are excluded at this stage itself rather than in
+    the plotting stage. Also excluded are NaN values.
+    Column Index: Homogenous in the column names i.e. include only the index level
+    BenchmarkData.runhistory_base_col_name. Correspondingly, the returned dataframe will have precisely 3 column
+    labels: "dim1", "dim2", and "objective_value", while the index level will be only "tsne_data".
+
+    :param data: pandas.DataFrame
+        The runhistory dataframe.
+    :param n_components: int
+        The number of components of the embedded space. Default is 2.
+    """
+
+    assert data.columns.nlevels == 1 and data.columns.names == (C.runhistory_data_level_name,), \
+        f"The DataFrame 'data' should have a 1-level column index containing only the level name " \
+        f"{C.runhistory_data_level_name}, was instead {data.columns.names} containing {data.columns.nlevels} levels."
+
+    from sklearn.manifold import TSNE
+    config_dims = data.columns.drop(C.y_value_label)
+    # Get rid of random samples
+    configs = data.xs(np.s_[1:], level=C.fixed_runhistory_row_index_labels[-1], drop_level=False)
+    # Get rid of NaN values
+    configs = configs[configs.notna().any(axis=1)]
+    tsne = TSNE(n_components=n_components, n_jobs=1)
+    # Perform t-SNE transformation on only the x-values
+    tsne_data = tsne.fit_transform(configs.loc[pd.IndexSlice[:], config_dims].to_numpy())
+    # Append y-values to configuration embeddings
+    y_values = configs.loc[pd.IndexSlice[:], C.y_value_label]
+    if tsne_data.shape[0] != y_values.shape[0]:
+        raise RuntimeError("There is a mismatch in the number of data points mapped by t-SNE and the number of data "
+                           "points expected.")
+    tsne_data = np.concatenate((tsne_data, y_values.to_numpy().reshape(-1, 1)), axis=1)
+    # Re-package the t-SNE embeddings into a DataFrame
+    tsne_cols = pd.Index(data=C.tsne_data_col_labels, name=C.tsne_data_level_name)
+    tsne_df = pd.DataFrame(data=tsne_data, index=configs.index, columns=tsne_cols)
+
+    return tsne_df

@@ -18,18 +18,9 @@ import matplotlib.ticker as mtick
 import pandas as pd
 import numpy as np
 import math
+import pybnn.utils.constants as C
 
 _log = logging.getLogger(__name__)
-# Instead of importing these values from BenchmarkData, they are intentionally re-written here to prevent and detect
-# version mismatch errors.
-_fixed_runhistory_row_index_labels: Sequence[str] = ("model", "rng_offset", "iteration")
-_y_value_label = 'objective_value'
-_runhistory_data_level_name = 'run_data'
-_tsne_data_col_labels = ['dim1', 'dim2', _y_value_label]
-_tsne_data_level_name = 'tsne_data'
-_diversity = 2048
-_palettes = ['RdYlBu', 'RdBu', 'Spectral', 'coolwarm_r', 'RdYlGn', 'bwr',
-             'seismic', 'PiYG', 'PRGn', 'BrBG', 'PuOr', 'RdGy']
 
 def _initialize_seaborn():
     """ Since seaborn can be finicky on the server, we only import it when we're really sure about it. """
@@ -40,58 +31,6 @@ def _initialize_seaborn():
     sns.set_palette('tab10')
     sns.set_context("paper", font_scale=2.5)
     return sns
-
-
-def perform_tsne(data: pd.DataFrame, save_data: bool = True, output_dir: Path = None,
-                 filename: str = "tsne_embeddings") -> pd.DataFrame:
-    """
-    Given a runhistory dataframe, generates TSNE embeddings in 2 dimensions for the data and returns the embedded
-    data as a dataframe with the same index as the runhistory dataframe.
-
-    The DataFrame itself should conform to these conditions:
-    Row Index: Should be the Multi-Index with names defined in _fixed_runhistory_row_index_labels, such that all values
-    up to and including index "0" of the level "iteration" correspond to random samples and will be excluded from the
-    t-SNE projection. Including these samples would pollute the embedding since they will attach an extremely high
-    probability score to the random samples, and we are mostly only interested in the differences between the model
-    generated samples. Therefore, all such samples are excluded at this stage itself rather than in the plotting stage.
-    Also excluded are NaN values.
-    Column Index: Homogenous in the column names i.e. include only the index level
-    BenchmarkData.runhistory_base_col_name. Correspondingly, the returned dataframe will have precisely 3 column
-    labels: "dim1", "dim2", and "objective_value", while the index level will be only "tsne_data".
-    """
-
-    if save_data:
-        if output_dir is None:
-            output_dir = Path().cwd()
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    assert data.columns.nlevels == 1 and data.columns.names == (_runhistory_data_level_name,), \
-        f"The DataFrame 'data' should have a 1-level column index containing only the level name " \
-        f"{_runhistory_data_level_name}, was instead {data.columns.names} containing {data.columns.nlevels} levels."
-
-    from sklearn.manifold import TSNE
-    config_dims = data.columns.drop(_y_value_label)
-    # Get rid of random samples
-    configs = data.xs(np.s_[1:], level=_fixed_runhistory_row_index_labels[-1], drop_level=False)
-    # Get rid of NaN values
-    configs = configs[configs.notna().any(axis=1)]
-    tsne = TSNE(n_components=2, n_jobs=1)
-    # Perform t-SNE transformation on only the x-values
-    tsne_data = tsne.fit_transform(configs.loc[pd.IndexSlice[:], config_dims].to_numpy())
-    # Append y-values to configuration embeddings
-    y_values = configs.loc[pd.IndexSlice[:], _y_value_label]
-    if tsne_data.shape[0] != y_values.shape[0]:
-        raise RuntimeError("There is a mismatch in the number of data points mapped by t-SNE and the number of data "
-                           "points expected.")
-    tsne_data = np.concatenate((tsne_data, y_values.to_numpy().reshape(-1, 1)), axis=1)
-    # Re-package the t-SNE embeddings into a DataFrame
-    tsne_cols = pd.Index(data=_tsne_data_col_labels, name=_tsne_data_level_name)
-    tsne_df = pd.DataFrame(data=tsne_data, index=configs.index, columns=tsne_cols)
-
-    if save_data:
-        tsne_df.to_pickle(output_dir / f"{filename}.pkl.gz")
-
-    return tsne_df
 
 
 def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[str]], save_data: bool = True,
@@ -114,7 +53,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
 
     if not indices:
         # Use the default values, which places a single model in every subplot column.
-        indices = (_fixed_runhistory_row_index_labels[:1], None)
+        indices = (C.fixed_runhistory_row_index_labels[:1], None)
 
     df_row_indices, df_col_indices = indices
     if not df_row_indices:
@@ -175,12 +114,12 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
 
 
     for ridx, rlabel in enumerate(row_labels):
-        palettes = enumerate(_palettes)
+        palettes = enumerate(C.color_palettes)
         for cidx, clabel in enumerate(col_labels):
             ax: plt.Axes = axes[ridx, cidx]
             view = get_view_on_data(row_val=rlabel, col_val=clabel)
             if isinstance(view.columns, pd.MultiIndex):
-                data = view.xs(slice(None), axis=1, level=_tsne_data_level_name, drop_level=False)
+                data = view.xs(slice(None), axis=1, level=C.tsne_data_level_name, drop_level=False)
                 data: np.ndarray = data.to_numpy()
             else:
                 # view.columns is an object of type Index, assumed to be of the correct type.
