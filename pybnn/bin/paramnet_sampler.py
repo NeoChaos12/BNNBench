@@ -1,5 +1,13 @@
 #!/usr/bin/python
 
+try:
+    from pybnn import _log as pybnn_log
+except (ImportError, ModuleNotFoundError):
+    import sys
+    import os.path
+    sys.path.append(os.path.expandvars('$PYBNNPATH'))
+    from pybnn import _log as pybnn_log
+
 import numpy as np
 import pandas as pd
 import argparse
@@ -52,7 +60,7 @@ if __name__ == "__main__":
     results = ['function_value', 'cost']
     cols = hypers + results
 
-    full_benchmark_name = get_full_benchmark_name(C.Benchmarks.PARAMNET, rng_seed, dataset=dataset)
+    full_benchmark_name = get_full_benchmark_name(C.Benchmarks.PARAMNET, benchmark_seed, dataset=dataset)
 
     output_dir.mkdir(exist_ok=True, parents=True)
     data_file = output_dir / f"{full_benchmark_name}_data.{extension}"
