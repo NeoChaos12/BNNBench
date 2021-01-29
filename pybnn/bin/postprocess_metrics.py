@@ -51,7 +51,7 @@ if destination is None:
     destination = Path(source)
 
 if not source.exists():
-    raise RuntimeError("The specified source directory was not found.")
+    raise RuntimeError(f"The specified source directory {source} was not found.")
 
 metrics_df: pd.DataFrame = pd.read_pickle(source / C.FileNames.metrics_dataframe)
 
@@ -70,6 +70,7 @@ def iterate_views():
             _log.info(f"Generating view for key {i}.")
             yield metrics_df.xs(i, level=tuple(extra_names)), i
 
+destination.mkdir(exist_ok=True, parents=True)
 collated_df = None
 new_index_names = None
 for df, idx in iterate_views():
@@ -86,5 +87,4 @@ for df, idx in iterate_views():
     else:
         collated_df = collated_df.combine_first(res)
 
-destination.mkdir(exist_ok=True, parents=True)
-collated_df.to_pickle(destination / C.FileNames.augmented_metrics_dataframe)
+    collated_df.to_pickle(destination / C.FileNames.augmented_metrics_dataframe)

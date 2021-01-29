@@ -16,6 +16,7 @@ import matplotlib.ticker as mtick
 import pandas as pd
 import numpy as np
 import seaborn as sns
+from pybnn.utils import constants as C
 
 _log = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
 
 
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
-             suptitle: str = None, xaxis_level: str = None, x_offset: int = 1):
+             file_prefix: str = None, suptitle: str = None, xaxis_level: str = None, x_offset: int = 1):
     """
     Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across up to
     three individual dimensions.
@@ -72,6 +73,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     :param output_dir: Path-like
         The full path to the directory where the visualization is to be saved, if 'save_data' is True. Ignored
         otherwise.
+    :param file_prefix: str
+        An optional string to be prefixed to the default file name of the visualization, if it is saved to disk.
     :param suptitle: string
         Used to attach a title for the visualization as a whole.
     :param xaxis_level: string
@@ -160,6 +163,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     if suptitle:
         fig.suptitle(suptitle, ha='center', va='top')
     if save_data:
-        fig.savefig(output_dir / "MeanVarianceViz.pdf")
+        fn = C.FileNames.mean_std_visualization if file_prefix is None else \
+            f"{file_prefix}_{C.FileNames.mean_std_visualization}"
+        fig.savefig(output_dir / fn)
     else:
         plt.show()

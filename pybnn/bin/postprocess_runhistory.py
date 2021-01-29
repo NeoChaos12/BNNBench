@@ -50,7 +50,7 @@ if destination is None:
     destination = Path(source)
 
 if not source.exists():
-    raise RuntimeError("The specified source directory was not found.")
+    raise RuntimeError(f"The specified source directory {source} was not found.")
 
 runhistory_df: pd.DataFrame = pd.read_pickle(source / C.FileNames.runhistory_dataframe)
 
@@ -91,6 +91,7 @@ def iterate_views_over_columns(df):
     else:
         yield df, None
 
+destination.mkdir(exist_ok=True, parents=True)
 column_collated_df = None
 new_column_names = None
 np.random.seed(args.rng)
@@ -122,5 +123,4 @@ for df1, col in iterate_views_over_columns(runhistory_df):
     else:
         column_collated_df = column_collated_df.combine_first(index_collated_df)
 
-destination.mkdir(exist_ok=True, parents=True)
-collated_df.to_pickle(destination / C.FileNames.tsne_embeddings_dataframe)
+    column_collated_df.to_pickle(destination / C.FileNames.tsne_embeddings_dataframe)

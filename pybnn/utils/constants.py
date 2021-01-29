@@ -28,6 +28,8 @@ class FileNames:
     augmented_metrics_dataframe = "augmented_metrics.pkl.gz"
     augmented_runhistory_dataframe = "augmented_runhistory.pkl.gz"
     tsne_embeddings_dataframe = "tsne_embeddings.pkl.gz"
+    mean_std_visualization = "MeanVarianceViz.pdf"
+    tsne_visualization = "tSNE_Embedding.pdf"
 
 # These are potentially repeated by some other classes. This is intentional and intended to make it easier to point out
 # potential version mismatch errors in the absence of a more robust versioning system.
