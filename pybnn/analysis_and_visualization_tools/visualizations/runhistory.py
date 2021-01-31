@@ -51,6 +51,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
     if included in 'indices'. The visualization is colored such that every row's colour bars lie on the same scale. """
 
     sns = _initialize_seaborn()
+    _log.info("Initialized SeaBorn.")
 
     if save_data:
         if output_dir is None:
@@ -68,6 +69,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
         df_col_indices = []
 
     # ########### Identify the requested layout of the plot ########################################################## #
+    _log.info("Inferring plot layout.")
     nind = len(df_row_indices) + len(df_col_indices)
     assert nind <= 2, \
         f"Cannot generate t-SNE comparison across more than 2 indices, received indices: {indices}"
@@ -93,10 +95,13 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
 
     nrows = len(row_labels)
     ncols = len(col_labels)
+    _log.info(f"Inferred plot layout: {nrows} x {ncols}")
     # ################################################################################################################ #
 
 
     # ########################### Setup matplotlib ################################################################### #
+
+    _log.info("Setting up plot.")
 
     # 10% padding in each dimension between axes, each axes object of size (6.4, 4.8), additional 10% padding around the
     # figure edges. Also add some extra width for the colorbar.
@@ -114,13 +119,17 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
                                     width_ratios=width_ratios)
     # ################################################################################################################ #
 
-    # ########################### Setup matplotlib ################################################################### #
+    # ########################### Draw the actual visualizations ##################################################### #
+
+    _log.info("Drawing visualizations")
 
     # Ensure that the columns index is a MultiIndex.
     if not isinstance(embedded_data.columns, pd.MultiIndex):
         embedded_data.columns = pd.MultiIndex.from_arrays([embedded_data.columns], names=embedded_data.columns.names)
 
     for ridx, rlabel in enumerate(row_labels):
+
+        _log.info(f"Drawing row {ridx}")
 
         # Generate view on the entire row's data.
         if rlabel is not None:
@@ -135,6 +144,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
         normalized_row_values = (row_values - min_val) / (max_val - min_val) * 2 - 1
 
         for cidx, clabel in enumerate(col_labels):
+            _log.debug(f"Drawing column {cidx}")
             # ax: plt.Axes = axes[ridx, cidx]
             ax: plt.Axes = fig.add_subplot(gs[ridx, cidx])
             # view = get_view_on_data(row_val=rlabel, col_val=clabel)
@@ -163,22 +173,22 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
 
             # All bottom row axes
             if ridx == nrows - 1:
-                ax.set_xlabel(clabel)
+                ax.set_xlabel(clabel, labelpad=1.5)
             else:
                 ax.set_xticklabels([])
 
             # All left column axes
             if cidx == 0:
-                ax.set_ylabel(rlabel)
+                ax.set_ylabel(rlabel, labelpad=1.5)
             else:
                 ax.set_yticklabels([])
 
-
+    _log.info("Applying finishing touches.")
     mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
     # Insert colorbar
     ax: plt.Axes = fig.add_subplot(gs[:, -1])
     fig.colorbar(mappable, cax=ax)
-    fig.align_labels()
+    fig.align_labels(axs=fig.axes[0::ncols + 1] + fig.axes[(nrows - 1) * (ncols + 1):])
     fig.set_constrained_layout_pads(w_pad=0.15 * draw_area_width, h_pad=0.15 * draw_area_height)
     fig.set_constrained_layout(True)
     # fig.tight_layout(pad=2.5, h_pad=1.1, w_pad=1.1)
@@ -188,6 +198,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
         fn = C.FileNames.tsne_visualization if file_prefix is None else \
             f"{file_prefix}_{C.FileNames.tsne_visualization}"
         fig.savefig(output_dir / fn)
+        _log.info("Saved figure to disk.")
     else:
         plt.show()
     return fig

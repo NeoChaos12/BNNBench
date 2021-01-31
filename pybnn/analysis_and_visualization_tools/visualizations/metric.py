@@ -32,9 +32,12 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
         upto 3 levels, one of which has to be 'across' and one must be 'xaxis_level'. The remaining level will be
         averaged over to generate the means."""
 
-    assert len(data.index.names) == 3, \
-        "To generate a mean-std plot, the dataframe must have exactly 3 index levels. The given dataframe has %d " \
-        "index levels." % data.index.names.shape[0]
+    # assert len(data.index.names) <= 3, \
+    #     "To generate a mean-std plot, the dataframe cannot have more than 3 index levels. The given dataframe has %d " \
+    #     "index levels." % len(data.index.names)
+
+    _log.info(f"Generating mean-std plot for {data.shape[0]} values, across the level {across}, using {xaxis_level} as "
+              f"X-Axis.")
 
     if xaxis_level is None:
         xaxis_level = default_metrics_row_index_labels[-1]
@@ -42,12 +45,20 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
         subset: pd.DataFrame = data.xs(label, level=across)
         y_label = subset.columns.values
+
+        # This allows us to average over an optional third index.
         tmp = subset.reset_index()
-        tmp = tmp.pivot(index=xaxis_level, columns=tmp.columns.drop([xaxis_level, *y_label]), values=y_label)
-        tmp = tmp.sort_index(axis=0).iloc[x_offset:]
-        xs: np.ndarray = tmp.index.to_numpy().squeeze()
-        means: np.ndarray = tmp.mean(axis=1).to_numpy().squeeze()
-        std: np.ndarray = tmp.std(axis=1).to_numpy().squeeze()
+        extra_levels = tmp.columns.drop([xaxis_level, *y_label])
+
+        if extra_levels.shape[0] != 0:
+            final_data = tmp.pivot(index=xaxis_level, columns=extra_levels, values=y_label)
+        else:
+            final_data = subset
+        # tmp = tmp.pivot(index=xaxis_level, columns=subset.columns, values=y_label)
+        final_data = final_data.sort_index(axis=0).iloc[x_offset:]
+        xs: np.ndarray = final_data.index.to_numpy().squeeze()
+        means: np.ndarray = final_data.mean(axis=1).to_numpy().squeeze()
+        std: np.ndarray = final_data.std(axis=1).to_numpy().squeeze()
         ax.plot(xs, means, c=colour, label=label)
         ax.fill_between(xs, means - std, means + std, alpha=0.2, color=colour)
         formatter = mtick.ScalarFormatter(useMathText=True)
@@ -101,6 +112,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         indices = default_metrics_row_index_labels[:2]
 
     # Identify the requested layout
+    _log.info("Inferring plot layout.")
+
     nind = len(indices)
     assert nind <= 3, "Mean-Variance visualization of metric values cannot handle more than 3 " \
                       "index names to compare across."
@@ -135,6 +148,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         else:
             selection = (row_val, col_val), (idx3, idx2)
         return data.xs(selection[0], level=selection[1])
+
+    _log.info("Setting up plot.")
 
     # 5% padding in each dimension between axes, each axes object of size (6.4, 4.8), additional 10% padding around the
     # figure edges.

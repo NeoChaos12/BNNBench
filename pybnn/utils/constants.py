@@ -26,6 +26,7 @@ class FileNames:
     metrics_dataframe = "metrics.pkl.gz"
     runhistory_dataframe = "runhistory.pkl.gz"
     augmented_metrics_dataframe = "augmented_metrics.pkl.gz"
+    reduced_ranks_dataframe = "reduced_rank_metrics.pkl.gz"
     augmented_runhistory_dataframe = "augmented_runhistory.pkl.gz"
     tsne_embeddings_dataframe = "tsne_embeddings.pkl.gz"
     mean_std_visualization = "MeanVarianceViz.pdf"
