@@ -15,26 +15,32 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.ticker as mtick
+import matplotlib
 import pandas as pd
 import numpy as np
 import math
 import pybnn.utils.constants as C
+from itertools import cycle
 
 _log = logging.getLogger(__name__)
+
+cell_height = 4.8
+cell_width = 6.4
+colorbar_ax_width = 0.5
 
 def _initialize_seaborn():
     """ Since seaborn can be finicky on the server, we only import it when we're really sure about it. """
 
     import seaborn as sns
 
-    sns.set_style("darkgrid")
-    sns.set_palette('tab10')
-    sns.set_context("paper", font_scale=2.5)
+    sns.set_style("darkgrid", {'axes.linewidth': 2, 'axes.edgecolor':'black'})
+    sns.set_context("paper", font_scale=3)
     return sns
 
 
 def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[str]], save_data: bool = True,
-                    output_dir: Path = None, suptitle: str = None) -> plt.Figure:
+                    output_dir: Path = None, file_prefix: str = None, suptitle: str = None, palette: str = 'viridis') \
+        -> plt.Figure:
     """ Given a dataframe containing t-SNE embeddings in 2 dimensions and up to 2 strings specifying indices across
     which comparisons are to be generated, creates a figure containing all the relevant plots of the embeddings. The
     indices can be specified as a tuple of lists of strings such that the total number of strings in both lists
@@ -42,7 +48,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
     indices from the column-index of the DataFrame (not the subplots). If no column indices are specified, it is
     expected that the column index has only 1 level. All other levels in the row index than the ones specified in
     'indices' get reduced. Note that the column index level 'run_data' is reserved and may produce unexpected results
-    if included in 'indices'. """
+    if included in 'indices'. The visualization is colored such that every row's colour bars lie on the same scale. """
 
     sns = _initialize_seaborn()
 
@@ -89,35 +95,56 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
     ncols = len(col_labels)
     # ################################################################################################################ #
 
-    def get_view_on_data(row_val: Optional[Any] = None, col_val: Optional[Any] = None) \
-            -> pd.DataFrame:
-        """ Returns a cross-section of the full dataframe index using the given values of the comparison indices. If no
-        'col_val' is given, the view includes the entire DataFrame. Otherwise, a cross-section over the 'row_val' and
-        'col_val' is generated. If 'row_val' is None, it is ignored. """
 
-        nonlocal embedded_data, row_labels_axis, row_label_level_name, col_labels_axis, col_label_level_name
-        selection = embedded_data
-        if col_val is not None:
-            selection = selection.xs(col_val, axis=col_labels_axis, level=col_label_level_name, drop_level=False)
-            if row_val is not None:
-                selection = selection.xs(row_val, axis=row_labels_axis, level=row_label_level_name, drop_level=False)
-        # Since some rows for particular columns of the embedded DataFrame can contain NaNs, we get rid of them from
-        # the view.
-        return selection[selection.notna().all(axis=1)]
+    # ########################### Setup matplotlib ################################################################### #
 
     # 10% padding in each dimension between axes, each axes object of size (6.4, 4.8), additional 10% padding around the
-    # figure edges.
-    plt.rcParams["figure.figsize"] = (6.4 * ncols * 1.1 * 1.1, 4.8 * nrows * 1.05 * 1.1)
-    fig, axes = plt.subplots(nrows, ncols, squeeze=False, frameon=True)
-    fig: plt.Figure
-    axes: np.ndarray
+    # figure edges. Also add some extra width for the colorbar.
+    draw_area_width = cell_width * ncols + colorbar_ax_width
+    draw_area_height = cell_height * nrows
+    wspace = 0.02 * draw_area_width
+    hspace = 0.02 * draw_area_height
+    width_ratios = [cell_width] * ncols + [colorbar_ax_width]
 
+    plt.rcParams["figure.figsize"] = (draw_area_width * 1.25, draw_area_height * 1.25)
+
+    # fig, axes = plt.subplots(nrows, ncols, squeeze=False, frameon=True)
+    fig: plt.Figure = plt.figure(constrained_layout=True, frameon=True)
+    gs: plt.GridSpec = plt.GridSpec(nrows=nrows, ncols=ncols + 1, figure=fig, wspace=wspace, hspace=hspace,
+                                    width_ratios=width_ratios)
+    # ################################################################################################################ #
+
+    # ########################### Setup matplotlib ################################################################### #
+
+    # Ensure that the columns index is a MultiIndex.
+    if not isinstance(embedded_data.columns, pd.MultiIndex):
+        embedded_data.columns = pd.MultiIndex.from_arrays([embedded_data.columns], names=embedded_data.columns.names)
 
     for ridx, rlabel in enumerate(row_labels):
-        palettes = enumerate(C.color_palettes)
+
+        # Generate view on the entire row's data.
+        if rlabel is not None:
+            row_df = embedded_data.xs(rlabel, axis=row_labels_axis, level=row_label_level_name)
+        else:
+            row_df = embedded_data
+
+        # Normalize data values in the row to a scale of [-1, 1] to ensure visual uniformity along a row.
+        row_values = row_df.xs(slice(None), axis=1, level=C.tsne_data_level_name, drop_level=False)
+        min_val = row_values.min()
+        max_val = row_values.max()
+        normalized_row_values = (row_values - min_val) / (max_val - min_val) * 2 - 1
+
         for cidx, clabel in enumerate(col_labels):
-            ax: plt.Axes = axes[ridx, cidx]
-            view = get_view_on_data(row_val=rlabel, col_val=clabel)
+            # ax: plt.Axes = axes[ridx, cidx]
+            ax: plt.Axes = fig.add_subplot(gs[ridx, cidx])
+            # view = get_view_on_data(row_val=rlabel, col_val=clabel)
+
+            # Generate view on one cell's data.
+            if rlabel is not None:
+                view = normalized_row_values.xs(clabel, axis=col_labels_axis, level=col_label_level_name)
+            else:
+                view = normalized_row_values
+
             if isinstance(view.columns, pd.MultiIndex):
                 data = view.xs(slice(None), axis=1, level=C.tsne_data_level_name, drop_level=False)
                 data: np.ndarray = data.to_numpy()
@@ -128,25 +155,39 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
             ys = data[:, 1].reshape(-1)
             cs = data[:, 2].reshape(-1)
 
-            # norm = mcolors.Normalize()
-            norm = mcolors.SymLogNorm(linthresh=1e-2, base=10)
+            norm = mcolors.Normalize(vmin=-1., vmax=1.)
             # A complicated but necessary procedure to convert our alphas into a colormap. This makes it easy to create
             # a colorbar later on.
-            ccount, palette = next(palettes)
             cmap = sns.color_palette(palette, as_cmap=True)
-            sc = ax.scatter(xs, ys, c=cs, cmap=cmap, norm=norm)
-            fig.colorbar(sc, ax=ax, extend='max')
+            _ = ax.scatter(xs, ys, c=cs, cmap=cmap, norm=norm)
 
+            # All bottom row axes
             if ridx == nrows - 1:
-                ax.set_xlabel(clabel, labelpad=10)
+                ax.set_xlabel(clabel)
+            else:
+                ax.set_xticklabels([])
 
+            # All left column axes
             if cidx == 0:
-                ax.set_ylabel(rlabel, labelpad=10)
+                ax.set_ylabel(rlabel)
+            else:
+                ax.set_yticklabels([])
 
-    fig.tight_layout(pad=2.5, h_pad=1.1, w_pad=1.1)
+
+    mappable = matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap)
+    # Insert colorbar
+    ax: plt.Axes = fig.add_subplot(gs[:, -1])
+    fig.colorbar(mappable, cax=ax)
+    fig.align_labels()
+    fig.set_constrained_layout_pads(w_pad=0.15 * draw_area_width, h_pad=0.15 * draw_area_height)
+    fig.set_constrained_layout(True)
+    # fig.tight_layout(pad=2.5, h_pad=1.1, w_pad=1.1)
     if suptitle:
         fig.suptitle(suptitle, ha='center', va='top')
     if save_data:
-        fig.savefig(output_dir / "SearchSpaceEmbeddings.pdf")
+        fn = C.FileNames.tsne_visualization if file_prefix is None else \
+            f"{file_prefix}_{C.FileNames.tsne_visualization}"
+        fig.savefig(output_dir / fn)
     else:
         plt.show()
+    return fig

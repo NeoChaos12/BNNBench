@@ -47,9 +47,9 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
         tmp = tmp.sort_index(axis=0).iloc[x_offset:]
         xs: np.ndarray = tmp.index.to_numpy().squeeze()
         means: np.ndarray = tmp.mean(axis=1).to_numpy().squeeze()
-        vars: np.ndarray = tmp.std(axis=1).to_numpy().squeeze()
+        std: np.ndarray = tmp.std(axis=1).to_numpy().squeeze()
         ax.plot(xs, means, c=colour, label=label)
-        ax.fill_between(xs, means - vars, means + vars, alpha=0.2, color=colour)
+        ax.fill_between(xs, means - std, means + std, alpha=0.2, color=colour)
         formatter = mtick.ScalarFormatter(useMathText=True)
         formatter.set_scientific(True)
         formatter.set_powerlimits((-1, 1))
