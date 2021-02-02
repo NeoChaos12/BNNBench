@@ -68,9 +68,8 @@ def super_sample(df: pd.DataFrame, level: str = 'rng_offset', new_level='sample_
     final_df = None
     for v in iter_values:
         if v != None:
-            try:
-                tmp = df.xs(v, level=extra_levels)
-            except KeyError:
+            tmp = df.xs(v, level=extra_levels)
+            if tmp.empty:
                 # Accounts for cases where some expected unique indices are not present.
                 _log.debug("Skipping unknown key %s." % str(v))
                 continue
@@ -78,7 +77,11 @@ def super_sample(df: pd.DataFrame, level: str = 'rng_offset', new_level='sample_
         else:
             tmp = df
             new_index_values = [list(range(nsamples))]
-        super_df = tmp.sample(nsamples, replace=True, random_state=rng)
+        try:
+            super_df = tmp.sample(nsamples, replace=True, random_state=rng)
+        except ValueError as e:
+            print("boo")
+            raise e
         if isinstance(super_df, pd.Series):
             super_df: pd.Series
             super_df = super_df.to_frame()

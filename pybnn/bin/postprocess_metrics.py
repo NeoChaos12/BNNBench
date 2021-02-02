@@ -14,11 +14,15 @@ import pybnn.analysis_and_visualization_tools.postprocessing as proc
 import pybnn.utils.constants as C
 from pybnn.bin import _default_log_format
 import logging
+from typing import Optional
 
 _log = logging.getLogger(__name__)
 
-metrics_to_normalize = ["acquisition_value", "mean_squared_error", "minimum_observed_value", "avg_nll", "overhead"]
+metrics_to_normalize = ["acquisition_value", "mean_squared_error", "avg_nll", "overhead", "minimum_observed_value"]
 metrics_to_rank = metrics_to_normalize
+rs_include_metric = metrics_to_rank[-1:]
+all_models = ["Random Search", "Gaussian Process", "MCDropout", "MCBatchNorm", "DeepEnsemble"]
+
 
 def handle_cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a suite of post-processing operations on the basic metrics data "
@@ -41,80 +45,77 @@ def handle_cli() -> argparse.Namespace:
     return args
 
 
-def perform_standard_metric_postprocessing(source: Path, destination: Path, nsamples_for_rank:int = 1000,
-                                           ranking_method: str = "average", debug: bool = False):
+# ############################ Calculate Ranks ################################################################### #
+
+def postprocess_ranks(metrics_df: pd.DataFrame, destination: Path, nsamples: int = 1000, method: str = "average",
+                      rng: int = 1, ret: bool = False) -> Optional[pd.DataFrame]:
+    # Super sample only the metrics that we want to calculate the ranks of.
+    rank_df = metrics_df[metrics_df.index.get_level_values('metric').isin(metrics_to_rank, level='metric')]
+
+    # super_sampled_metrics = proc.super_sample(rank_df, level='rng_offset', new_level='sample_idx',
+    #                                           nsamples=nsamples, rng=rng)
+    # super_sampled_metrics.to_pickle(destination / C.FileNames.supersampled_metrics_dataframe)
+    # # Generate rank across models for each (*, task, rank_metric, sample_idx, iteration)
+    # rank_df = proc.get_ranks(super_sampled_metrics, across='model', method=method)
+    # del(super_sampled_metrics)
+    # Calculate mean across all 'sample_idx' for each (*, task, model, rank_metric, iteration)
+    rank_df: pd.Series = rank_df.unstack("rng_offset").mean(axis=1)
+    rank_df = rank_df.to_frame("value")
+    rank_df = proc.get_ranks(rank_df, across='model', method=method)
+    # mean_ranks: pd.Series = rank_df.unstack("sample_idx").mean(axis=1)
+    # mean_ranks.name = "mean"
+    # std_ranks: pd.Series = rank_df.unstack("sample_idx").std(axis=1)
+    # std_ranks.name = "std"
+    # rank_df = pd.concat([mean_ranks, std_ranks], axis=1)
+    rank_df.to_pickle(destination / C.FileNames.rank_metrics_dataframe)
+    if ret:
+        return rank_df
+
+
+# ############################ Normalize Raw Metrics ############################################################# #
+
+def postprocess_values(metrics_df: pd.DataFrame, destination: Path, ret: bool = False) -> Optional[pd.DataFrame]:
+
+    # Exclude some metrics because we're not interested in them right now.
+    metrics_df = metrics_df[metrics_df.index.get_level_values('metric').isin(metrics_to_normalize, level='metric')]
+
+    # Also exclude specific metric data from Random Search since it's not relevant in order to prevent it from
+    # affecting the normalization.
+    rs_metrics = metrics_df[metrics_df.index.get_level_values('model').isin(all_models[:1], level='model')]
+    other_metrics = metrics_df[metrics_df.index.get_level_values('model').isin(all_models[1:], level='model')]
+    rs_metrics = rs_metrics[rs_metrics.index.get_level_values('metric').isin(rs_include_metric, level='metric')]
+    metrics_df = other_metrics.combine_first(rs_metrics)
+
+    # Normalize the scale for raw metric values of the chosen metrics for every (task).
+    normalized = proc.normalize_scale(metrics_df, level=['task', 'metric'])
+    # normalized = normalized.unstack('rng_offset').mean(axis=1).to_frame('normalized_value')
+    normalized.to_pickle(destination / C.FileNames.inferred_metrics_dataframe)
+    if ret:
+        return normalized
+
+
+def perform_standard_metric_postprocessing(source: Path, destination: Path, nsamples_for_rank: int = 1000,
+                                           ranking_method: str = "average", debug: bool = False, rng: int = 1):
     if debug:
         proc._log.setLevel(logging.DEBUG)
         _log.setLevel(logging.DEBUG)
 
-    source = args.source
-    destination = args.destination
     if source is None:
         source = Path().cwd()
-
-    if destination is None:
-        destination = Path(source)
 
     if not source.exists():
         raise RuntimeError(f"The specified source directory {source} was not found.")
 
+    if destination is None:
+        destination = Path(source)
+
+    destination.mkdir(parents=True, exist_ok=True)
+
     metrics_df: pd.DataFrame = pd.read_pickle(source / C.FileNames.metrics_dataframe)
     metrics_df = proc.calculate_overhead(metrics_df)
 
-    # 1. super sample -> calculate ranks for metrics_to_rank
-    # 2. normalize for metrics_to_normalize
-    # 3. save the result of 1 and 2
-
-    # ############################ Calculate Ranks ################################################################### #
-
-    # Super sample only the metrics that we want to calculate the ranks of.
-    rank_df = metrics_df.xs(metrics_to_rank, level='metric', drop_level=False)
-    super_sampled_metrics = proc.super_sample(rank_df, level='rng_offset', new_level='sample_idx',
-                                              nsamples=nsamples_for_rank)
-    # Generate rank across models for each (*, task, rank_metric, sample_idx, iteration)
-    rank_df = proc.get_ranks(super_sampled_metrics, across='model', method=ranking_method)
-    # Calculate mean across all 'sample_idx' for each (*, task, model, rank_metric, iteration)
-    rank_df = rank_df.unstack("sample_idx").mean(axis=1).to_frame('rank')
-
-    # ############################ Normalize Raw Metrics ############################################################# #
-
-    # Normalize the scale for raw metric values of the chosen metrics for every (task).
-    normalized = metrics_df.xs(metrics_to_normalize, level='metric', drop_level=False)
-    normalized = proc.normalize_scale(normalized, level=)
-
-    all_index_names = metrics_df.index.names
-    extra_names = all_index_names[:all_index_names.index('model')]
-
-    def iterate_views():
-        if extra_names is None or len(extra_names) == 0:
-            _log.info("No extra levels in metrics dataframe found.")
-            yield metrics_df, None
-        else:
-            _log.info(f"Found these extra levels in the metrics dataframe: {extra_names}")
-            idx = pd.MultiIndex.from_product([metrics_df.index.unique(l) for l in extra_names])
-            _log.info(f"Iterating over {idx.shape[0]} views corresponding to extra index levels.")
-            for i in idx.values:
-                _log.info(f"Generating view for key {i}.")
-                yield metrics_df.xs(i, level=tuple(extra_names)), i
-
-    destination.mkdir(exist_ok=True, parents=True)
-    collated_df = None
-    new_index_names = None
-    for df, idx in iterate_views():
-        res = proc.calculate_overhead(df)
-        res = proc.generate_metric_ranks(res, rng=args.rng)
-        if idx is not None:
-            # idx is None only if no extra levels were present in the index.
-            res = res.assign(**dict(zip(extra_names, idx)))
-            if new_index_names is None:
-                new_index_names = extra_names + res.index.names
-            res = res.set_index(extra_names, append=True).reorder_levels(new_index_names)
-        if collated_df is None:
-            collated_df = res
-        else:
-            collated_df = collated_df.combine_first(res)
-
-        collated_df.to_pickle(destination / C.FileNames.augmented_metrics_dataframe)
+    normalized_df = postprocess_values(metrics_df, destination, ret=True)
+    postprocess_ranks(normalized_df, destination, nsamples_for_rank, ranking_method, rng)
 
 
 if __name__ == "__main__":

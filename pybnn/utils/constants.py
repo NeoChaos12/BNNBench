@@ -33,7 +33,10 @@ class FileNames:
     # Raw metric values super-sampled from random starts
     supersampled_metrics_dataframe = "metrics_supersampled.pkl.gz"
 
-    # Selected metrics inferred during post-processing of super-sampled raw metrics
+    # Rank data for selected metrics calculated in post-processing of super-sampled raw metrics
+    rank_metrics_dataframe = "metrics_ranked.pkl.gz"
+
+    # Selected metrics inferred during post-processing of raw metrics
     inferred_metrics_dataframe = "metrics_inferred.pkl.gz"
 
     # Not used yet

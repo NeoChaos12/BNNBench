@@ -27,15 +27,14 @@ sns.set_context("paper", font_scale=2.5)
 default_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 linewidth = 4.
 
-def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1):
+def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1,
+                   calculate_stats: bool = True):
     """ Plots a Mean-Variance metric data visualization on the given Axes object comparing all indices defined by the
         name 'across' in the DataFrame 'data' within the same plot. Remember that the dataframe index must contain at
         least 2 levels, one of which has to be 'across' and one must be 'xaxis_level'. The remaining level will be
-        averaged over to generate the means."""
-
-    # assert len(data.index.names) <= 3, \
-    #     "To generate a mean-std plot, the dataframe cannot have more than 3 index levels. The given dataframe has %d " \
-    #     "index levels." % len(data.index.names)
+        averaged over to generate the means. If 'calculate_stats' is True, the function calculates mean and std values
+        on the fly. If it is False, the function expects the input data to have two columns, "mean" and "std"
+        containing the respective values. """
 
     _log.info(f"Generating mean-std plot for {data.shape[0]} values, across the level {across}, using {xaxis_level} as "
               f"X-Axis.")
@@ -52,16 +51,21 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
         for extra in extra_index_levels:
             final_data = final_data.unstack(extra)
 
-    mean_df: pd.Series = final_data.mean(axis=1)
-    std_df: pd.Series = final_data.std(axis=1)
+    if calculate_stats:
+        mean_df: pd.Series = final_data.mean(axis=1)
+        std_df: pd.Series = final_data.std(axis=1)
+    else:
+        mean_df = final_data.loc[:, "mean"]
+        std_df = final_data.loc[:, "std"]
 
-    min_val, max_val = mean_df.min(), mean_df.max()
+    # min_val, max_val = np.log10(mean_df.min()), mean_df.max()
 
-    log_y = False
+    # log_y = False
+    log_y = True
     # if max_val / min_val > 10000:
-    percentiles = np.percentile(mean_df, [0.1, 0.9])
-    if percentiles[1] / percentiles[0] > 100:
-        log_y = True
+    # percentiles = np.log10(np.percentile(mean_df, [0.1, 0.9]) + 1e-6)
+    # if percentiles[1] - percentiles[0] >= 3:
+    #     log_y = True
 
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
         xs = final_data.xs(label, level=across).sort_index(axis=0).iloc[x_offset:].index
@@ -83,7 +87,8 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
 
 
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
-             file_prefix: str = None, suptitle: str = None, xaxis_level: str = None, x_offset: int = 1):
+             file_prefix: str = None, suptitle: str = None, xaxis_level: str = None, x_offset: int = 1,
+             calculate_stats: bool = True):
     """
     Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across up to
     three individual dimensions.
@@ -109,6 +114,9 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     :param x_offset: int
         An offset used to exclude the earliest few values from the x-axis level. The value of 'x_offset' is how many of
         the initial indices from both the x-axis and the corresponding y-values will be ignored. Default: 1.
+    :param calculate_stats: bool
+        If 'calculate_stats' is True, the function calculates mean and std values on the fly. If it is False, the
+        function expects the input data to have two columns, "mean" and "std" containing the respective values.
     :return: None
     """
 
@@ -176,7 +184,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
         for cidx, clabel in enumerate(col_labels):
             ax: plt.Axes = axes[ridx, cidx]
             view = get_view_on_data(row_val=rlabel, col_val=clabel)
-            _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level, x_offset=x_offset)
+            _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level, x_offset=x_offset,
+                           calculate_stats=calculate_stats)
 
             # Bottom row only
             if ridx == nrows - 1:
