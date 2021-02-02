@@ -23,13 +23,27 @@ benchmarks_enum_to_name = {
 
 class FileNames:
     " A container for all the various default filenames that will be used through the library. "
+
+    # The raw metrics, possibly collated across multiple experiment configurations
     metrics_dataframe = "metrics.pkl.gz"
+
+    # The raw runhistories, possibly collated across multiple experiment configurations
     runhistory_dataframe = "runhistory.pkl.gz"
-    augmented_metrics_dataframe = "augmented_metrics.pkl.gz"
-    reduced_ranks_dataframe = "reduced_rank_metrics.pkl.gz"
+
+    # Raw metric values super-sampled from random starts
+    supersampled_metrics_dataframe = "metrics_supersampled.pkl.gz"
+
+    # Selected metrics inferred during post-processing of super-sampled raw metrics
+    inferred_metrics_dataframe = "metrics_inferred.pkl.gz"
+
+    # Not used yet
     augmented_runhistory_dataframe = "augmented_runhistory.pkl.gz"
+
+    # t-SNE of runhistories
     tsne_embeddings_dataframe = "tsne_embeddings.pkl.gz"
-    mean_std_visualization = "MeanVarianceViz.pdf"
+
+    # Various visualizations
+    mean_std_visualization = "MeanStdViz.pdf"
     tsne_visualization = "tSNE_Embedding.pdf"
 
 # These are potentially repeated by some other classes. This is intentional and intended to make it easier to point out

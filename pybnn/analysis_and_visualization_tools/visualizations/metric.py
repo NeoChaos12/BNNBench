@@ -20,16 +20,17 @@ from pybnn.utils import constants as C
 
 _log = logging.getLogger(__name__)
 
-sns.set_style("whitegrid")
+sns.set_style("whitegrid", {'axes.linewidth': 2, 'axes.edgecolor':'black', 'lines.linewidth': 5})
 sns.set_palette('tab10')
 sns.set_context("paper", font_scale=2.5)
 
 default_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
+linewidth = 4.
 
 def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1):
     """ Plots a Mean-Variance metric data visualization on the given Axes object comparing all indices defined by the
-        name 'across' in the DataFrame 'data' within the same plot. Remember that the dataframe index can only contain
-        upto 3 levels, one of which has to be 'across' and one must be 'xaxis_level'. The remaining level will be
+        name 'across' in the DataFrame 'data' within the same plot. Remember that the dataframe index must contain at
+        least 2 levels, one of which has to be 'across' and one must be 'xaxis_level'. The remaining level will be
         averaged over to generate the means."""
 
     # assert len(data.index.names) <= 3, \
@@ -41,29 +42,43 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
 
     if xaxis_level is None:
         xaxis_level = default_metrics_row_index_labels[-1]
+
     labels = data.index.unique(level=across)
+    extra_index_levels = [l for l in data.index.names if l not in [across, xaxis_level]]
+
+    final_data = data
+    if len(extra_index_levels) != 0:
+        # Unstack all extra indices
+        for extra in extra_index_levels:
+            final_data = final_data.unstack(extra)
+
+    mean_df: pd.Series = final_data.mean(axis=1)
+    std_df: pd.Series = final_data.std(axis=1)
+
+    min_val, max_val = mean_df.min(), mean_df.max()
+
+    log_y = False
+    # if max_val / min_val > 10000:
+    percentiles = np.percentile(mean_df, [0.1, 0.9])
+    if percentiles[1] / percentiles[0] > 100:
+        log_y = True
+
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
-        subset: pd.DataFrame = data.xs(label, level=across)
-        y_label = subset.columns.values
-
-        # This allows us to average over an optional third index.
-        tmp = subset.reset_index()
-        extra_levels = tmp.columns.drop([xaxis_level, *y_label])
-
-        if extra_levels.shape[0] != 0:
-            final_data = tmp.pivot(index=xaxis_level, columns=extra_levels, values=y_label)
-        else:
-            final_data = subset
-        # tmp = tmp.pivot(index=xaxis_level, columns=subset.columns, values=y_label)
-        final_data = final_data.sort_index(axis=0).iloc[x_offset:]
-        xs: np.ndarray = final_data.index.to_numpy().squeeze()
-        means: np.ndarray = final_data.mean(axis=1).to_numpy().squeeze()
-        std: np.ndarray = final_data.std(axis=1).to_numpy().squeeze()
-        ax.plot(xs, means, c=colour, label=label)
+        xs = final_data.xs(label, level=across).sort_index(axis=0).iloc[x_offset:].index
+        subset_means: pd.Series = mean_df.xs(label, level=across)[xs]
+        subset_stds: pd.Series = std_df.xs(label, level=across)[xs]
+        xs: np.ndarray = xs.to_numpy().squeeze()
+        means: np.ndarray = subset_means.to_numpy().squeeze()
+        std: np.ndarray = subset_stds.to_numpy().squeeze()
+        ax.plot(xs, means, c=colour, label=label, linewidth=linewidth)
         ax.fill_between(xs, means - std, means + std, alpha=0.2, color=colour)
-        formatter = mtick.ScalarFormatter(useMathText=True)
-        formatter.set_scientific(True)
-        formatter.set_powerlimits((-1, 1))
+        if log_y:
+            ax.set_yscale('log')
+            formatter = mtick.LogFormatterMathtext(labelOnlyBase=False, minor_thresholds=(2, 1))
+        else:
+            formatter = mtick.ScalarFormatter(useMathText=True)
+            formatter.set_powerlimits((-1, 1))
+            formatter.set_scientific(True)
         ax.yaxis.set_major_formatter(formatter)
 
 
@@ -162,18 +177,22 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
             ax: plt.Axes = axes[ridx, cidx]
             view = get_view_on_data(row_val=rlabel, col_val=clabel)
             _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level, x_offset=x_offset)
+
+            # Bottom row only
             if ridx == nrows - 1:
                 ax.set_xlabel(clabel, labelpad=10)
+            else:
+                ax.set_xticklabels([])
 
             if cidx == 0:
                 ax.set_ylabel(rlabel, labelpad=10)
 
     handles, labels = axes.flatten()[-1].get_legend_handles_labels()
     legend_size = index.unique(level=idx1).size
-    if ncols >= legend_size:
-        fig.legend(handles, labels, loc='lower center', ncol=legend_size)
-    else:
-        fig.legend(handles, labels, loc='center right')
+    # if ncols >= legend_size:
+    fig.legend(handles, labels, loc='lower center', ncol=legend_size)
+    # else:
+    #     fig.legend(handles, labels, loc='center right')
     fig.tight_layout(pad=2.5, h_pad=1.1, w_pad=1.1)
     if suptitle:
         fig.suptitle(suptitle, ha='center', va='top')

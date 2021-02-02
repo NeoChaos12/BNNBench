@@ -2,57 +2,122 @@ import logging
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
-from typing import Sequence, Optional
+from typing import Sequence, Optional, Union
 from pybnn.utils import constants as C
 
 _log = logging.getLogger(__name__)
 
-def get_rank_across_models(df: pd.DataFrame, metric: str = 'minimum_observed_value', nsamples: int = 1000,
-                           method: str = 'average', rng: int = 1) -> \
-        pd.DataFrame:
+
+def normalize_scale(df: pd.DataFrame, level: Union[Sequence[int], Sequence[str]] = None):
+    """ Reduce data in the given dataframe to a linear scale of [0.0, 1.0] using the min/max values across the
+    specified level(s). """
+
+    original_order = df.index.names
+    shift_levels = original_order.difference(level)
+    df = df.reorder_levels(level + shift_levels)
+
+    if len(shift_levels) > 0:
+        df = df.unstack(shift_levels)
+
+    maxval: pd.Series = df.max(axis=1)
+    minval: pd.Series = df.min(axis=1)
+    scale: pd.Series = maxval - minval
+    df: pd.DataFrame
+    df = df.sub(minval, axis=0)
+    df = df.div(scale, axis=0)
+
+    if len(shift_levels) > 0:
+        df = df.stack(shift_levels)
+
+    df = df.reorder_levels(original_order)
+    return df
+
+def super_sample(df: pd.DataFrame, level: str = 'rng_offset', new_level='sample_idx', nsamples: int = 1000,
+                 rng: int = 1) -> pd.DataFrame:
     """
-    For a metrics dataframe, generate a corresponding dataframe containing model ranks based on randomly sampled
-    rng_offsets for the chosen metric. The index of such a dataframe must correspond to this exact sequence of levels:
-    ['model', 'metric', 'rng_offset', 'iteration']. Otherwise, any additional levels in the index should be such that
-    they can be randomly sampled to generate metric ranks.
+    For a given dataframe containing raw metric values, super-sample the experiment data from the given index level and
+    return the resultant Dataframe. All index levels that occur before 'level' in the sequence df.index.names will be
+    iterated over. 'level' will be replaced by 'new_level'.
+    :param df: pandas.DataFrame
+        The dataframe object containing the data to be super-sampled
+    :param level: str
+        The index level to be super-sampled.
+    :param new_level: str
+        The name of the new level that will replace 'level', keeping track of the sequence in which samples were drawn.
+    :param nsamples: int
+        The number of samples to draw from level.
+    :param rng: int
+        A random number seed to ensure repeatable results.
+    :return: pandas.DataFrame
+        The dataframe containing super-sampled values.
+    """
+
+    level_index = df.index.names.index(level)
+    extra_levels = df.index.names[:level_index]
+    shift_levels = df.index.names[level_index+1:]
+    if len(shift_levels) > 0:
+        # There were levels in the index after the pivot 'level'
+        df = df.unstack(shift_levels)
+
+    if len(extra_levels) > 0:
+        iter_values = pd.MultiIndex.from_product([df.index.unique(e) for e in extra_levels], names=extra_levels).values
+    else:
+        iter_values = [None]
+
+    final_levels = extra_levels + [new_level]
+    final_df = None
+    for v in iter_values:
+        if v != None:
+            try:
+                tmp = df.xs(v, level=extra_levels)
+            except KeyError:
+                # Accounts for cases where some expected unique indices are not present.
+                _log.debug("Skipping unknown key %s." % str(v))
+                continue
+            new_index_values = [*v, list(range(nsamples))]
+        else:
+            tmp = df
+            new_index_values = [list(range(nsamples))]
+        super_df = tmp.sample(nsamples, replace=True, random_state=rng)
+        if isinstance(super_df, pd.Series):
+            super_df: pd.Series
+            super_df = super_df.to_frame()
+        super_df: pd.DataFrame
+        super_df = super_df.assign(**dict(zip(final_levels, new_index_values)))
+        super_df = super_df.set_index(final_levels, append=True).reset_index(level, drop=True)
+        if final_df is None:
+            final_df = super_df
+        else:
+            final_df = final_df.combine_first(super_df)
+
+    if len(shift_levels) > 0:
+        # There were levels in the index after the pivot 'level'
+        final_df = final_df.stack(shift_levels)
+
+    return final_df
+
+
+def get_ranks(df: pd.DataFrame, across: str = 'model', method: str = 'average') -> pd.DataFrame:
+    """
+    For a given dataframe, generate a comparison of ranks across the specified level of the index. Returns a DataFrame
+    with column 'rank'. The input DataFrame should have exactly one column, which will be replaced by 'rank'.
 
     :param df: pandas.DataFrame
         The DataFrame object containing the relevant metrics data.
-    :param metric: string
-        The name of the metric which is to be used for rank comparisons.
-    :param nsamples: int
-        The number of times each model's 'rng_offset' value is sampled.
+    :param across: string
+        The name of the index level across which rank is calculated.
     :param method: string
         The method used to generate the ranking, consult pandas.DataFrame.rank() for more details.
-    :param rng: int
-        An integer seed for the numpy RNG in order to ensure that all metrics use the same rng offsets.
     :return: pandas.DataFrame
-        A DataFrame object with the index levels ['model', 'sample_idx', 'iteration'] and the column labels
-        ['rank', 'metric_value'] containing the respective rankings of each model and the metric values used to compute
-        them, respectively, at each iteration, such that the new level 'sample_idx' denotes a randomly chosen sample of
-        all iterations for each model.
+        The dataframe with rank data.
     """
 
-    np.random.seed(rng)
-    known_names = ['model', 'metric', 'rng_offset', 'iteration']
-    assert df.index.names == known_names, f"The input DataFrame must have this exact sequence of index names: " \
-                                          f"{known_names}\nInstead, the given DataFrame's index was: {df.index.names}"
-    metric_df = df.xs(metric, level='metric', drop_level=False)
-    models = metric_df.index.unique('model')
-    chosen_offsets = [None] * len(models)
-    for i, m in enumerate(models):
-        tmp_df: pd.DataFrame = metric_df.xs(m, level='model', drop_level=False).unstack(level='iteration')
-        choice = tmp_df.sample(nsamples, replace=True)
-        # As of now, the 'rng_offset' is pointless but the 'sample_idx' instead makes more sense.
-        choice['sample_idx'] = list(range(nsamples))
-        chosen_offsets[i] = choice.set_index('sample_idx', append=True).reset_index(level='rng_offset', drop=True)
-
-    new_df = pd.concat(chosen_offsets, axis=0).unstack(level='model').stack('iteration')
-    rank_df = new_df.rank(axis=1, method=method).stack('model').rename(columns={'metric_value': 'rank'})
-    rank_df = rank_df.combine_first(new_df.stack('model'))
-
-    _log.info("Finished sampling the dataframe.")
-    return rank_df.reorder_levels(['model', 'metric', 'sample_idx', 'iteration'])
+    original_order = df.index.names
+    df = df.unstack(across)
+    df = df.rank(axis=1, method=method)
+    df = df.stack(across)
+    df = df.reorder_levels(original_order)
+    return df
 
 
 def calculate_overhead(df: pd.DataFrame) -> pd.DataFrame:
@@ -70,7 +135,8 @@ def calculate_overhead(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     # Iteration 0 corresponds to the end of initialization.
-    end_times = df.xs('time', level='metric', drop_level=True).unstack('iteration')
+    end_times = df.xs('time', level='metric', drop_level=True)
+    end_times = end_times.unstack('iteration')
     iters = end_times.columns.unique('iteration')
     start_times = end_times.drop(iters.max(), axis=1, level='iteration')
     start_times = start_times.rename(lambda x: x+1, axis=1, level='iteration')
@@ -82,45 +148,8 @@ def calculate_overhead(df: pd.DataFrame) -> pd.DataFrame:
     # start_times = pd.DataFrame()
     overhead: pd.DataFrame = overhead.stack('iteration').assign(metric='overhead')
     overhead = overhead.set_index('metric', append=True).reorder_levels(df.index.names)
-    return df.combine_first(overhead)
-
-
-def generate_metric_ranks(df: pd.DataFrame, rank_metrics: Optional[Sequence[str]] = None, nsamples: int = 1000,
-                          method: str = 'average', rng: int = 1) -> pd.DataFrame:
-    """
-    A wrapper around get_rank_across_models that applies generates a rank for multiple metrics.
-
-    :param df: pandas.DataFrame
-        The dataframe containing all the metrics data.
-    :param rank_metrics: Sequence of strings
-        The metrics for which ranks should be generated. If None (default), all metrics are used.
-    :param nsamples: int
-        The number of times each model's 'rng_offset' value is sampled.
-    :param method: string
-        The method used to generate the ranking, consult pandas.DataFrame.rank() for more details.
-    :param rng: int
-        An integer seed for the numpy RNG in order to ensure that all metrics use the same rng offsets.
-    :return: pandas.DataFrame
-        A DataFrame object which has the same index as the object given as input, except that the index level
-        'rng_offset' is replaced by 'sample_idx', a range index in the range [0, 'nsamples'], and the column labels
-        ['rank', 'metric_value'] containing the respective rankings of each model and the metric values used to compute
-        them, respectively, at each iteration, such that the new level 'sample_idx' denotes a randomly chosen sample of
-        all iterations for each model.
-    """
-
-    if rank_metrics is None:
-        rank_metrics = df.index.unique('metric')
-
-    collated_df = None
-    for metric in rank_metrics:
-        _log.info("Now sampling values for metric %s." % metric)
-        tmp = get_rank_across_models(df, metric, nsamples, method, rng)
-        if collated_df is None:
-            collated_df = tmp
-        else:
-            collated_df = collated_df.combine_first(tmp)
-
-    return collated_df
+    ret = df.combine_first(overhead)
+    return ret
 
 
 def perform_tsne(data: pd.DataFrame, n_components: int = 2) -> pd.DataFrame:
