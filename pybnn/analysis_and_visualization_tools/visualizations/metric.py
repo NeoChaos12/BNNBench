@@ -20,12 +20,13 @@ from pybnn.utils import constants as C
 
 _log = logging.getLogger(__name__)
 
-sns.set_style("whitegrid", {'axes.linewidth': 2, 'axes.edgecolor':'black', 'lines.linewidth': 5})
+sns.set_style("ticks", {'axes.linewidth': 2, 'axes.edgecolor':'black', 'lines.linewidth': 5})
 sns.set_palette('tab10')
 sns.set_context("paper", font_scale=2.5)
 
 default_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 linewidth = 4.
+log_y = True
 
 def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1,
                    calculate_stats: bool = True):
@@ -58,14 +59,8 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
         mean_df = final_data.loc[:, "mean"]
         std_df = final_data.loc[:, "std"]
 
-    # min_val, max_val = np.log10(mean_df.min()), mean_df.max()
-
-    # log_y = False
-    log_y = True
-    # if max_val / min_val > 10000:
-    # percentiles = np.log10(np.percentile(mean_df, [0.1, 0.9]) + 1e-6)
-    # if percentiles[1] - percentiles[0] >= 3:
-    #     log_y = True
+    min_val, max_val = np.log10(mean_df.min() + 10 ** -6), np.log10(mean_df.max())
+    range = max_val - min_val
 
     for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
         xs = final_data.xs(label, level=across).sort_index(axis=0).iloc[x_offset:].index
@@ -76,14 +71,23 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
         std: np.ndarray = subset_stds.to_numpy().squeeze()
         ax.plot(xs, means, c=colour, label=label, linewidth=linewidth)
         ax.fill_between(xs, means - std, means + std, alpha=0.2, color=colour)
-        if log_y:
-            ax.set_yscale('log')
-            formatter = mtick.LogFormatterMathtext(labelOnlyBase=False, minor_thresholds=(2, 1))
-        else:
-            formatter = mtick.ScalarFormatter(useMathText=True)
-            formatter.set_powerlimits((-1, 1))
-            formatter.set_scientific(True)
+    if log_y:
+        ax.set_yscale('log')
+        mtick.LogFormatter()
+        formatter = mtick.LogFormatterMathtext(labelOnlyBase=False, minor_thresholds=(2 * range, 0.5 * range))
         ax.yaxis.set_major_formatter(formatter)
+        formatter.set_locs()
+        ax.yaxis.set_major_locator(mtick.LogLocator(numticks=3))
+        ax.yaxis.set_minor_locator(mtick.LogLocator(subs='all', numticks=10))
+        current_y_lim = ax.get_ylim()[0]
+        ylim = np.clip(current_y_lim, 10 ** (min_val - 1), None)
+        ax.set_ylim(bottom=ylim)
+    else:
+        formatter = mtick.ScalarFormatter(useMathText=True)
+        formatter.set_powerlimits((-1, 1))
+        formatter.set_scientific(True)
+        ax.yaxis.set_major_formatter(formatter)
+    ax.grid(True, which='both', linewidth=0.5, c='k')
 
 
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
@@ -180,6 +184,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     fig, axes = plt.subplots(nrows, ncols, squeeze=False, frameon=True)
     fig: plt.Figure
     axes: np.ndarray
+
+    legend = None
     for ridx, rlabel in enumerate(row_labels):
         for cidx, clabel in enumerate(col_labels):
             ax: plt.Axes = axes[ridx, cidx]
@@ -196,7 +202,15 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
             if cidx == 0:
                 ax.set_ylabel(rlabel, labelpad=10)
 
-    handles, labels = axes.flatten()[-1].get_legend_handles_labels()
+            # This ensures that we don't miss any labels because different subplots had different subsets of labels.
+            h, l = ax.get_legend_handles_labels()
+            if legend is None:
+                legend = h, l
+            elif len(h) > len(legend[0]):
+                legend = h, l
+
+    # handles, labels = axes.flatten()[-1].get_legend_handles_labels()
+    handles, labels = legend
     legend_size = index.unique(level=idx1).size
     # if ncols >= legend_size:
     fig.legend(handles, labels, loc='lower center', ncol=legend_size)
