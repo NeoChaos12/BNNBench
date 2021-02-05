@@ -136,6 +136,7 @@ mcbatchnorm_model_params = dict(hidden_layer_sizes=[50],
                               optimize_hypers=not args.disable_pybnn_internal_optimization)
 ensemble_model_params = dict(hidden_layer_sizes=[50], n_learners=5,
                               optimize_hypers=not args.disable_pybnn_internal_optimization)
+dngo_model_params = dict(hidden_layer_sizes=[50],)
 
 
 all_loops = [
@@ -184,7 +185,17 @@ all_loops = [
             space=target_function.emukit_space,
             optimize_hypers_only_once=args.optimize_hypers_only_once
         )
-    )
+    ),
+    (
+        'DNGO',
+        create_pybnn_bo_loop,
+        dict(
+            model_type=ModelType.DNGO,
+            model_params=dngo_model_params,
+            space=target_function.emukit_space,
+            optimize_hypers_only_once=args.optimize_hypers_only_once
+        )
+    ),
 ]
 
 loop_gen = LoopGenerator(loops=[loop for i, loop in enumerate(all_loops) if (1 << i) & model_selection], data=data,
