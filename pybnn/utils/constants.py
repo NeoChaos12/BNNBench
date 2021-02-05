@@ -47,7 +47,7 @@ class FileNames:
 
     # Various visualizations
     mean_std_visualization = "MeanStdViz.pdf"
-    tsne_visualization = "tSNE_Embedding.pdf"
+    tsne_visualization = "tSNE_Embedding.png"
 
 # These are potentially repeated by some other classes. This is intentional and intended to make it easier to point out
 # potential version mismatch errors in the absence of a more robust versioning system.

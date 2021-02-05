@@ -32,11 +32,6 @@ class DNGO(MLP):
 
     # Attributes that are not meant to be user-modifiable model parameters go here
     # It is expected that any child classes will modify them as and when appropriate by overwriting them
-    MODEL_FILE_IDENTIFIER = "model"
-    tb_writer: globalConfig.tb_writer
-    output_dims: int
-    loss_func: torch.nn.functional.mse_loss
-    optimizer: optim.Adam
     prior = None
     # ------------------------------------
 
@@ -72,14 +67,14 @@ class DNGO(MLP):
     # ------------------------------------
 
     def __init__(self,
-                 adapt_epoch=5000,
-                 alpha=1.0,
-                 beta=1000,
-                 # prior=None,
-                 do_mcmc=True,
-                 n_hypers=20,
-                 chain_length=2000,
-                 burnin_steps=2000, **kwargs):
+                 adapt_epoch=_default_model_params.adapt_epoch,
+                 alpha=_default_model_params.alpha,
+                 beta=_default_model_params.beta,
+                 # prior=_default_model_params,
+                 do_mcmc=_default_model_params.do_mcmc,
+                 n_hypers=_default_model_params.n_hypers,
+                 chain_length=_default_model_params.chain_length,
+                 burnin_steps=_default_model_params.burnin_steps, **kwargs):
 
         """
         Deep Networks for Global Optimization [1]. This module performs
@@ -134,7 +129,7 @@ class DNGO(MLP):
         #     self.prior = prior
 
         # Network hyper parameters
-        self.init_learning_rate = self.learning_rate
+        # self.init_learning_rate = self.learning_rate
 
         self.adapt_epoch = adapt_epoch
         self.network = None
@@ -158,7 +153,7 @@ class DNGO(MLP):
 
         for layer_idx, fclayer in enumerate(layer_gen, start=1):
             layers.append((f"FC_{layer_idx}", fclayer))
-            layers.append((f"Tanh_{layer_idx}", nn.Tanh()))
+            layers.append((f"ReLU{layer_idx}", nn.ReLU()))
 
         # Set aside this part of the network for later use as basis functions
         self.basis_funcs = nn.Sequential(OrderedDict(layers))
@@ -174,7 +169,7 @@ class DNGO(MLP):
         Parameters
         ----------
         X: np.ndarray (N, D)
-            Input data points. The dimensionality of X is (N, D),
+            Input data points. The dimensionality of X_test is (N, D),
             with N as the number of points and D is the number of features.
         y: np.ndarray (N,)
             The corresponding target values.
@@ -183,56 +178,10 @@ class DNGO(MLP):
             the default hyperparameters are used.
 
         """
-        start_time = time.time()
-        self.X = X
-        self.y = y
 
-        # Normalize inputs and outputs if the respective flags were set
-        self.normalize_data()
-
-        # self.y = self.y[:, None]
-
-        # Create the neural network
-        # features = X.shape[1]
-        self._generate_network()
-
-        # self.network = MLP(input_dims=features, hidden_layer_sizes=self.n_units)
-
-        optimizer = optim.Adam(self.network.parameters(),
-                               lr=self.init_learning_rate)
-
-        if globalConfig.tblog:
-            with globalConfig.tb_writer as writer:
-                writer.add_graph(self.network, torch.rand(size=[self.batch_size, self.input_dims],
-                                                          dtype=torch.float, requires_grad=False))
-
-        # Start training
-        lc = np.zeros([self.num_epochs])
-        for epoch in range(self.num_epochs):
-
-            epoch_start_time = time.time()
-
-            train_err = 0
-            train_batches = 0
-
-            for inputs, targets in self.iterate_minibatches(self.X, self.y, shuffle=True, as_tensor=True):
-                optimizer.zero_grad()
-                output = self.network(inputs)
-
-                loss = torch.nn.functional.mse_loss(output, targets)
-                loss.backward()
-                optimizer.step()
-
-                train_err += loss
-                train_batches += 1
-
-            lc[epoch] = train_err / train_batches
-            logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
-            curtime = time.time()
-            epoch_time = curtime - epoch_start_time
-            total_time = curtime - start_time
-            logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
-            logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
+        logger.info("Fitting %s model to the given data." % type(self).__name__)
+        self.preprocess_training_data(X, y)
+        self.train_network()
 
         # Design matrix
         self.Theta = self.basis_funcs(torch.Tensor(self.X)).data.numpy()
@@ -348,14 +297,14 @@ class DNGO(MLP):
         nll = -self.marginal_log_likelihood(theta)
         return nll
 
-    def predict(self, X):
+    def predict(self, X_test):
         r"""
         Returns the predictive mean and variance of the objective function at
         the given test points.
 
         Parameters
         ----------
-        X: np.ndarray (N, D)
+        X_test: np.ndarray (N, D)
             N input test points
 
         Returns
@@ -368,17 +317,17 @@ class DNGO(MLP):
         """
         # Normalize inputs
         if self.normalize_input:
-            X_, _, _ = zero_mean_unit_var_normalization(X, self.X_mean, self.X_std)
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
         else:
-            X_ = X
+            X_ = X_test
 
         # Get features from the net
 
         theta = self.basis_funcs(torch.Tensor(X_)).data.numpy()
 
         # Marginalise predictions over hyperparameters of the BLR
-        mu = np.zeros([len(self.models), X.shape[0]])
-        var = np.zeros([len(self.models), X.shape[0]])
+        mu = np.zeros([len(self.models), X_test.shape[0]])
+        var = np.zeros([len(self.models), X_test.shape[0]])
 
         for i, m in enumerate(self.models):
             mu[i], var[i] = m.predict(theta)
@@ -400,6 +349,11 @@ class DNGO(MLP):
             m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
             v *= self.y_std ** 2
 
+        if m.ndim == 1:
+            m = m[:, np.newaxis]
+        if v.ndim == 1:
+            v = v[:, np.newaxis]
+
         return m, v
 
     def evaluate(self, X_test, y_test, **kwargs) -> (np.ndarray, np.ndarray):
@@ -412,7 +366,7 @@ class DNGO(MLP):
             Array of expected output values.
         :return: rmse, log_likelihood
         """
-        means, vars = self.predict(X=X_test)
+        means, vars = self.predict(X_test=X_test)
         logger.debug("Generated final mean values of shape %s" % str(means.shape))
 
         if not isinstance(y_test, np.ndarray):

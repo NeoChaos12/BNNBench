@@ -147,6 +147,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
             _log.debug(f"Drawing column {cidx}")
             # ax: plt.Axes = axes[ridx, cidx]
             ax: plt.Axes = fig.add_subplot(gs[ridx, cidx])
+            ax.set_facecolor('gray')
             # view = get_view_on_data(row_val=rlabel, col_val=clabel)
 
             # Generate view on one cell's data.
@@ -179,7 +180,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
 
             # All left column axes
             if cidx == 0:
-                ax.set_ylabel(rlabel, labelpad=1.5)
+                ax.set_ylabel(rlabel, labelpad=1.)
             else:
                 ax.set_yticklabels([])
 

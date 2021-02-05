@@ -22,7 +22,7 @@ _log = logging.getLogger(__name__)
 
 sns.set_style("ticks", {'axes.linewidth': 2, 'axes.edgecolor':'black', 'lines.linewidth': 5})
 sns.set_palette('tab10')
-sns.set_context("paper", font_scale=2.5)
+sns.set_context("paper", font_scale=3)
 
 default_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 linewidth = 4.
@@ -178,9 +178,9 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
 
     _log.info("Setting up plot.")
 
-    # 5% padding in each dimension between axes, each axes object of size (6.4, 4.8), additional 10% padding around the
+    # 2% padding in each dimension between axes, each axes object of size (6.4, 4.8), additional 5% padding around the
     # figure edges.
-    plt.rcParams["figure.figsize"] = (6.4 * ncols * 1.05 * 1.1, 4.8 * nrows * 1.05 * 1.1)
+    plt.rcParams["figure.figsize"] = (8 * ncols * 1.02 * 1.5, 4 * nrows * 1.02 * 1.5)
     fig, axes = plt.subplots(nrows, ncols, squeeze=False, frameon=True)
     fig: plt.Figure
     axes: np.ndarray
@@ -216,7 +216,7 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     fig.legend(handles, labels, loc='lower center', ncol=legend_size)
     # else:
     #     fig.legend(handles, labels, loc='center right')
-    fig.tight_layout(pad=2.5, h_pad=1.1, w_pad=1.1)
+    fig.tight_layout(pad=2., h_pad=0.5, w_pad=0.5)
     if suptitle:
         fig.suptitle(suptitle, ha='center', va='top')
     if save_data:
