@@ -30,23 +30,17 @@ class FileNames:
     # The raw runhistories, possibly collated across multiple experiment configurations
     runhistory_dataframe = "runhistory.pkl.gz"
 
-    # Raw metric values super-sampled from random starts
-    supersampled_metrics_dataframe = "metrics_supersampled.pkl.gz"
-
     # Rank data for selected metrics calculated in post-processing of super-sampled raw metrics
     rank_metrics_dataframe = "metrics_ranked.pkl.gz"
 
     # Selected metrics inferred during post-processing of raw metrics
     inferred_metrics_dataframe = "metrics_inferred.pkl.gz"
 
-    # Not used yet
-    augmented_runhistory_dataframe = "augmented_runhistory.pkl.gz"
-
     # t-SNE of runhistories
     tsne_embeddings_dataframe = "tsne_embeddings.pkl.gz"
 
     # Various visualizations
-    mean_std_visualization = "MeanStdViz.pdf"
+    mean_std_visualization = "MeanStdViz.png"
     tsne_visualization = "tSNE_Embedding.png"
 
 # These are potentially repeated by some other classes. This is intentional and intended to make it easier to point out
