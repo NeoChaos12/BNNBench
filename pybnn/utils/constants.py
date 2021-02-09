@@ -34,7 +34,7 @@ class FileNames:
     rank_metrics_dataframe = "metrics_ranked.pkl.gz"
 
     # Selected metrics inferred during post-processing of raw metrics
-    inferred_metrics_dataframe = "metrics_inferred.pkl.gz"
+    processed_metrics_dataframe = "metrics_processed.pkl.gz"
 
     # t-SNE of runhistories
     tsne_embeddings_dataframe = "tsne_embeddings.pkl.gz"
