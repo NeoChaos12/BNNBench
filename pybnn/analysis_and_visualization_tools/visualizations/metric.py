@@ -9,7 +9,7 @@ an index level named "iteration" if the other comparison indices are specified.
 
 
 import logging
-from typing import List, Sequence, Any
+from typing import List, Sequence, Any, Tuple
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
@@ -27,6 +27,57 @@ sns.set_context("paper", font_scale=3)
 default_metrics_row_index_labels: Sequence[str] = ("model", "metric", "rng_offset", "iteration")
 linewidth = 4.
 log_y = True
+
+cell_height = 4
+cell_width = 8
+label_fontsize = 40
+legend_fontsize = 30
+pt_to_inch = 0.04167 / 3
+
+legend_colors = {}
+color_generator = iter(sns.color_palette())
+
+
+def _determine_legend_parameters(nrows: int, ncols: int, legend_size: int, pos: str = "auto"):
+    """ Determines the size, shape and location of the legend. If position is "auto", the position of the legend on
+    the figure is determined automatically depending on the number of rows and columns in the grid. Otherwise, the
+     values "bottom" or "right" can be specified. """
+
+    if pos == "auto":
+        pos = "bottom" if ncols >= nrows else "right"
+
+    if pos == "bottom":
+        # Legend will be placed below the grid
+        legend_ax_height = cell_height / 8 * (legend_size // ncols + int(legend_size % ncols > 0))
+        def adjust_gridspec(height, width, height_ratios, width_ratios) -> \
+                Tuple[float, float, Sequence[float], Sequence[float]]:
+            return nrows + 1, ncols, height + legend_ax_height, width, height_ratios + [legend_ax_height], width_ratios
+
+        legend_kwargs = dict(loc='lower center', ncol=ncols, fontsize=legend_fontsize)
+        legend_ax_loc = -1, slice(None)
+
+    elif pos == "right":
+        # Legend will be placed to the right of the grid
+        legend_ax_width = cell_width / 2
+        def adjust_gridspec(height, width, height_ratios, width_ratios) -> \
+                Tuple[float, float, Sequence[float], Sequence[float]]:
+            return nrows, ncols + 1, height, width + legend_ax_width, height_ratios, width_ratios + [legend_ax_width]
+
+        legend_kwargs = dict(loc='center', ncol=1, fontsize=legend_fontsize)
+        legend_ax_loc = slice(None), -1
+    else:
+        raise RuntimeError("Unrecognized legend position %s" % pos)
+
+    return adjust_gridspec, legend_ax_loc, legend_kwargs
+
+
+def _get_legend_color(label):
+    """ Ensures that every label gets one unique and consistent colour assigned to it. """
+    if label not in legend_colors:
+        legend_colors[label] = next(color_generator)
+
+    return legend_colors[label]
+
 
 def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: str = None, x_offset: int = 1,
                    calculate_stats: bool = True):
@@ -62,13 +113,14 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
     min_val, max_val = np.log10(mean_df.min() + 10 ** -6), np.log10(mean_df.max())
     range = max_val - min_val
 
-    for (ctr, label), colour in zip(enumerate(labels), sns.color_palette()):
+    for ctr, label in enumerate(labels):
         xs = final_data.xs(label, level=across).sort_index(axis=0).iloc[x_offset:].index
         subset_means: pd.Series = mean_df.xs(label, level=across)[xs]
         subset_stds: pd.Series = std_df.xs(label, level=across)[xs]
         xs: np.ndarray = xs.to_numpy().squeeze()
         means: np.ndarray = subset_means.to_numpy().squeeze()
         std: np.ndarray = subset_stds.to_numpy().squeeze()
+        colour = _get_legend_color(label)
         ax.plot(xs, means, c=colour, label=label, linewidth=linewidth)
         ax.fill_between(xs, means - std, means + std, alpha=0.2, color=colour)
     if log_y:
@@ -92,7 +144,7 @@ def _mean_std_plot(ax: plt.Axes, data: pd.DataFrame, across: str, xaxis_level: s
 
 def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = True, output_dir: Path = None,
              file_prefix: str = None, suptitle: str = None, xaxis_level: str = None, x_offset: int = 1,
-             calculate_stats: bool = True):
+             calculate_stats: bool = True, legend_pos: str = "auto"):
     """
     Create a visualization that displays the mean and 1-std envelope of the given data, possibly comparing across up to
     three individual dimensions.
@@ -121,6 +173,8 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
     :param calculate_stats: bool
         If 'calculate_stats' is True, the function calculates mean and std values on the fly. If it is False, the
         function expects the input data to have two columns, "mean" and "std" containing the respective values.
+    :param legend_pos: str
+        The position of the legend w.r.t. the grid. Possible values: "auto", "bottom", "right". Default: "auto".
     :return: None
     """
 
@@ -178,29 +232,49 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
 
     _log.info("Setting up plot.")
 
-    # 2% padding in each dimension between axes, each axes object of size (6.4, 4.8), additional 5% padding around the
-    # figure edges.
-    plt.rcParams["figure.figsize"] = (8 * ncols * 1.02 * 1.5, 4 * nrows * 1.02 * 1.5)
-    fig, axes = plt.subplots(nrows, ncols, squeeze=False, frameon=True)
-    fig: plt.Figure
-    axes: np.ndarray
+    # 10% padding in each dimension between axes, each axes object of size (8, 4), additional 10% padding around the
+    # figure edges. Also add some extra height for the legend.
+    padding = legend_fontsize * pt_to_inch * 1.2
+
+    legend_size = index.unique(level=idx1).size
+    legend_gridspec_adjust, legend_ax_loc, legend_kwargs = _determine_legend_parameters(nrows, ncols, legend_size,
+                                                                                      pos=legend_pos)
+    # legend_ax_height = cell_height / 8 * (legend_size // ncols + int(legend_size % ncols > 0))
+    # draw_area_width = cell_width * ncols
+    # draw_area_height = cell_height * nrows + legend_ax_height
+    # height_ratios = [cell_height] * nrows + [legend_ax_height]
+
+    draw_nrows, draw_ncols, draw_area_height, draw_area_width, height_ratios, width_ratios = legend_gridspec_adjust(
+        cell_height * nrows, cell_width * ncols, [cell_height] * nrows, [cell_width] * ncols)
+
+    wspace = 0.02 * draw_area_width
+    hspace = 0.02 * draw_area_height
+
+    plt.rcParams["figure.figsize"] = (draw_area_width + padding, draw_area_height + padding)
+    fig: plt.Figure = plt.figure(constrained_layout=True, frameon=True)
+    gs: plt.GridSpec = plt.GridSpec(nrows=draw_nrows, ncols=draw_ncols, figure=fig, wspace=wspace, hspace=hspace,
+                                    height_ratios=height_ratios)
 
     legend = None
     for ridx, rlabel in enumerate(row_labels):
         for cidx, clabel in enumerate(col_labels):
-            ax: plt.Axes = axes[ridx, cidx]
+            ax: plt.Axes = fig.add_subplot(gs[ridx, cidx])
             view = get_view_on_data(row_val=rlabel, col_val=clabel)
             _mean_std_plot(ax=ax, data=view, across=idx1, xaxis_level=xaxis_level, x_offset=x_offset,
                            calculate_stats=calculate_stats)
 
             # Bottom row only
             if ridx == nrows - 1:
-                ax.set_xlabel(clabel, labelpad=10)
+                ax.set_xlabel(xaxis_level, labelpad=10., loc='right')
             else:
                 ax.set_xticklabels([])
 
+            # Top row only
+            if ridx == 0:
+                ax.set_title(clabel, fontdict=dict(fontsize=label_fontsize))
+
             if cidx == 0:
-                ax.set_ylabel(rlabel, labelpad=10)
+                ax.set_ylabel(rlabel, labelpad=10, fontdict=dict(fontsize=label_fontsize))
 
             # This ensures that we don't miss any labels because different subplots had different subsets of labels.
             h, l = ax.get_legend_handles_labels()
@@ -209,14 +283,15 @@ def mean_std(data: pd.DataFrame, indices: List[str] = None, save_data: bool = Tr
             elif len(h) > len(legend[0]):
                 legend = h, l
 
-    # handles, labels = axes.flatten()[-1].get_legend_handles_labels()
+    # legend_ax: plt.Axes = fig.add_subplot(gs[-1, :])
+    legend_ax: plt.Axes = fig.add_subplot(gs[legend_ax_loc])
     handles, labels = legend
-    legend_size = index.unique(level=idx1).size
-    # if ncols >= legend_size:
-    fig.legend(handles, labels, loc='lower center', ncol=legend_size)
-    # else:
-    #     fig.legend(handles, labels, loc='center right')
-    fig.tight_layout(pad=2., h_pad=0.5, w_pad=0.5)
+    # _ = legend_ax.legend(handles, labels, loc='lower center', ncol=ncols, fontsize=legend_fontsize)
+    _ = legend_ax.legend(handles, labels, **legend_kwargs)
+    legend_ax.set_axis_off()
+    fig.align_labels(axs=fig.axes[0::ncols]) # Align only the left-column's y-labels
+    fig.set_constrained_layout_pads(w_pad=1.1 * label_fontsize * pt_to_inch, h_pad=1.1 * label_fontsize * pt_to_inch)
+    fig.set_constrained_layout(True)
     if suptitle:
         fig.suptitle(suptitle, ha='center', va='top')
     if save_data:

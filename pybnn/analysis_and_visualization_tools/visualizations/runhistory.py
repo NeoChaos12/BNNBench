@@ -27,6 +27,7 @@ _log = logging.getLogger(__name__)
 cell_height = 4.8
 cell_width = 6.4
 colorbar_ax_width = 0.5
+label_fontsize = 60
 
 def _initialize_seaborn():
     """ Since seaborn can be finicky on the server, we only import it when we're really sure about it. """
@@ -48,7 +49,8 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
     indices from the column-index of the DataFrame (not the subplots). If no column indices are specified, it is
     expected that the column index has only 1 level. All other levels in the row index than the ones specified in
     'indices' get reduced. Note that the column index level 'run_data' is reserved and may produce unexpected results
-    if included in 'indices'. The visualization is colored such that every row's colour bars lie on the same scale. """
+    if included in 'indices'. For every row, the objective values as well as embedding space dimensions are normalized
+    to lie on the scale [-1, 1]. The visualization is then also colored accordingly. """
 
     sns = _initialize_seaborn()
     _log.info("Initialized SeaBorn.")
@@ -147,7 +149,7 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
             _log.debug(f"Drawing column {cidx}")
             # ax: plt.Axes = axes[ridx, cidx]
             ax: plt.Axes = fig.add_subplot(gs[ridx, cidx])
-            ax.set_facecolor('gray')
+            ax.set_facecolor('silver')
             # view = get_view_on_data(row_val=rlabel, col_val=clabel)
 
             # Generate view on one cell's data.
@@ -167,20 +169,24 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
             cs = data[:, 2].reshape(-1)
 
             norm = mcolors.Normalize(vmin=-1., vmax=1.)
+            # norm = mcolors.SymLogNorm(linthresh=0.01, vmin=-1.0, vmax=1.0, base=10)
             # A complicated but necessary procedure to convert our alphas into a colormap. This makes it easy to create
             # a colorbar later on.
             cmap = sns.color_palette(palette, as_cmap=True)
             _ = ax.scatter(xs, ys, c=cs, cmap=cmap, norm=norm)
+            ax.set_xlim(-1.0, 1.0)
+            ax.set_ylim(-1.0, 1.0)
+            # All top row axes
+            if ridx == 0:
+                ax.set_title(clabel, fontdict=dict(fontsize=label_fontsize))
 
-            # All bottom row axes
-            if ridx == nrows - 1:
-                ax.set_xlabel(clabel, labelpad=1.5)
-            else:
+            # All axes except the bottom row
+            if ridx != nrows - 1:
                 ax.set_xticklabels([])
 
             # All left column axes
             if cidx == 0:
-                ax.set_ylabel(rlabel, labelpad=1.)
+                ax.set_ylabel(rlabel, labelpad=1., fontdict=dict(fontsize=label_fontsize))
             else:
                 ax.set_yticklabels([])
 
@@ -189,7 +195,9 @@ def plot_embeddings(embedded_data: pd.DataFrame, indices: Tuple[List[str], List[
     # Insert colorbar
     ax: plt.Axes = fig.add_subplot(gs[:, -1])
     fig.colorbar(mappable, cax=ax)
-    fig.align_labels(axs=fig.axes[0::ncols + 1] + fig.axes[(nrows - 1) * (ncols + 1):])
+    # Align the left-column's y-labels and the bottom row's x-labels
+    # fig.align_labels(axs=fig.axes[0::ncols + 1] + fig.axes[(nrows - 1) * (ncols + 1):])
+    fig.align_labels(axs=fig.axes[0::ncols + 1]) # Align only the left-column's y-labels
     fig.set_constrained_layout_pads(w_pad=0.15 * draw_area_width, h_pad=0.15 * draw_area_height)
     fig.set_constrained_layout(True)
     # fig.tight_layout(pad=2.5, h_pad=1.1, w_pad=1.1)
