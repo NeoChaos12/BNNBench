@@ -1,22 +1,23 @@
 try:
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 except (ImportError, ModuleNotFoundError):
     import sys
     import os.path
     sys.path.append(os.path.expandvars('$BNNBENCHPATH'))
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
     
 from pathlib import Path
 import logging
 from bnnbench.bin import _default_log_format
 from bnnbench.postprocessing import BenchmarkData, ResultDataHandler, _log
 import argparse
-from typing import Sequence
+from typing import Sequence, Optional
 
 logging.basicConfig(level=logging.INFO, format=_default_log_format)
 _log.setLevel(logging.INFO)
 
-def collate_data(root: Path, directory_structure: Sequence[str], which="both", new_columns_at: int = -1):
+def collate_data(root: Path, directory_structure: Sequence[str], which="both", new_columns_at: int = -1,
+                 ret: bool = False) -> Optional[BenchmarkData]:
     if not root.exists():
         raise RuntimeError(f"Root directory {root} not found.")
 
@@ -40,6 +41,7 @@ def collate_data(root: Path, directory_structure: Sequence[str], which="both", n
                                                             new_columns=new_column, which="runhistory")
 
     data.save(root)
+    return data if ret else None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
