@@ -13,7 +13,7 @@ except:
 import bnnbench.utils.data_utils
 from bnnbench.models import model_types
 from bnnbench.config import globalConfig
-from bnnbench import _log as pybnn_logger
+from bnnbench import _log as bnnbench_logger
 from bnnbench.utils.attrDict import AttrDict
 import bnnbench.utils.universal_utils as utils
 
@@ -77,31 +77,31 @@ def handle_cli():
     default_model_params = model_types[mtype]._default_model_params._asdict()
 
     if args.config is not None:
-        pybnn_logger.info("--config flag detected.")
+        bnnbench_logger.info("--config flag detected.")
         config_file_path = utils.standard_pathcheck(args.config)
         with open(config_file_path, 'r') as fp:
             json_config = json.load(fp)
 
         if config_top_level_keys.obj_func in json_config:
-            pybnn_logger.debug("Attempting to fetch objective function %s" %
+            bnnbench_logger.debug("Attempting to fetch objective function %s" %
                                json_config[config_top_level_keys.obj_func])
             if isinstance(json_config[config_top_level_keys.obj_func], dict):
                 utils.parse_objective(config=json_config[config_top_level_keys.obj_func], out=config)
             else:
                 raise RuntimeError("This script is intended for use with datasets only and thus requires the dataset "
                                    "to be specified as a dict in the JSON config file.")
-            pybnn_logger.info("Fetched objective.")
+            bnnbench_logger.info("Fetched objective.")
 
         if config_top_level_keys.mparams in json_config:
             json_model_params = json_config[config_top_level_keys.mparams]
-            pybnn_logger.info("Using model parameters provided by config file.")
+            bnnbench_logger.info("Using model parameters provided by config file.")
             for key, val in default_model_params.items():
                 config.model_params[key] = val if json_model_params.get(key, None) is None else \
                     json_model_params[key]
-            pybnn_logger.info("Final model parameters: %s" % config.model_params)
+            bnnbench_logger.info("Final model parameters: %s" % config.model_params)
 
         if config_top_level_keys.eparams in json_config:
-            pybnn_logger.info("Using experiment parameters provided by config file.")
+            bnnbench_logger.info("Using experiment parameters provided by config file.")
             json_exp_params = json_config[config_top_level_keys.eparams]
 
             for key in globalConfig.cli_arguments:
@@ -115,13 +115,13 @@ def handle_cli():
                     setattr(config.exp_params, key, jsonval)
 
             # TODO: Fix. Use the params property to display this properly.
-            pybnn_logger.info("Final experiment parameters: %s" % config.exp_params)
+            bnnbench_logger.info("Final experiment parameters: %s" % config.exp_params)
 
     else:
-        pybnn_logger.info("No config file detected, using default parameters.")
+        bnnbench_logger.info("No config file detected, using default parameters.")
         config.model_params = default_model_params
 
-    pybnn_logger.info("Finished reading command line arguments.")
+    bnnbench_logger.info("Finished reading command line arguments.")
 
 
 def perform_experiment():
@@ -132,16 +132,16 @@ def perform_experiment():
     else:
         raise RuntimeError("This script does not support the old-style interface for specifying 1D toy functions.")
 
-    pybnn_logger.debug("Finished generating dataset splits.")
+    bnnbench_logger.debug("Finished generating dataset splits.")
     for idx, (Xtrain, ytrain, Xtest, ytest) in enumerate(data_splits):
 
-        pybnn_logger.info("Now conducting experiment on test split %d." % idx)
+        bnnbench_logger.info("Now conducting experiment on test split %d." % idx)
 
         Xtrain = Xtrain[:, None] if len(Xtrain.shape) == 1 else Xtrain
         ytrain = ytrain[:, None] if len(ytrain.shape) == 1 else ytrain
         Xtest = Xtest[:, None] if len(Xtest.shape) == 1 else Xtest
         ytest = ytest[:, None] if len(ytest.shape) == 1 else ytest
-        pybnn_logger.debug("Loaded split with training X, y of shapes %s, %s and test X, y of shapes %s, %s" %
+        bnnbench_logger.debug("Loaded split with training X, y of shapes %s, %s and test X, y of shapes %s, %s" %
                            (Xtrain.shape, ytrain.shape, Xtest.shape, ytest.shape))
 
         # ---------------------------------------------Generate model---------------------------------------------------
@@ -150,13 +150,13 @@ def perform_experiment():
         # if config.exp_params['tbdir'] is None:
         if config.exp_params.tbdir in [None, '']:
             config.exp_params.tbdir = model.modeldir
-            pybnn_logger.info("Tensorboard directory set to: %s" % (config.exp_params.tbdir))
+            bnnbench_logger.info("Tensorboard directory set to: %s" % (config.exp_params.tbdir))
         globalConfig.params = config.exp_params
 
         rng: np.random.RandomState = model.rng
         mean_only = True if config.mtype is model_types.mlp else False
 
-        pybnn_logger.info("Saving new model to: %s" % config.model_params["model_path"])
+        bnnbench_logger.info("Saving new model to: %s" % config.model_params["model_path"])
 
         # -----------------------------------------------Let it roll----------------------------------------------------
 
@@ -176,14 +176,14 @@ def perform_experiment():
 
         # ------------------------------------If needed, generate visualizations----------------------------------------
 
-        pybnn_logger.info("Saving model performance results in %s " % savedir)
+        bnnbench_logger.info("Saving model performance results in %s " % savedir)
 
         if config.plotdata:
             from bnnbench.utils.universal_utils import simple_plotter
             import matplotlib.pyplot as plt
             traindata = np.concatenate((Xtrain, ytrain), axis=1)
             testdata = np.concatenate((Xtest, ytest), axis=1)
-            pybnn_logger.info("Displaying:\nTraining data of shape %s \nTest data of shape %s\n"
+            bnnbench_logger.info("Displaying:\nTraining data of shape %s \nTest data of shape %s\n"
                               "Prediction data of shape %s" % (traindata.shape, testdata.shape, out.shape))
             _ = simple_plotter(
                 pred=out,
@@ -223,8 +223,8 @@ def perform_experiment():
             summary(model.network, input_size=(model.batch_size, model.input_dims))
 
         del model
-        pybnn_logger.info("Finished conducting experiment on test split %d." % idx)
-    pybnn_logger.info("Finished conducting all experiments on the given dataset.")
+        bnnbench_logger.info("Finished conducting experiment on test split %d." % idx)
+    bnnbench_logger.info("Finished conducting all experiments on the given dataset.")
 
 
 if __name__ == '__main__':

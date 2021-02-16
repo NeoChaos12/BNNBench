@@ -1,10 +1,10 @@
 try:
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 except (ImportError, ModuleNotFoundError):
     import sys
     import os.path
     sys.path.append(os.path.expandvars('$BNNBENCHPATH'))
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 
 from pathlib import Path
 import argparse
@@ -115,6 +115,6 @@ def perform_standard_metric_postprocessing(
 
 if __name__ == "__main__":
     logging.basicConfig(format=_default_log_format)
-    pybnn_log.setLevel(logging.INFO)
+    bnnbench_log.setLevel(logging.INFO)
     _log.setLevel(logging.INFO)
     perform_standard_metric_postprocessing(**vars(handle_cli()))

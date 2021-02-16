@@ -1,12 +1,12 @@
 #!/usr/bin/python
 
 try:
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 except (ImportError, ModuleNotFoundError):
     import sys
     import os.path
     sys.path.append(os.path.expandvars('$BNNBENCHPATH'))
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 
 import numpy as np
 import pandas as pd

@@ -14,7 +14,7 @@ except:
 import bnnbench.utils.data_utils
 from bnnbench.models import model_types
 from bnnbench.config import globalConfig
-from bnnbench import _log as pybnn_logger
+from bnnbench import _log as bnnbench_logger
 from bnnbench.utils.attrDict import AttrDict
 import bnnbench.utils.universal_utils as utils
 

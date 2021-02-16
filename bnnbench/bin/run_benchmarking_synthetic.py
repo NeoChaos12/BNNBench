@@ -7,12 +7,12 @@ import argparse
 from typing import Union, Optional
 
 try:
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 except (ImportError, ModuleNotFoundError):
     import sys
     import os.path
     sys.path.append(os.path.expandvars('$BNNBENCHPATH'))
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
 
 from bnnbench.bin import _default_log_format
 import bnnbench.utils.data_utils as dutils
@@ -93,7 +93,7 @@ def run_benchmarking(task: str, models: str, iterations: int, source_seed: int =
                      debug: bool = False):
     benchmarker_logger = benchmarker._log
     benchmarker_logger.setLevel(logging.DEBUG if debug else logging.INFO)
-    pybnn_log.setLevel(logging.DEBUG if debug else logging.INFO)
+    bnnbench_log.setLevel(logging.DEBUG if debug else logging.INFO)
     if not debug:
         pybnn_model_log.setLevel(logging.WARNING)
     

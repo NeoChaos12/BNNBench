@@ -7,13 +7,13 @@ import logging
 import time
 from pathlib import Path
 try:
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
     from bnnbench.bin import _default_log_format
 except (ImportError, ModuleNotFoundError):
     import sys
     import os.path
     sys.path.append(os.path.expandvars('$BNNBENCHPATH'))
-    from bnnbench import _log as pybnn_log
+    from bnnbench import _log as bnnbench_log
     from bnnbench.bin import _default_log_format
 
 from bnnbench.emukit_interfaces.synthetic_objectives import SyntheticObjective, branin, borehole_6, hartmann3_2
