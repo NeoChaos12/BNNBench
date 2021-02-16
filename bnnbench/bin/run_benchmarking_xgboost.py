@@ -47,9 +47,7 @@ def handle_cli() -> argparse.Namespace:
 
     parser.add_argument("-i", "--iterations", type=int, required=True,
                         help="The number of iterations that each BO loop is run for using any given model.")
-    parser.add_argument("--task", type=str,
-                        help="The name of the task (dataset) that should be loaded into ParamNet by HPOBench.",
-                        choices=["adult", "higgs", "letter", "mnist", "optdigits", "poker", "vehicle"])
+    parser.add_argument("-t", "--task", type=int, default=189909, help="The OpenML task id to be used by HPOBench.")
     parser.add_argument("--rng", type=int, default=1, help="An RNG seed for generating repeatable results.")
     parser.add_argument("--source_seed", type=int, default=1,
                         help="The value of the RNG seed used for generating the source data being used as a reference.")
@@ -63,7 +61,7 @@ def handle_cli() -> argparse.Namespace:
                         help="The path to the directory where all HPOBench data files are to be read from. Default: "
                              "Current working directory.")
     parser.add_argument("-o", "--odir", type=str, default=None, help="The path to the directory where all output files "
-                             "are to be stored. Default: same as sdir.")
+                                                                     "are to be stored. Default: same as sdir.")
     parser.add_argument("--use_local", action="store_true", default=False,
                         help="Use a local version of the HPOBench benchmark objective instead of the container.")
     parser.add_argument("--debug", action="store_true", default=False, help="Enable debug mode logging.")
@@ -117,18 +115,19 @@ def run_benchmarking(task: str, models: str, iterations: int, source_seed: int =
     # ############# LOAD DATA ##########################################################################################
 
     # SETUP TARGET FUNCTION
-    target_function = HPOBenchObjective(benchmark=C.Benchmarks.PARAMNET, rng=source_seed, use_local=use_local,
-                                        dataset=task)
+    target_function = HPOBenchObjective(benchmark=C.Benchmarks.XGBOOST, task_id=task, rng=source_seed,
+                                        use_local=use_local)
 
-    data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name=C.Benchmarks.PARAMNET, source_rng_seed=source_seed,
+    data = dutils.HPOBenchData(data_folder=data_dir, benchmark_name=C.Benchmarks.XGBOOST, source_rng_seed=source_seed,
                                evals_per_config=source_data_tile_freq, extension="csv", iterate_confs=iterate_confs,
                                iterate_evals=iterate_evals,
                                emukit_map_func=target_function.map_configurations_to_emukit,
-                               rng=rng, train_set_multiplier=training_pts_per_dim, dataset=task)
+                               rng=rng, train_set_multiplier=training_pts_per_dim, task_id=task)
 
     NUM_DATA_POINTS = training_pts_per_dim * data.X_full.shape[2] + iterations
 
     # ############# SETUP MODELS #######################################################################################
+
 
     mcdropout_model_params = dict(dataset_size=NUM_DATA_POINTS, hidden_layer_sizes=[50],
                                   optimize_hypers=not disable_pybnn_internal_optimization)
@@ -137,6 +136,7 @@ def run_benchmarking(task: str, models: str, iterations: int, source_seed: int =
     ensemble_model_params = dict(hidden_layer_sizes=[50], n_learners=5,
                                   optimize_hypers=not disable_pybnn_internal_optimization)
     dngo_model_params = dict(hidden_layer_sizes=[50],)
+
 
     all_loops = [
         (

@@ -24,10 +24,10 @@ pybnn_log.setLevel(logging.INFO)
 _log.setLevel(logging.INFO)
 
 def handle_cli() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a suite of post-processing operations on the basic runhistory data "
-                                                 "generated from some experiments.")
-    parser.add_argument("--rng", type=int, default=1, help="An RNG seed for generating repeatable results in the case of "
-                                                           "operations that are stochastic in nature.")
+    parser = argparse.ArgumentParser(description="Run a suite of post-processing operations on the basic runhistory "
+                                                 "data generated from some experiments.")
+    parser.add_argument("--rng", type=int, default=1, help="An RNG seed for generating repeatable results in the case "
+                                                           "of operations that are stochastic in nature.")
     parser.add_argument("-s", "--source", type=Path, default=None,
                         help="The path to the directory where the relevant metric.pkl.gz file is stored. Default: "
                              "Current working directory.")

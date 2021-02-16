@@ -21,7 +21,8 @@ import bnnbench.utils.universal_utils as utils
 config_top_level_keys = utils.config_top_level_keys
 
 
-def generate_config():
+def handle_cli() -> argparse.Namespace:
+
     print("Handling command line arguments.")
     parser = argparse.ArgumentParser(add_help=True,
                                      description="Generate a JSON file containing default values for conducting an "
@@ -40,19 +41,22 @@ def generate_config():
                         help='Type of objective to be used. Can be either "toy_1d" for 1D toy functions or "dataset" '
                              'for locally stored datasets.')
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    mtype = str.lower(args.model)
+
+def generate_config(model: str, filename: str = None, otype: str = "dataset"):
+
+    mtype = str.lower(model)
     if mtype not in model_types:
         raise RuntimeError("Unknown/unsupported model type specified. Must be one of: %s" % str(model_types.keys()))
 
-    filepath = utils.standard_pathcheck(args.filename)
+    filepath = utils.standard_pathcheck(filename)
     if not os.path.isabs(filepath):
         filepath = os.path.join(os.getcwd(), filepath)
 
     if os.path.isdir(filepath):
         # The absolute path leads to a directory name, not a filename
-        filepath = os.path.join(filepath, f"sample_{args.model}_config.json")
+        filepath = os.path.join(filepath, f"sample_{model}_config.json")
 
     mparams = model_types[mtype]().model_params._asdict()
     eparams = globalConfig.to_cli()
@@ -73,7 +77,7 @@ def generate_config():
             raise RuntimeError("Unknown objective '%s' of type %s" % (otype, type(otype)))
 
     jdict = {
-        config_top_level_keys.obj_func: json_objective(args.otype),
+        config_top_level_keys.obj_func: json_objective(otype),
         config_top_level_keys.mparams: mparams,
         config_top_level_keys.eparams: eparams
     }
