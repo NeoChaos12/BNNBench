@@ -5,7 +5,7 @@ from typing import Tuple, Any, Callable
 import abc
 
 
-class SciPyLikeModel(abc.ABC):
+class SKLearnLikeModel(abc.ABC):
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """ The predict method should return a 2-tuple of arrays corresponding to the predicted means and variances of
         the data points in X. For an input X for shape [N, d], where N is the number of data points and d the number of
@@ -31,16 +31,15 @@ class SciPyLikeModel(abc.ABC):
         raise NotImplementedError
 
 
-# TODO: Finish implementing, test.
-class SciPyLikeModelWrapper(IModel):
+class SKLearnLikeModelWrapper(IModel):
     """ Generates wrappers for interfacing between models with a Scipy-like interface and Emukit. """
 
-    def __init__(self, model: SciPyLikeModel):
+    def __init__(self, model: SKLearnLikeModel):
         """
         Initializes an interface wrapper for the given model.
         :param model: Scipy-like model
             A model which must support predict() and fit() interfaces similar to most models from Scipy, specifically,
-            as defined by the Abstract Base Class SciPyLikeModel.
+            as defined by the Abstract Base Class SKLearnLikeModel.
         """
 
         self.model = model

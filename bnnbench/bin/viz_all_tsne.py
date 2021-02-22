@@ -11,7 +11,7 @@ viz._log.setLevel(logging.INFO)
 
 root = Path("/home/archit/master_project/experiments/benchmark_data")
 source = root
-dest = root / "presentation"
+dest = root
 
 # df1 = pd.read_pickle(root / "xgboost_full_hpo" / C.FileNames.tsne_embeddings_dataframe)
 # tasks = df1.index.unique("task")
@@ -20,23 +20,26 @@ viz.cell_width = 4
 viz.cell_height = 4
 viz.label_fontsize = 30
 
+tasks = None
+task_name_maps = None
+
 # benchmarks = ["paramnet", "xgboost_single_hpo", "xgboost_full_hpo", "synthetic"]
 # idx = ["dataset", "task_id", "task_id", "objective"]
 # benchmarks = ["paramnet", "xgboost_single_hpo", "synthetic"]
-benchmarks = ["xgboost_single_hpo", "xgboost_full_hpo"]
+# benchmarks = ["xgboost_single_hpo", "xgboost_full_hpo"]
 # idx = ["dataset", "task_id", "task_id"]
 # benchmarks = ["synthetic"]
-# tasks = ['Branin']
-# tasks = ['Hartmann3_2']
+# task_name_maps = {'Hartmann3_2': 'Hartmann', 'Borehole_6': 'Borehole'}
+# tasks = ['Hartmann', 'Borehole']
 # tasks = ['Borehole_6']
-# benchmarks = ["paramnet"]
-# tasks = ['mnist', 'poker']
+benchmarks = ["paramnet"]
+task_name_maps = {'mnist': 'MNIST', 'poker': 'Poker'}
+tasks = ['MNIST', 'Poker']
 # benchmarks = ["xgboost_full_hpo"]
-tasks = ['167184', '167202']
+# tasks = ['167184', '167202']
 # benchmarks = ["xgboost_single_hpo"]
 # tasks = ['167188', '167156', '167184', '167202']
 # tasks = ['167188', '167156']
-# tasks = None
 # prefix = "AllTasks"
 # prefix = "4Tasks"
 # prefix = "2Tasks"
@@ -45,9 +48,12 @@ tasks = ['167184', '167202']
 main_df = None
 for bench in benchmarks:
     print("Reading df from %s" % bench)
-    prefix = f"{bench}_CommonTasks"
+    prefix = f"{bench}_2Tasks"
     dfpath = source / bench
     df: pd.DataFrame = pd.read_pickle(dfpath / C.FileNames.tsne_embeddings_dataframe)
+
+    if task_name_maps is not None:
+        df = df.rename(task_name_maps, level="task", axis=0)
     if tasks is not None:
         df = df[df.index.get_level_values("task").isin(tasks, level="task")].reindex(tasks, level="task", axis=0)
     viz.plot_embeddings(embedded_data=df, indices=[["model", "task", ], None], save_data=True, output_dir=dest,

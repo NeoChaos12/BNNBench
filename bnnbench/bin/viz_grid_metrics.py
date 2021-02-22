@@ -98,32 +98,35 @@ def generate_visualizations(root: Path, metrics_to_visualize: Sequence[str] = de
                 mean_std(data=final_rank_df, indices=plot_indices_sequence_full, save_data=True, output_dir=root,
                          file_prefix=rank_plot_prefix, suptitle=None)
     else:
+        from bnnbench.postprocessing.metrics import mask_multiindex
         print("Reading pre-saved metric data across benchmarks.")
         metric_name_maps = {"overhead": "Overhead", "minimum_observed_value": "Incumbent",
                             "mean_squared_error": "RMSE", "avg_nll": "NLL"}
         metrics_sequence = ["Overhead", "Incumbent", "NLL", "RMSE"]
-        benchmark_name_maps = {"xgboost_single_hpo": "xgboost"}
-        benchmarks_sequence = ["synthetic", "paramnet", "xgboost"]
+        benchmark_name_maps = {"xgboost_single_hpo": "XGBoost", "paramnet": "ParamNet", "synthetic": "Synthetic"}
+        benchmarks_sequence = ["Synthetic", "ParamNet", "XGBoost"]
         final_metric_df: pd.DataFrame = pd.read_pickle(root / C.FileNames.processed_metrics_dataframe)
         final_metric_df = final_metric_df.rename(metric_name_maps, level="metric", axis=0)
         final_metric_df = final_metric_df.reindex(metrics_sequence, level="metric", axis=0)
         final_metric_df = final_metric_df.rename(benchmark_name_maps, level="benchmark", axis=0)
         final_metric_df = final_metric_df[final_metric_df.index.get_level_values("benchmark").isin(benchmarks_sequence)]
         final_metric_df = final_metric_df.reindex(benchmarks_sequence, level="benchmark", axis=0)
+        final_metric_df = mask_multiindex(final_metric_df, ["Gaussian Process", "Overhead"], ["model", "metric"], exclude=True)
         final_rank_df = pd.read_pickle(root / C.FileNames.rank_metrics_dataframe)
         final_rank_df = final_rank_df.rename(metric_name_maps, level="metric", axis=0)
         final_rank_df = final_rank_df.reindex(metrics_sequence, level="metric", axis=0)
         final_rank_df = final_rank_df.rename(benchmark_name_maps, level="benchmark", axis=0)
         final_rank_df = final_rank_df[final_rank_df.index.get_level_values("benchmark").isin(benchmarks_sequence)].reindex(benchmarks_sequence, level="benchmark", axis=0)
+        final_rank_df = mask_multiindex(final_rank_df, ["Gaussian Process", "Overhead"], ["model", "metric"], exclude=True)
         if plot_full:
             if plot_values:
                 viz.log_y = True
                 mean_std(data=final_metric_df, indices=plot_indices_sequence_full, save_data=True, output_dir=root,
-                         file_prefix=value_plot_prefix, suptitle=None)
+                         file_prefix=value_plot_prefix, suptitle=None, legend_pos="bottom")
             if plot_ranks:
                 viz.log_y = False
                 mean_std(data=final_rank_df, indices=plot_indices_sequence_full, save_data=True, output_dir=root,
-                         file_prefix=rank_plot_prefix, suptitle=None)
+                         file_prefix=rank_plot_prefix, suptitle=None, legend_pos="bottom")
 
 if __name__ == "__main__":
     generate_visualizations(
@@ -134,14 +137,14 @@ if __name__ == "__main__":
         collate_dfs=False,
         # save_collated_df=True,
         save_collated_df=False,
-        # plot_values=True,
-        plot_values=False,
-        # plot_ranks=True,
-        plot_ranks=False,
+        plot_values=True,
+        # plot_values=False,
+        plot_ranks=True,
+        # plot_ranks=False,
         # plot_singles=True,
         plot_singles=False,
-        # plot_full=True,
-        plot_full=False,
+        plot_full=True,
+        # plot_full=False,
         # value_plot_prefix="4Metric_AllBench_Value"
         value_plot_prefix="4Metric_3Bench_Value",
         # value_plot_prefix="4Metric_Value"

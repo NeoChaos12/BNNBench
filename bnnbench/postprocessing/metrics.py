@@ -2,10 +2,27 @@ import logging
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
-from typing import Sequence, Optional, Union
+from typing import Sequence, Optional, Union, Any
 from bnnbench.utils import constants as C
 
 _log = logging.getLogger(__name__)
+
+
+def mask_multiindex(df: pd.DataFrame, key: Sequence[Any], level: Union[Sequence[int], Sequence[str]], exclude=False) \
+        -> pd.DataFrame:
+    """ Given a key and a corresponding sequence of levels for a dataframe with a MultiIndex Index, return a view on
+    the DataFrame that includes only the indices containing the given key (default). If exclude is True, all such
+    indices are excluded from the view instead. """
+
+    assert len(key) == len(level), "The number of levels do not correspond to the length of the key to be excluded."
+    mask = np.ones_like(df.index.values).astype(bool)
+    for k, l in zip(key, level):
+        mask = mask * df.index.get_level_values(l).isin([k], level=l)
+
+    if exclude:
+        mask = np.invert(mask)
+
+    return df[mask]
 
 
 def normalize_scale(df: pd.DataFrame, level: Union[Sequence[int], Sequence[str]] = None):
